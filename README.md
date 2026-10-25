@@ -111,7 +111,7 @@ cp .env.example .env
 
 - your email and a password of at least 12 characters, for the first administrator account;
 - the address people will use, such as `https://notes.example.com`;
-- how Minerva reaches the internet: `https` gets a free certificate automatically, and `tunnel` uses Cloudflare when you can’t open ports (uncomment the `cloudflared` service in `docker-compose.yml` for it). The file explains both.
+- how Minerva reaches the internet: `https` gets a free certificate automatically. Can’t open ports? [`deploy/compose.yaml`](deploy/compose.yaml) runs the published image with an optional Cloudflare Tunnel.
 
 Just trying it on your own computer? Set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_URL=http://localhost:3000`, and `MINERVA_SECURE_COOKIE=0`.
 

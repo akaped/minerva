@@ -3,13 +3,13 @@
 #   cp .env.example .env      # every setting, with production values to adjust
 #   docker compose up -d --build
 #
-# COMPOSE_PROFILES in .env chooses how it is reached (https, tunnel, or neither).
+# COMPOSE_PROFILES in .env chooses how it is reached (https, or empty for your own proxy).
 #
 # With automatic HTTPS (Caddy + Let's Encrypt) for a public domain:
 #   docker compose --profile https up -d --build
 #
-# Or through a Cloudflare Tunnel (no open ports): uncomment the cloudflared
-# service at the end of this file first.
+# For a Cloudflare Tunnel, use deploy/compose.yaml (it has a cloudflared service
+# to uncomment).
 name: minerva
 
 services:
@@ -71,30 +71,6 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-
-  # Cloudflare Tunnel (optional): an outbound-only connection to Cloudflare,
-  # which serves HTTPS for your hostname, with no open ports. To use it,
-  # uncomment the service below, set CLOUDFLARE_TUNNEL_TOKEN and
-  # COMPOSE_PROFILES=tunnel in .env, then run docker compose up -d.
-  # In the Zero Trust dashboard, create a tunnel and give it a public hostname
-  # with service http://minerva:3000.
-  #
-  # cloudflared:
-  #   image: cloudflare/cloudflared:latest
-  #   profiles: ["tunnel"]
-  #   restart: unless-stopped
-  #   depends_on:
-  #     minerva:
-  #       condition: service_healthy
-  #   # The token comes from the environment, so it never shows in process lists.
-  #   command: tunnel --no-autoupdate run
-  #   environment:
-  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
-  #   read_only: true
-  #   cap_drop:
-  #     - ALL
-  #   security_opt:
-  #     - no-new-privileges:true
 
 volumes:
   minerva-data:

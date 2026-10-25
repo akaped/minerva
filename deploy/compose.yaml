@@ -22,5 +22,24 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
+  # Cloudflare Tunnel (optional): HTTPS through Cloudflare with no open ports.
+  # In the Zero Trust dashboard, create a tunnel (Networks → Tunnels), give it a
+  # public hostname with service http://minerva:3000, put its token in .env as
+  # CLOUDFLARE_TUNNEL_TOKEN, then uncomment these lines and run docker compose up -d.
+  #
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: minerva-tunnel
+  #   restart: unless-stopped
+  #   depends_on:
+  #     minerva:
+  #       condition: service_healthy
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: [no-new-privileges:true]
+
 volumes:
   minerva-data:

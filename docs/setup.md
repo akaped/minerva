@@ -38,7 +38,7 @@ cp .env.example .env            # set administrator credentials and your URL
 docker compose up -d --build    # http://127.0.0.1:3000 (bound to localhost only)
 ```
 
-`.env.example` lists every setting with production values; edit the ones marked CHANGE. `COMPOSE_PROFILES` in `.env` chooses how Minerva is reached, so `docker compose up -d` alone starts the right services: `https` (Caddy), `tunnel` (Cloudflare Tunnel, after uncommenting its service), or empty (Minerva only, for your own reverse proxy).
+`.env.example` lists every setting with production values; edit the ones marked CHANGE. `COMPOSE_PROFILES` in `.env` chooses how Minerva is reached, so `docker compose up -d` alone starts the right services: `https` (Caddy) or empty (Minerva only, for your own reverse proxy).
 
 For a local HTTP trial, set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_URL=http://localhost:3000`, and `MINERVA_SECURE_COOKIE=0` in `.env`.
 
@@ -48,15 +48,14 @@ For a public domain with automatic HTTPS (Caddy and Let's Encrypt):
 2. In `.env`, set `MINERVA_DOMAIN`, `MINERVA_PUBLIC_URL=https://…`, and `MINERVA_SECURE_COOKIE=1`.
 3. Start with `docker compose --profile https up -d --build`.
 
-To publish through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) instead, with no open ports and no public IP address:
+To publish through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) instead, with no open ports and no public IP address, use `deploy/compose.yaml`, which runs the published image:
 
-1. In `docker-compose.yml`, uncomment the `cloudflared` service at the end of the file.
-2. In the Cloudflare Zero Trust dashboard, create a tunnel (Networks → Tunnels) and copy its token.
-3. Add a public hostname to the tunnel, for example `notes.example.com`, with service `http://minerva:3000`.
-4. In `.env`, set `CLOUDFLARE_TUNNEL_TOKEN`, `MINERVA_PUBLIC_URL=https://notes.example.com`, and `MINERVA_SECURE_COOKIE=1`.
-5. In `.env`, set `COMPOSE_PROFILES=tunnel`, then start with `docker compose up -d --build`.
+1. In the Cloudflare Zero Trust dashboard, create a tunnel (Networks → Tunnels) and copy its token.
+2. Add a public hostname to the tunnel, for example `notes.example.com`, with service `http://minerva:3000`.
+3. Copy `deploy/compose.yaml` and `deploy/.env.server.example` (as `.env`) to the server. In `.env`, set `CLOUDFLARE_TUNNEL_TOKEN`, `MINERVA_PUBLIC_URL=https://notes.example.com`, and `MINERVA_SECURE_COOKIE=1`.
+4. Uncomment the `cloudflared` service in `compose.yaml`, then run `docker compose up -d`.
 
-Cloudflare terminates HTTPS and can read the traffic it forwards. Do not combine this with the `https` profile.
+Cloudflare terminates HTTPS and can read the traffic it forwards.
 
 To use your own reverse proxy instead, forward to `127.0.0.1:3000` and keep `MINERVA_SECURE_COOKIE=1` when serving over HTTPS.
 
