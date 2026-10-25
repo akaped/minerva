@@ -776,7 +776,8 @@ function shell() {
   if (note) renderEditor();
   else if (view === "admin") renderAdmin().catch(error);
   else if (view === "databases") renderDatabaseList();
-  else if (view === "flashcards") renderFlashcards({ api, esc, data, error }).catch(error);
+  else if (view === "flashcards")
+    renderFlashcards({ api, esc, data, error }).catch(error);
   else if (view === "sharing") renderSharing().catch(error);
   else if (view === "journal") renderJournal();
   else if (view === "account") renderAccount().catch(error);
@@ -3184,12 +3185,29 @@ async function renderAccount() {
   const status = await api("account/2fa");
   $("#breadcrumb").textContent = "Account security";
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">YOUR ACCOUNT</div><div class="page-heading"><div><h1>Account security</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>Two-factor authentication</h2><p>Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? "On" : "Off"}</span></div><div class="security-body">${
+    `<section class="page"><div class="eyebrow">YOUR ACCOUNT</div><div class="page-heading"><div><h1>Account security</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>Password</h2><p>Changing it signs you out everywhere else.</p></div></div><button class="btn" id="change-password">Change password</button></section><section class="panel security-panel"><div class="panel-heading"><div><h2>Two-factor authentication</h2><p>Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? "On" : "Off"}</span></div><div class="security-body">${
       status.enabled
         ? `<p>On since ${esc(new Date(status.enabled_at * 1000).toLocaleDateString())}. ${status.recovery_remaining} of 10 recovery codes left.</p><div class="toolbar-group"><button class="btn" id="new-recovery">New recovery codes</button><button class="btn danger" id="disable-2fa">Turn off</button></div>`
         : `<p>Two-factor authentication protects your notes even if your password is stolen.</p><button class="btn primary" id="setup-2fa">Set up two-factor authentication</button>`
     }</div></section></section>`;
   action($("#setup-2fa"), "click", setupTwoFactor);
+  action($("#change-password"), "click", () =>
+    formDialog(
+      "Change your password",
+      "Use 12 characters or more. Your other devices will need to sign in again.",
+      '<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>Repeat new password<input name="repeat" type="password" autocomplete="new-password" required></label>',
+      async (v) => {
+        if (v.new_password !== v.repeat)
+          throw new Error("The new passwords do not match.");
+        await api("account/password", "POST", {
+          current_password: v.current_password,
+          new_password: v.new_password,
+        });
+        toast("Password changed");
+      },
+      "Change password",
+    ),
+  );
   action($("#new-recovery"), "click", () =>
     formDialog(
       "New recovery codes",
@@ -4082,7 +4100,7 @@ async function renderAdmin() {
   ]);
   $("#breadcrumb").textContent = "Server administration";
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">YOUR SERVER, YOUR RULES</div><div class="page-heading"><div><h1>People & permissions</h1><p class="subtitle">Give your team the right space to do their best work.</p></div><button class="btn primary" id="add-user">${icon("plus")}Add user</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>Server members</h2><p>${info.users.length} accounts on this server</p></div><span class="pill">Self-hosted</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NAME</th><th>ROLE</th><th>CREATE WORKSPACES</th><th>STATUS</th><th>2FA</th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? "Administrator" : "Member"}</td><td><input type="checkbox" aria-label="Allow ${esc(u.name)} to create workspaces" data-create-user="${u.id}" ${u.can_create_workspace ? "checked" : ""} ${u.admin ? "disabled" : ""}></td><td>${u.admin ? '<span class="pill">Active</span>' : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>Active</option><option value="disabled" ${u.disabled ? "selected" : ""}>Disabled</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">On</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">Reset</button>` : ""}` : '<span class="pill">Off</span>'}</td></tr>`).join("")}</tbody></table></div></section>${accessPanel(info)}${workspacesPanel(info)}</div>${storagePanel(storage)}</section>`;
+    `<section class="page"><div class="eyebrow">YOUR SERVER, YOUR RULES</div><div class="page-heading"><div><h1>People & permissions</h1><p class="subtitle">Give your team the right space to do their best work.</p></div><button class="btn primary" id="add-user">${icon("plus")}Add user</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>Server members</h2><p>${info.users.length} accounts on this server</p></div><span class="pill">Self-hosted</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NAME</th><th>ROLE</th><th>CREATE WORKSPACES</th><th>STATUS</th><th>2FA</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? "Administrator" : "Member"}</td><td><input type="checkbox" aria-label="Allow ${esc(u.name)} to create workspaces" data-create-user="${u.id}" ${u.can_create_workspace ? "checked" : ""} ${u.admin ? "disabled" : ""}></td><td>${u.admin ? '<span class="pill">Active</span>' : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>Active</option><option value="disabled" ${u.disabled ? "selected" : ""}>Disabled</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">On</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">Reset</button>` : ""}` : '<span class="pill">Off</span>'}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">Edit</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">Delete</button>` : "<small>You</small>"}</td></tr>`).join("")}</tbody></table></div></section>${accessPanel(info)}${workspacesPanel(info)}</div>${storagePanel(storage)}</section>`;
   action($("#add-user"), "click", () =>
     formDialog(
       "Welcome someone new",
@@ -4109,6 +4127,49 @@ async function renderAdmin() {
         el.checked = !el.checked;
         throw e;
       }
+    }),
+  );
+  $$("[data-edit-user]").forEach((el) =>
+    action(el, "click", () => {
+      const u = info.users.find((x) => x.id === el.dataset.editUser);
+      formDialog(
+        `Edit ${u.name}`,
+        "Changes sign this person out of their open sessions.",
+        `<label>Full name<input name="name" required maxlength="200" value="${esc(u.name)}" autocomplete="off"></label><label>Email<input type="email" name="email" required value="${esc(u.email)}" autocomplete="off"></label><label>New password <small class="hint">(leave empty to keep it)</small><input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password"></label><label class="checkbox-label"><input type="checkbox" name="admin" ${u.admin ? "checked" : ""}>Server administrator</label>`,
+        async (v) => {
+          const changes = {
+            name: v.name,
+            email: v.email,
+            admin: v.admin === "on",
+          };
+          if (v.password) changes.password = v.password;
+          await api("users/" + u.id, "PATCH", changes);
+          toast("Account updated");
+          await renderAdmin();
+        },
+        "Save",
+      );
+    }),
+  );
+  $$("[data-delete-user]").forEach((el) =>
+    action(el, "click", () => {
+      const u = info.users.find((x) => x.id === el.dataset.deleteUser);
+      formDialog(
+        `Delete ${u.name}?`,
+        `${u.email} can no longer sign in. Workspaces this person owns are kept and become yours; their AI conversations, flashcards, and access are deleted. To keep everything instead, set the account to Disabled. This cannot be undone.`,
+        "",
+        async () => {
+          const result = await api("users/" + u.id, "DELETE");
+          toast(
+            result.workspaces_transferred
+              ? `Account deleted · ${result.workspaces_transferred} workspace${result.workspaces_transferred === 1 ? "" : "s"} now yours`
+              : "Account deleted",
+          );
+          await refresh();
+          await renderAdmin();
+        },
+        "Delete account",
+      );
     }),
   );
   $$("[data-reset-2fa]").forEach((el) =>

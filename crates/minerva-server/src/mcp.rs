@@ -289,6 +289,10 @@ pub(super) async fn endpoint(
     }).await.map_err(|_|internal())?
 }
 
+/// Revokes every credential of a deleted account.
+pub(super) fn forget_user(d: &mut Data, user_id: &str) {
+    d.mcp_credentials.retain(|c| c.user_id != user_id);
+}
 #[cfg(test)]
 mod tests {
     use super::*;

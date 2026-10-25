@@ -4493,3 +4493,5 @@ dialog:has(#metadata-form) {
 .flashcards-page [hidden] { display:none; }
 .fc-picture { display:block; max-width:100%; max-height:360px; margin:8px auto; border-radius:6px; }
 .fc-card-row .fc-picture { max-height:120px; margin:6px 0; }
+.user-actions { white-space: nowrap; }
+.user-actions .btn + .btn { margin-left: 6px; }

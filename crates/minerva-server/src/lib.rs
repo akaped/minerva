@@ -514,6 +514,27 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
                 .map_err(|_| internal())?;
         }
         replication::log(&tx, &changes, upstream).map_err(|_| internal())?;
+        // A deleted account's private data goes with it.
+        let users: HashSet<&str> = d.users.iter().map(|a| a.user.id.as_str()).collect();
+        for gone in s
+            .data
+            .users
+            .iter()
+            .filter(|a| !users.contains(a.user.id.as_str()))
+        {
+            for table in [
+                "ai_chats",
+                "flashcard_decks",
+                "flashcard_media",
+                "plugin_jobs",
+            ] {
+                tx.execute(
+                    &format!("DELETE FROM {table} WHERE user_id=?1"),
+                    [&gone.user.id],
+                )
+                .map_err(|_| internal())?;
+            }
+        }
         tx.commit().map_err(|_| internal())?;
     }
     s.data = d;
@@ -1244,6 +1265,25 @@ fn dispatch(
             if let Some(b) = v["can_create_workspace"].as_bool() {
                 a.user.can_create_workspace = b;
             }
+            if v.get("name").is_some() {
+                a.user.name = field(&v, "name")?;
+            }
+            if let Some(b) = v["admin"].as_bool() {
+                a.user.admin = b;
+                a.user.can_create_workspace |= b;
+            }
+            if v.get("email").is_some() {
+                let email = field(&v, "email")?.to_lowercase();
+                if !email.contains('@') {
+                    return Err(bad("Invalid email"));
+                }
+                if email != a.user.email && d.users.iter().any(|o| o.user.email == email) {
+                    return Err(bad("Email already exists"));
+                }
+                let a = d.users.iter_mut().find(|a| a.user.id == *uid).unwrap();
+                a.user.email = email;
+            }
+            let a = d.users.iter_mut().find(|a| a.user.id == *uid).unwrap();
             if let Some(b) = v["disabled"].as_bool() {
                 a.user.disabled = b;
             }
@@ -1258,6 +1298,59 @@ fn dispatch(
             // Half-finished second-factor sign-ins do not survive account changes.
             twofactor::forget(d, uid);
             user
+        }
+        // Deletes an account. Workspaces it owns are kept and pass to the
+        // administrator; its private data (AI chats, flashcards, plugin jobs) is
+        // removed when the change is saved.
+        ("DELETE", ["users", uid]) => {
+            admin(&u)?;
+            if *uid == u.id {
+                return Err(bad("You cannot delete your own account"));
+            }
+            if !d.users.iter().any(|a| a.user.id == *uid) {
+                return Err(missing());
+            }
+            let mut transferred = 0;
+            for w in d.workspaces.iter_mut().filter(|w| w.owner_id == *uid) {
+                w.owner_id = u.id.clone();
+                transferred += 1;
+            }
+            d.users.retain(|a| a.user.id != *uid);
+            d.sessions.retain(|_, s| s.user_id != *uid);
+            d.grants.retain(|g| g.user_id != *uid);
+            d.workspace_grants.retain(|g| g.user_id != *uid);
+            d.shares.retain(|s| s.user_id.as_deref() != Some(*uid));
+            mcp::forget_user(d, uid);
+            twofactor::forget(d, uid);
+            json!({"ok":true,"workspaces_transferred":transferred})
+        }
+        // Changes your own password; other sessions end, this one stays.
+        ("POST", ["account", "password"]) => {
+            attempts.check(&format!("password:{}", u.id))?;
+            let a = d
+                .users
+                .iter_mut()
+                .find(|a| a.user.id == u.id)
+                .ok_or_else(missing)?;
+            let current = v["current_password"].as_str().unwrap_or("");
+            let valid = current.len() <= 256
+                && PasswordHash::new(&a.password_hash).is_ok_and(|h| {
+                    Argon2::default()
+                        .verify_password(current.as_bytes(), &h)
+                        .is_ok()
+                });
+            if !valid {
+                return Err(ApiError(
+                    StatusCode::FORBIDDEN,
+                    "Your current password is not correct".into(),
+                ));
+            }
+            a.password_hash = password_hash(v["new_password"].as_str().unwrap_or(""))?;
+            let keep = session_token(headers).map(hash_token);
+            d.sessions
+                .retain(|key, s| s.user_id != u.id || keep.as_ref() == Some(key));
+            twofactor::forget(d, &u.id);
+            json!({"ok":true})
         }
         ("PUT", ["workspace-access"]) => {
             admin(&u)?;
