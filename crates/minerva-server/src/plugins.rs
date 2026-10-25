@@ -40,7 +40,7 @@ impl Kind {
     }
     fn builtin(self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Kind::Themes => builtin!("themes": "colorful", "terminal"),
+            Kind::Themes => builtin!("themes": "colorful", "terminal", "classic-light"),
             Kind::PublicThemes => {
                 builtin!("public-notes-themes": "midnight", "paper", "sunrise", "terminal")
             }

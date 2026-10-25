@@ -34,6 +34,8 @@ Each file starts with a comment header of `key: value` lines:
 - `base` (app themes): `light` or `dark`. The theme is applied on top of Minerva's built-in light or dark theme, so it only needs to change what differs.
 - `scheme` (public themes): `light` or `dark` pins the page to that color scheme. Leave it out to follow the reader's system setting.
 
+The default **Light theme** uses cream paper, forest green, warm accents, and serif page titles, matching the project landing page. **Classic Light** (`themes/classic-light.css`) preserves the original white and indigo appearance. Select it from the app’s theme picker. Dark, Colorful, and Command line retain their existing appearance.
+
 ## Writing an app theme
 
 Scope every rule to `[data-variant="<id>"]`. While your theme is active, the page also carries `data-theme="light"` or `data-theme="dark"` from your `base`, so all of Minerva's rules for that mode keep working.

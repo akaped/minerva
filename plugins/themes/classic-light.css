@@ -1,0 +1,12 @@
+/*
+ * name: Classic Light
+ * base: light
+ * description: The original cool white and indigo Minerva theme.
+ *
+ * The original light styles remain the shared base in web/style.css.
+ * Selecting this variant excludes the new default paper/forest overlay,
+ * preserving the original appearance without duplicating layout rules.
+ */
+[data-variant="classic-light"] {
+  color-scheme: light;
+}

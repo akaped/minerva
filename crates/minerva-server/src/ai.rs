@@ -666,7 +666,7 @@ pub(super) async fn endpoint(
         // Keep bounded history, and recheck all of its source permissions on every request.
         for turn in chat.turns.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev() {messages.push(json!({"role":"user","content":turn.question}));messages.push(json!({"role":"assistant","content":turn.answer}));}
         messages.push(json!({"role":"user","content":question}));
-        let request = model_request(&client, &provider, &secret, &system, messages, true);
+        let request = model_request(&client, &provider, &secret, &system, messages, true, true);
         let response=match request.send().await {Ok(r) if r.status().is_success()=>r,Ok(r)=>{yield packet(json!({"type":"error","message":format!("Provider returned HTTP {}. Check the model, key, quota and endpoint.",r.status().as_u16())}));return},Err(_)=>{yield packet(json!({"type":"error","message":"Provider connection failed or timed out."}));return}};
         let mut upstream=response.bytes_stream(); let mut buffer=Vec::new(); let mut answer=String::new();let mut usage=json!({});let mut done=false;let mut failed=false;
         // Web pages the provider cited, listed under the answer: (title, url).
@@ -764,6 +764,7 @@ fn model_request(
     system: &str,
     mut messages: Vec<Value>,
     stream: bool,
+    search: bool,
 ) -> reqwest::RequestBuilder {
     let (suffix, mut payload) = match p.kind.as_str() {
         "openai" => (
@@ -782,12 +783,15 @@ fn model_request(
             )
         }
     };
-    // Web search is for chat (streamed); plugin completions never search.
-    if stream && p.web_search {
+    // Search is opt-in for chat and researched flashcards; workers never search.
+    if search && p.web_search {
         payload["tools"] = match p.kind.as_str() {
             "openai" => json!([{"type":"web_search"}]),
             _ => json!([{"type":"web_search_20250305","name":"web_search","max_uses":5}]),
         };
+    }
+    if search && p.web_search && p.kind == "openai" {
+        payload["include"] = json!(["web_search_call.action.sources"]);
     }
     payload["stream"] = json!(stream);
     if stream && suffix == "chat/completions" {
@@ -825,14 +829,45 @@ pub(super) fn completion(
         system,
         vec![json!({"role":"user","content":input})],
         false,
+        false,
     );
     Ok(Completion {
         request,
         kind: p.kind,
     })
 }
+pub(super) fn flashcard_completion(
+    s: &Store,
+    provider_id: &str,
+    system: &str,
+    input: &str,
+    research: bool,
+) -> Result<Completion, ApiError> {
+    let (p, encrypted) = provider(s, provider_id)?;
+    if research && (!p.web_search || !matches!(p.kind.as_str(), "openai" | "anthropic")) {
+        return Err(bad(
+            "Topic research requires an OpenAI or Anthropic profile with web search enabled.",
+        ));
+    }
+    let secret = s.ai.decrypt(&encrypted)?;
+    Ok(Completion {
+        request: model_request(
+            &s.ai.client,
+            &p,
+            &secret,
+            system,
+            vec![json!({"role":"user","content":input})],
+            false,
+            research,
+        ),
+        kind: p.kind,
+    })
+}
 impl Completion {
     pub(super) async fn run(self) -> Result<String, ApiError> {
+        self.run_with_sources().await.map(|(text, _)| text)
+    }
+    pub(super) async fn run_with_sources(self) -> Result<(String, Vec<String>), ApiError> {
         let response = self
             .request
             .send()
@@ -894,7 +929,41 @@ impl Completion {
         if answer.is_empty() || answer.len() > 64000 {
             return Err(bad("Provider returned empty or oversized output"));
         }
-        Ok(answer)
+        // Only actual tool results / provider citations qualify as researched sources.
+        fn sources(v: &Value, out: &mut Vec<String>) {
+            if let Some(o) = v.as_object() {
+                let kind = v["type"].as_str().unwrap_or("");
+                if matches!(
+                    kind,
+                    "url_citation" | "web_search_result" | "web_search_result_location"
+                ) {
+                    if let Some(url) = v["url"].as_str().filter(|url| web_link(url)) {
+                        if !out.iter().any(|x| x == url) && out.len() < 30 {
+                            out.push(url.to_string());
+                        }
+                    }
+                }
+                if kind == "web_search_call" {
+                    for source in v["action"]["sources"].as_array().into_iter().flatten() {
+                        if let Some(url) = source["url"].as_str().filter(|url| web_link(url)) {
+                            if !out.iter().any(|x| x == url) && out.len() < 30 {
+                                out.push(url.to_string());
+                            }
+                        }
+                    }
+                }
+                for value in o.values() {
+                    sources(value, out);
+                }
+            } else if let Some(a) = v.as_array() {
+                for value in a {
+                    sources(value, out);
+                }
+            }
+        }
+        let mut links = vec![];
+        sources(&v, &mut links);
+        Ok((answer, links))
     }
 }
 

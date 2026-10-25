@@ -2,7 +2,7 @@ name: Publish project page
 on:
   push:
     branches: [main, master]
-    paths: [index.html, '.github/workflows/pages.yml']
+    paths: [index.html, ".github/workflows/pages.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,7 +12,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Listing permissions here replaces the defaults: the checkout needs
+    # contents: read, or a private repository looks "not found".
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:

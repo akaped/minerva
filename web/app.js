@@ -1,4 +1,5 @@
 import "./pane-auth.js";
+import { renderFlashcards } from "./flashcards.js";
 import { pluginDialog } from "./plugin-commands.js";
 import { createYouTubeEmbeds } from "./youtube.js";
 import {
@@ -736,6 +737,7 @@ function shell() {
       ["templates", "template", "Templates"],
       ...(localMode ? [] : [["sharing", "users", "Sharing"]]),
       ["databases", "grid", "Databases"],
+      ["flashcards", "template", "Flashcards"],
       ["chat", "brain", "AI chat"],
     ]
       .map(
@@ -774,6 +776,7 @@ function shell() {
   if (note) renderEditor();
   else if (view === "admin") renderAdmin().catch(error);
   else if (view === "databases") renderDatabaseList();
+  else if (view === "flashcards") renderFlashcards({ api, esc, data, error }).catch(error);
   else if (view === "sharing") renderSharing().catch(error);
   else if (view === "journal") renderJournal();
   else if (view === "account") renderAccount().catch(error);

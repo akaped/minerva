@@ -3,6 +3,7 @@ mod attachments;
 mod collaboration;
 mod databases;
 mod export;
+mod flashcards;
 mod journal;
 mod mcp;
 mod plugins;
@@ -192,6 +193,7 @@ impl Store {
         replication::initialize(&db)?;
         let ai = ai::initialize(&db, path)?;
         server_plugins::initialize(&db)?;
+        flashcards::initialize(&db)?;
         let raw: Option<String> = db
             .query_row("SELECT payload FROM state WHERE id=1", [], |r| r.get(0))
             .optional()?;
@@ -654,6 +656,7 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/notes/{note_id}/attachments/{attachment_id}", any(attachments::endpoint).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/api/v1/attachments/{attachment_id}", get(attachments::endpoint))
         .route("/api/v1/attachments/{attachment_id}/preview", get(attachments::endpoint))
+        .route("/api/v1/flashcards/{*path}", any(flashcards::endpoint))
         .route("/api/v1/ai/{*path}", any(ai::endpoint))
         .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
         .route("/api/v1/{*path}", any(api))

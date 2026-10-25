@@ -8,14 +8,17 @@
 # With automatic HTTPS (Caddy + Let's Encrypt) for a public domain:
 #   docker compose --profile https up -d --build
 #
-# Or through a Cloudflare Tunnel (no open ports; set CLOUDFLARE_TUNNEL_TOKEN):
-#   docker compose --profile tunnel up -d --build
+# Or through a Cloudflare Tunnel (no open ports): uncomment the cloudflared
+# service at the end of this file first.
 name: minerva
 
 services:
   minerva:
     build: .
-    image: minerva-server:latest
+    # Built here by default. To use the published image instead, set
+    # MINERVA_IMAGE=ghcr.io/akaped/minerva:latest in .env and run
+    # docker compose pull && docker compose up -d
+    image: ${MINERVA_IMAGE:-minerva-server:latest}
     restart: unless-stopped
     init: true
     environment:
@@ -69,25 +72,29 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
-  # Cloudflare Tunnel: an outbound-only connection to Cloudflare, which serves
-  # HTTPS for your hostname. In the Zero Trust dashboard, create a tunnel, copy
-  # its token into .env, and add a public hostname with service http://minerva:3000.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    profiles: ["tunnel"]
-    restart: unless-stopped
-    depends_on:
-      minerva:
-        condition: service_healthy
-    # The token comes from the environment, so it never shows in process lists.
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+  # Cloudflare Tunnel (optional): an outbound-only connection to Cloudflare,
+  # which serves HTTPS for your hostname, with no open ports. To use it,
+  # uncomment the service below, set CLOUDFLARE_TUNNEL_TOKEN and
+  # COMPOSE_PROFILES=tunnel in .env, then run docker compose up -d.
+  # In the Zero Trust dashboard, create a tunnel and give it a public hostname
+  # with service http://minerva:3000.
+  #
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   profiles: ["tunnel"]
+  #   restart: unless-stopped
+  #   depends_on:
+  #     minerva:
+  #       condition: service_healthy
+  #   # The token comes from the environment, so it never shows in process lists.
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+  #   read_only: true
+  #   cap_drop:
+  #     - ALL
+  #   security_opt:
+  #     - no-new-privileges:true
 
 volumes:
   minerva-data:

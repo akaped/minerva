@@ -65,9 +65,9 @@ async fn themes_load_from_builtins_and_the_plugin_folder() {
     let (status, index) = get(&router, "/plugins/index.json").await;
     assert_eq!(status, StatusCode::OK);
     let index: Value = serde_json::from_str(&index).unwrap();
-    assert_eq!(ids(&index["themes"]), ["colorful", "terminal"]);
-    assert_eq!(index["themes"][1]["name"], "Command line");
-    assert_eq!(index["themes"][1]["base"], "dark");
+    assert_eq!(ids(&index["themes"]), ["classic-light", "colorful", "terminal"]);
+    assert_eq!(index["themes"][2]["name"], "Command line");
+    assert_eq!(index["themes"][2]["base"], "dark");
     assert_eq!(
         ids(&index["public_themes"]),
         ["midnight", "paper", "sunrise", "terminal"]
@@ -101,7 +101,7 @@ async fn themes_load_from_builtins_and_the_plugin_folder() {
     std::fs::write(dir.join("themes/Bad Name.css"), "x").unwrap();
     let (_, index) = get(&router, "/plugins/index.json").await;
     let index: Value = serde_json::from_str(&index).unwrap();
-    assert_eq!(ids(&index["themes"]), ["colorful", "terminal", "ocean"]);
+    assert_eq!(ids(&index["themes"]), ["classic-light", "colorful", "terminal", "ocean"]);
     assert_eq!(
         index["public_themes"]
             .as_array()

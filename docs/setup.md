@@ -38,7 +38,7 @@ cp .env.example .env            # set administrator credentials and your URL
 docker compose up -d --build    # http://127.0.0.1:3000 (bound to localhost only)
 ```
 
-`.env.example` lists every setting with production values; edit the ones marked CHANGE. `COMPOSE_PROFILES` in `.env` chooses how Minerva is reached, so `docker compose up -d` alone starts the right services: `https` (Caddy), `tunnel` (Cloudflare Tunnel), or empty (Minerva only, for your own reverse proxy).
+`.env.example` lists every setting with production values; edit the ones marked CHANGE. `COMPOSE_PROFILES` in `.env` chooses how Minerva is reached, so `docker compose up -d` alone starts the right services: `https` (Caddy), `tunnel` (Cloudflare Tunnel, after uncommenting its service), or empty (Minerva only, for your own reverse proxy).
 
 For a local HTTP trial, set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_URL=http://localhost:3000`, and `MINERVA_SECURE_COOKIE=0` in `.env`.
 
@@ -50,10 +50,11 @@ For a public domain with automatic HTTPS (Caddy and Let's Encrypt):
 
 To publish through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) instead, with no open ports and no public IP address:
 
-1. In the Cloudflare Zero Trust dashboard, create a tunnel (Networks → Tunnels) and copy its token.
-2. Add a public hostname to the tunnel, for example `notes.example.com`, with service `http://minerva:3000`.
-3. In `.env`, set `CLOUDFLARE_TUNNEL_TOKEN`, `MINERVA_PUBLIC_URL=https://notes.example.com`, and `MINERVA_SECURE_COOKIE=1`.
-4. Start with `docker compose --profile tunnel up -d --build`.
+1. In `docker-compose.yml`, uncomment the `cloudflared` service at the end of the file.
+2. In the Cloudflare Zero Trust dashboard, create a tunnel (Networks → Tunnels) and copy its token.
+3. Add a public hostname to the tunnel, for example `notes.example.com`, with service `http://minerva:3000`.
+4. In `.env`, set `CLOUDFLARE_TUNNEL_TOKEN`, `MINERVA_PUBLIC_URL=https://notes.example.com`, and `MINERVA_SECURE_COOKIE=1`.
+5. In `.env`, set `COMPOSE_PROFILES=tunnel`, then start with `docker compose up -d --build`.
 
 Cloudflare terminates HTTPS and can read the traffic it forwards. Do not combine this with the `https` profile.
 
@@ -61,7 +62,9 @@ To use your own reverse proxy instead, forward to `127.0.0.1:3000` and keep `MIN
 
 **Data.** The database and its `.ai-key` file live in the `minerva_minerva-data` volume. To back up, stop the container and copy both, for example `docker compose stop minerva && docker run --rm -v minerva_minerva-data:/data -v "$PWD":/backup debian:bookworm-slim tar czf /backup/minerva-backup.tgz -C /data . && docker compose start minerva`.
 
-**Upgrades.** Run `git pull && docker compose up -d --build`. The administrator variables only matter on the first start; you can remove the password from `.env` afterwards.
+**Prebuilt image.** Every version tag and every push to `main` publishes the server image to `ghcr.io/akaped/minerva` (`:latest` is the newest release, `:main` the newest commit). Set `MINERVA_IMAGE=ghcr.io/akaped/minerva:latest` in `.env` and run `docker compose pull && docker compose up -d` to skip building.
+
+**Upgrades.** Run `git pull && docker compose up -d --build`, or `docker compose pull && docker compose up -d` with the prebuilt image. The administrator variables only matter on the first start; you can remove the password from `.env` afterwards.
 
 ## Desktop client
 
@@ -135,18 +138,18 @@ Import preserves each Markdown source line as a block. Multiline structures such
 
 ## Configuration
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MINERVA_BIND` | `127.0.0.1:3000` | Listen address |
-| `MINERVA_DATABASE` | `data/minerva.db` | SQLite file |
-| `MINERVA_ADMIN_EMAIL` | `admin@minerva.local` | Initial admin only |
-| `MINERVA_ADMIN_PASSWORD` | none | Required on initial setup, minimum 12 characters |
-| `MINERVA_SECURE_COOKIE` | unset | Set to `1` behind HTTPS |
-| `MINERVA_PUBLIC_URL` | HTTP listen address | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com` |
-| `MINERVA_SITE_NAME` | `Published notes` | Title of the published pages index and feed |
-| `MINERVA_TOTP_ISSUER` | `Minerva` | Name shown in authenticator apps |
-| `MINERVA_PLUGINS` | `plugins` | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
-| `MINERVA_PUBLIC_THEME` | none | Public theme for pages under `/p/`, e.g. `paper` |
+| Variable                 | Default               | Purpose                                                                                                       |
+| ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `MINERVA_BIND`           | `127.0.0.1:3000`      | Listen address                                                                                                |
+| `MINERVA_DATABASE`       | `data/minerva.db`     | SQLite file                                                                                                   |
+| `MINERVA_ADMIN_EMAIL`    | `admin@minerva.local` | Initial admin only                                                                                            |
+| `MINERVA_ADMIN_PASSWORD` | none                  | Required on initial setup, minimum 12 characters                                                              |
+| `MINERVA_SECURE_COOKIE`  | unset                 | Set to `1` behind HTTPS                                                                                       |
+| `MINERVA_PUBLIC_URL`     | HTTP listen address   | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com`     |
+| `MINERVA_SITE_NAME`      | `Published notes`     | Title of the published pages index and feed                                                                   |
+| `MINERVA_TOTP_ISSUER`    | `Minerva`             | Name shown in authenticator apps                                                                              |
+| `MINERVA_PLUGINS`        | `plugins`             | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
+| `MINERVA_PUBLIC_THEME`   | none                  | Public theme for pages under `/p/`, e.g. `paper`                                                              |
 
 Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
 

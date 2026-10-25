@@ -4221,3 +4221,273 @@ dialog:has(#metadata-form) {
     opacity: 1;
   }
 }
+
+/* Default light: the landing page’s paper, forest and warm accent palette.
+ * Plugin variants retain the original base, including Classic Light. */
+:root:not([data-theme="dark"]):not([data-variant]) {
+  --surface: #fffef9;
+  --surface-alt: #f4f3ed;
+  --ink: #243b31;
+  --subtle: #626d62;
+  --muted: #626d62;
+  --border: #d5dbce;
+  --line: #d5dbce;
+  --accent: #2a493b;
+  --soft: #e5ecb1;
+  --row-hover: #edf0e7;
+  --row-action-hover: #dfe6d5;
+  --drop: #e5ecb1;
+  color: var(--ink);
+  background: var(--surface-alt);
+}
+:root:not([data-theme="dark"]):not([data-variant]) body,
+:root:not([data-theme="dark"]):not([data-variant]) .main,
+:root:not([data-theme="dark"]):not([data-variant]) .topbar {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .sidebar,
+:root:not([data-theme="dark"]):not([data-variant]) .login-art {
+  background: #edf0e7;
+  border-color: var(--line);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .document,
+:root:not([data-theme="dark"]):not([data-variant]) .workspace-button,
+:root:not([data-theme="dark"]):not([data-variant]) .workspace-menu,
+:root:not([data-theme="dark"]):not([data-variant]) .folder-card,
+:root:not([data-theme="dark"]):not([data-variant]) .note-card,
+:root:not([data-theme="dark"]):not([data-variant]) .btn,
+:root:not([data-theme="dark"]):not([data-variant]) dialog,
+:root:not([data-theme="dark"]):not([data-variant]) input,
+:root:not([data-theme="dark"]):not([data-variant]) select,
+:root:not([data-theme="dark"]):not([data-variant]) textarea,
+:root:not([data-theme="dark"]):not([data-variant]) .block-controls {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .editor-toolbar {
+  background: #fffef9f5;
+  border-color: var(--line);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .page-heading h1,
+:root:not([data-theme="dark"]):not([data-variant]) .welcome-copy h2,
+:root:not([data-theme="dark"]):not([data-variant]) .login-art h1,
+:root:not([data-theme="dark"]):not([data-variant]) .login-form h2,
+:root:not([data-theme="dark"]):not([data-variant]) .doc-title {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .doc-title {
+  background: transparent;
+  border: 0;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .page-heading h1 {
+  font-size: 34px;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .btn,
+:root:not([data-theme="dark"]):not([data-variant]) .workspace-button,
+:root:not([data-theme="dark"]):not([data-variant]) input,
+:root:not([data-theme="dark"]):not([data-variant]) select,
+:root:not([data-theme="dark"]):not([data-variant]) textarea {
+  border-radius: 5px;
+}
+:root:not([data-theme="dark"]):not([data-variant]) button:hover,
+:root:not([data-theme="dark"]):not([data-variant]) .workspace-button:hover,
+:root:not([data-theme="dark"]):not([data-variant])
+  .workspace-button[aria-expanded="true"],
+:root:not([data-theme="dark"]):not([data-variant]) .block:hover,
+:root:not([data-theme="dark"]):not([data-variant]) .record-card:hover {
+  background: #edf0e7;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .btn.primary,
+:root:not([data-theme="dark"]):not([data-variant])
+  .db-embed-actions
+  button.primary {
+  background: #2a493b;
+  border-color: #2a493b;
+  color: #fffef9;
+  box-shadow: none;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .btn.primary:hover,
+:root:not([data-theme="dark"]):not([data-variant])
+  .db-embed-actions
+  button.primary:hover {
+  background: #3b5d4b;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .nav button,
+:root:not([data-theme="dark"]):not([data-variant]) .folder-button,
+:root:not([data-theme="dark"]):not([data-variant]) label,
+:root:not([data-theme="dark"]):not([data-variant]) .crumb strong {
+  color: var(--ink);
+}
+:root:not([data-theme="dark"]):not([data-variant]) .nav button.active,
+:root:not([data-theme="dark"]):not([data-variant]) .folder-button.active,
+:root:not([data-theme="dark"]):not([data-variant]) .tree-row.active,
+:root:not([data-theme="dark"]):not([data-variant]) .toolbar-group .selected,
+:root:not([data-theme="dark"]):not([data-variant]) .view-toggle .active {
+  background: #dfe6d5;
+  color: #243b31;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .welcome-banner {
+  background: #e2e7d8;
+  border-color: #d5dbce;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .subtitle,
+:root:not([data-theme="dark"]):not([data-variant]) .note-meta,
+:root:not([data-theme="dark"]):not([data-variant]) .folder-card small,
+:root:not([data-theme="dark"]):not([data-variant]) .doc-meta,
+:root:not([data-theme="dark"]):not([data-variant]) .save-status,
+:root:not([data-theme="dark"]):not([data-variant]) .panel p,
+:root:not([data-theme="dark"]):not([data-variant]) dialog p,
+:root:not([data-theme="dark"]):not([data-variant]) .login-form p,
+:root:not([data-theme="dark"]):not([data-variant]) .welcome-copy p,
+:root:not([data-theme="dark"]):not([data-variant]) .welcome-copy .eyebrow,
+:root:not([data-theme="dark"]):not([data-variant]) .section-label,
+:root:not([data-theme="dark"]):not([data-variant]) .server-status,
+:root:not([data-theme="dark"]):not([data-variant]) .note-preview {
+  color: #626d62;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .note-preview {
+  background: #edf0e7;
+  border-color: var(--line);
+}
+:root:not([data-theme="dark"]):not([data-variant])
+  .note-card:nth-child(3n + 2)
+  .note-preview {
+  background: #f0f2df;
+}
+:root:not([data-theme="dark"]):not([data-variant])
+  .note-card:nth-child(3n)
+  .note-preview {
+  background: #f5e9df;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .preview-lines i,
+:root:not([data-theme="dark"]):not([data-variant]) .art-sheet i {
+  background: #d5dbce;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .art-sheet {
+  background: #fffef9;
+  border-color: #d5dbce;
+  box-shadow: 0 12px 30px #263c3010;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .art-sticky {
+  background: #e5ecb1;
+  color: #243b31;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .art-star,
+:root:not([data-theme="dark"]):not([data-variant]) .preview-symbol {
+  color: #6c7b4c;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .folder-icon,
+:root:not([data-theme="dark"]):not([data-variant]) .square,
+:root:not([data-theme="dark"]):not([data-variant]) .badge,
+:root:not([data-theme="dark"]):not([data-variant]) .shortcut,
+:root:not([data-theme="dark"]):not([data-variant]) .tag {
+  background: #edf0e7;
+  border-color: #d5dbce;
+  color: #2a493b;
+}
+:root:not([data-theme="dark"]):not([data-variant])
+  .folder-card:nth-child(3n + 2)
+  .folder-icon {
+  background: #e5ecb1;
+  color: #52633c;
+}
+:root:not([data-theme="dark"]):not([data-variant])
+  .folder-card:nth-child(3n)
+  .folder-icon,
+:root:not([data-theme="dark"]):not([data-variant]) .avatar {
+  background: #f5e3d5;
+  color: #934729;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .folder-row .tree-icon,
+:root:not([data-theme="dark"]):not([data-variant]) .section-toggle {
+  color: #6c7b4c;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .text-link,
+:root:not([data-theme="dark"]):not([data-variant]) .tabs .active {
+  color: #2a493b;
+  border-color: #2a493b;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .block blockquote {
+  background: #f0f2df;
+  border-color: #a1ae69;
+  color: #3e503c;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .block pre,
+:root:not([data-theme="dark"]):not([data-variant]) .block code {
+  background: #edf0e7;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .block pre code {
+  background: transparent;
+}
+:root:not([data-theme="dark"]):not([data-variant]) mark {
+  background: #e5ecb1;
+  color: #243b31;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .pill,
+:root:not([data-theme="dark"]):not([data-variant]) .peer {
+  background: #e2e7d8;
+  color: #2a493b;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .admin-table th,
+:root:not([data-theme="dark"]):not([data-variant]) .db-embed-head {
+  background: #edf0e7;
+}
+:root:not([data-theme="dark"]):not([data-variant]) input::placeholder,
+:root:not([data-theme="dark"]):not([data-variant]) textarea::placeholder {
+  color: #737d70;
+}
+:root:not([data-theme="dark"]):not([data-variant]) button:focus-visible,
+:root:not([data-theme="dark"]):not([data-variant]) a:focus-visible,
+:root:not([data-theme="dark"]):not([data-variant]) input:focus,
+:root:not([data-theme="dark"]):not([data-variant]) textarea:focus,
+:root:not([data-theme="dark"]):not([data-variant]) select:focus {
+  outline: 2px solid #c4623e;
+  outline-offset: 3px;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .form-error,
+:root:not([data-theme="dark"]):not([data-variant]) .btn.danger {
+  color: #a03d37;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .note-tab.active {
+  background: #fffef9;
+  border-top-color: #2a493b;
+}
+:root:not([data-theme="dark"]):not([data-variant]) .art-sheet::before {
+  color: #6c7b4c;
+}
+
+/* Flashcards: shared theme tokens keep study sessions calm in every theme. */
+.flashcards-page { max-width: 1120px; }
+.fc-intro, .fc-deck-heading, .fc-review-meta { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; align-items:center; margin-bottom:24px; }
+.fc-actions, .fc-ratings { display:flex; gap:10px; flex-wrap:wrap; }
+.fc-decks { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px; }
+.fc-deck, .fc-card-row, .fc-study, .fc-draft { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:24px; }
+.fc-deck { text-align:left; min-height:160px; }
+.fc-deck strong { font-size:21px; }
+.fc-deck p, .fc-card-row p { white-space:pre-wrap; overflow-wrap:anywhere; }
+.fc-deck span, .fc-card-row small { color:var(--subtle); }
+.fc-form { max-width:700px; display:grid; gap:18px; }
+.fc-form label, .fc-draft label { display:grid; gap:8px; }
+.fc-form [hidden] { display:none; }
+.fc-form textarea, .fc-draft textarea { width:100%; resize:vertical; }
+.fc-form .fc-actions { margin-top:12px; }
+.fc-card-list { display:grid; gap:12px; margin-top:24px; }
+.fc-card-row { display:flex; justify-content:space-between; align-items:start; gap:20px; }
+.fc-card-row>div { min-width:0; }
+.fc-card-row strong { overflow-wrap:anywhere; }
+.fc-study { max-width:800px; margin:24px auto; padding:clamp(24px,5vw,56px); text-align:center; }
+.fc-face { white-space:pre-wrap; overflow-wrap:anywhere; font-size:24px; line-height:1.6; margin:24px 0; }
+.fc-study hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+.fc-ratings { justify-content:center; }
+.fc-ratings button { display:flex; flex-direction:column; min-width:100px; }
+.fc-ratings small { font-size:11px; }
+.fc-sources { margin-top:12px; font-size:12px; overflow-wrap:anywhere; }
+.fc-draft { display:grid; gap:16px; margin:20px 0; }
+.fc-draft legend { padding:0 8px; }
+.fc-draft legend label { display:flex; align-items:center; }
+.flashcards-page [hidden] { display:none; }

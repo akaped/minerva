@@ -57,6 +57,10 @@ The optional **Superhuman Learning** plugin goes further:
 
 You stay in charge: preview the result, edit it, and keep only what’s useful. [Learning plugin setup →](plugins/server/superhuman-learning/README.md)
 
+### Remember what you learn
+
+Create personal flashcard decks and test yourself with spaced-repetition reviews. Write your own cards, or ask AI to draft them from a note, a folder, or web research on a topic. Check the sources, edit the questions and answers, and save only the cards you want. [Flashcards guide →](docs/flashcards.md)
+
 ### Think together
 
 Edit the same note at the same time and see who else is there. Decide who can view or edit each workspace, folder, or note. Share a link when someone needs a quick way in, and switch it off when you’re done.
@@ -107,7 +111,7 @@ cp .env.example .env
 
 - your email and a password of at least 12 characters, for the first administrator account;
 - the address people will use, such as `https://notes.example.com`;
-- how Minerva reaches the internet: `https` gets a free certificate automatically, and `tunnel` uses Cloudflare when you can’t open ports. The file explains both.
+- how Minerva reaches the internet: `https` gets a free certificate automatically, and `tunnel` uses Cloudflare when you can’t open ports (uncomment the `cloudflared` service in `docker-compose.yml` for it). The file explains both.
 
 Just trying it on your own computer? Set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_URL=http://localhost:3000`, and `MINERVA_SECURE_COOKIE=0`.
 
@@ -117,7 +121,7 @@ Just trying it on your own computer? Set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_UR
 docker compose up -d --build
 ```
 
-The first start takes a few minutes. Then open your address (or **http://localhost:3000**) and sign in.
+The first start builds Minerva and takes a few minutes; to skip that, set `MINERVA_IMAGE=ghcr.io/akaped/minerva:latest` in `.env` and run `docker compose pull && docker compose up -d` instead. Then open your address (or **http://localhost:3000**) and sign in.
 
 **4. Finishing touches.** Remove the password from `.env`: it was only needed once. Add accounts for other people under _Server administration_, and set up an AI provider under _AI providers_ if you want one.
 
@@ -125,7 +129,12 @@ To update later: `git pull`, then `docker compose up -d --build`. Back up the `m
 
 ### The desktop app
 
-Ready-made downloads are on the way. Until then, the app is built from its source code, which takes a few commands:
+Download it from the [Releases page](https://github.com/akaped/minerva/releases):
+
+- **Windows:** unzip `minerva-desktop-…-windows-x86_64.zip` and run `Minerva.exe`. Windows 10 and 11 include everything it needs.
+- **Linux:** unpack `minerva-desktop-…-linux-x86_64.tar.gz` and run `./install.sh`, which adds Minerva to your applications. It needs WebKitGTK 4.1, already installed on most desktops.
+
+Or build it from its source code:
 
 1. Install [Rust](https://www.rust-lang.org/tools/install).
 2. On Linux, also install the WebKitGTK 4.1 and GTK 3 development packages (Fedora: `webkit2gtk4.1-devel gtk3-devel`; Debian or Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev`).
@@ -154,7 +163,7 @@ Small, focused contributions are welcome; for larger changes, open an issue firs
 ## What’s still growing
 
 - **In the browser, Minerva needs a connection.** For offline work, use the desktop app.
-- **Ready-made desktop downloads** and installers are not available yet.
+- **Desktop installers** (MSI, Flatpak) and automatic updates are not available yet; the app comes as a ZIP or tar archive.
 - **Large teams and very large collections** need more performance work.
 - **AI features** depend on the provider you configure, and their answers still need your judgment.
 - **Not yet available:** flashcards and spaced repetition, end-to-end encryption, single sign-on, email invitations, and password reset by email.
