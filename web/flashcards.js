@@ -62,12 +62,62 @@ export async function renderFlashcards({ api, esc, data, error }) {
     const result = await api("flashcards/decks");
     if (!live()) return;
     shell(
-      `<div class="fc-intro"><p>Your decks and study history are private to your account on this server.</p>${button("Create a deck", "fc-create", true)}</div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong><p>${esc(d.description)}</p><span>${d.count} cards · <b>${d.due} due</b></span></button>`).join("")}</div>${!result.decks.length ? '<div class="empty"><h3>Make your first deck.</h3>Add your own questions, or turn a note, folder, or researched topic into cards with AI.</div>' : ""}`,
+      `<div class="fc-intro"><p>Your decks and study history are private to your account on this server.</p><div class="fc-actions">${button("Create a deck", "fc-create", true)}${button("Import from Anki", "fc-import")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong><p>${esc(d.description)}</p><span>${d.count} cards · <b>${d.due} due</b></span></button>`).join("")}</div>${!result.decks.length ? '<div class="empty"><h3>Make your first deck.</h3>Add your own questions, or turn a note, folder, or researched topic into cards with AI.</div>' : ""}`,
     );
     bind("fc-create", () => deckForm());
+    bind("fc-import", importForm);
     root
       .querySelectorAll("[data-deck]")
       .forEach((el) => (el.onclick = () => load(el.dataset.deck).catch(error)));
+  }
+  // Anki packages (.apkg, .colpkg) or plain-text exports, read by the server.
+  function importForm() {
+    shell(
+      `<form id="fc-import-form" class="fc-form"><h2>Import from Anki</h2><p>In Anki, choose <b>File → Export</b>, then <b>Anki Deck Package (.apkg)</b>, with media included to keep pictures. A <b>Notes in Plain Text</b> export or a CSV file with question and answer columns works too.</p><p>Looking for ready-made decks? Browse thousands of free shared decks on <a href="https://ankiweb.net/shared/decks" target="_blank" rel="noopener noreferrer">AnkiWeb ↗</a>, download one, and import the .apkg file here.</p><label>File<input type="file" name="file" accept=".apkg,.colpkg,.txt,.csv,.tsv" required></label><label class="checkbox-label"><input type="checkbox" name="progress" checked> Keep my review progress from Anki</label><p class="hint">Each Anki deck becomes a deck here. Cards keep their text, pictures, and links; other formatting becomes plain text, and sounds show as [audio]. Export with media to keep the pictures.</p><div class="fc-actions"><button class="btn primary" id="fc-import-button">Import</button>${button("Cancel", "fc-cancel")}</div><p role="status" id="fc-importing"></p></form>`,
+    );
+    bind("fc-cancel", list);
+    bind(
+      "fc-import-form",
+      async (e) => {
+        const form = e.target;
+        const file = form.file.files[0];
+        if (!file) throw new Error("Choose a file to import.");
+        if (file.size > 100 * 1024 * 1024)
+          throw new Error(
+            "This file is larger than 100 MB. Export it again from Anki without media.",
+          );
+        const status = root.querySelector("#fc-importing");
+        root.querySelector("#fc-import-button").disabled = true;
+        status.textContent = "Importing… Large decks can take a moment.";
+        try {
+          const query = new URLSearchParams({
+            name: file.name,
+            progress: form.progress.checked ? "1" : "0",
+          });
+          const response = await fetch(`/api/v1/flashcards/import?${query}`, {
+            method: "POST",
+            headers: { "X-Minerva-Client": "1" },
+            body: file,
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok)
+            throw new Error(result.error || "The file could not be imported.");
+          if (!live()) return;
+          await list();
+          const skipped = result.skipped
+            ? ` ${result.skipped} card${result.skipped === 1 ? "" : "s"} could not be read and ${result.skipped === 1 ? "was" : "were"} skipped.`
+            : "";
+          root.querySelector("#fc-status").textContent =
+            `Imported ${result.cards} card${result.cards === 1 ? "" : "s"} into ${result.decks.length} deck${result.decks.length === 1 ? "" : "s"}: ${result.decks.map((d) => d.name).join(", ")}.${skipped} ${(result.warnings || []).join(" ")}`;
+        } finally {
+          if (form.isConnected) {
+            root.querySelector("#fc-import-button").disabled = false;
+            status.textContent = "";
+          }
+        }
+      },
+      "submit",
+    );
   }
   function deckForm() {
     shell(
@@ -101,7 +151,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
       (c) => !c.suspended && c.due <= dueNow(),
     ).length;
     shell(
-      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p></div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">Reveal the answer before rating your recall. Cards return when their next review is due.</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${esc(c.front)}</strong><p>${esc(c.back)}</p><small>${c.suspended ? "Paused" : c.due <= dueNow() ? "Ready to study" : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">Edit</button></article>`).join("")}</div>${!deck.cards.length ? '<div class="empty">This deck is ready for its first question.</div>' : ""}`,
+      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p></div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">Reveal the answer before rating your recall. Cards return when their next review is due.</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${c.suspended ? "Paused" : c.due <= dueNow() ? "Ready to study" : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">Edit</button></article>`).join("")}</div>${!deck.cards.length ? '<div class="empty">This deck is ready for its first question.</div>' : ""}`,
     );
     root.querySelector("#fc-study").disabled = !due;
     bind("fc-study", () => {
@@ -197,7 +247,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     }
     const c = deck.cards.find((c) => c.id === queue[0]);
     shell(
-      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">QUESTION</div><h2 class="fc-face">${esc(c.front)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">ANSWER</div><div class="fc-face">${esc(c.back)}</div><div class="fc-sources">${sources(c.sources)}</div><p>How well did you remember?</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.interval, r)}</small></button>`).join("")}</div></div></article>`,
+      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">QUESTION</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">ANSWER</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>How well did you remember?</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.interval, r)}</small></button>`).join("")}</div></div></article>`,
     );
     bind("fc-back", () => load(deck.id));
     bind("fc-reveal", () => {
@@ -324,6 +374,26 @@ export async function renderFlashcards({ api, esc, data, error }) {
     );
   }
   await list();
+}
+/**
+ * Card text with pictures and links: the text is escaped first, then only
+ * `![](media:<id>)` (an imported picture), `![](https://…)`, and
+ * `[label](https://…)` become elements.
+ */
+export function rich(text, esc) {
+  return esc(text)
+    .replace(
+      /!\[\]\(media:([0-9a-f-]{36})\)/g,
+      '<img class="fc-picture" src="/api/v1/flashcards/media/$1" alt="" loading="lazy">',
+    )
+    .replace(
+      /!\[\]\((https?:\/\/[^\s()<>]+)\)/g,
+      '<img class="fc-picture" src="$1" alt="" loading="lazy" referrerpolicy="no-referrer">',
+    )
+    .replace(
+      /\[([^\]\n]+)\]\((https?:\/\/[^\s()<>]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    );
 }
 export function intervalLabel(old, rating) {
   const day = 86400;

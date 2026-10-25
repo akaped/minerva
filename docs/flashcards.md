@@ -1,12 +1,27 @@
 # Flashcards
 
-Open **Flashcards** in the sidebar. Make a deck for a subject, book, course, or project. Add a clear question on the front and a concise answer on the back. Cards use plain text, so pasted HTML and Markdown are shown literally.
+Open **Flashcards** in the sidebar. Make a deck for a subject, book, course, or project. Add a clear question on the front and a concise answer on the back. Cards are plain text, with two additions: `[label](https://…)` becomes a link and `![](https://…)` a picture. Other HTML and Markdown are shown literally.
 
 ## Make your own cards
 
 Choose **Create a deck**, give it a name, then **Add card**. You can edit both sides, add source links, pause a card, or delete it. Decks and progress are private to your account on this Minerva instance. They are not shared with a workspace or synchronized through workspace replication. Personal desktop decks are stored locally; manual study works offline there.
 
-**Export JSON** downloads the deck, its cards, sources, and scheduling state. This release does not import Anki packages or JSON exports. Back up the Minerva database to preserve all decks.
+**Export JSON** downloads the deck, its cards, sources, and scheduling state. JSON exports cannot be imported back yet. Back up the Minerva database to preserve all decks.
+
+## Import from Anki
+
+On the decks page, choose **Import from Anki** and pick a file:
+
+- **An Anki package (`.apkg`)**: in Anki, choose File → Export → _Anki Deck Package_. Packages from every current Anki version work, including the compressed format of Anki 2.1.50 and later. A collection backup (`.colpkg`) works too.
+- **A text file**: Anki's _Notes in Plain Text_ export, or any tab-, comma-, or semicolon-separated file with the question in the first column and the answer in the second. Anki's `#separator`, `#html`, and `#deck column` headers are understood.
+
+Each Anki deck becomes a deck here; subdecks keep their path, such as _Spanish › Verbs_. Decks with more than 2,000 cards are split into parts. Every card is built from its note type's templates, so reversed cards, optional fields, and cloze deletions come out as in Anki: on a cloze question, the hidden part shows as `[...]` or its hint. Parts of a template that Anki hides with styles or scripts, such as a hidden copy of the cloze text or a "Show all" button, are left out.
+
+Pictures and links come along: export **with media** to keep the pictures (PNG, JPEG, GIF, or WebP, up to 10 MB each and 100 MB per import). Each deck stores its own copy, visible only to you, and deleting the deck deletes them. Other formatting becomes plain text, and sounds show as `[audio]`.
+
+With **Keep my review progress** (the default), cards keep their intervals, due dates, review and lapse counts, and paused state, and continue with Minerva's scheduler. Otherwise every card starts as new. Tags and Anki's own scheduling settings are not imported.
+
+Files can be up to 100 MB and 20,000 cards.
 
 ## Create with AI
 
@@ -26,16 +41,16 @@ The implementation uses the provider's documented [OpenAI web search sources](ht
 
 Choose **Study due cards**. Try to answer before choosing **Reveal answer**, then rate your recall:
 
-| Rating | Next interval |
-| --- | --- |
-| Again | 10 minutes |
-| Hard | 1 day initially; then the previous interval × 1.2 |
-| Good | 1 day initially; then the previous interval × 2.5 |
-| Easy | 4 days initially; then the previous interval × 3.5 |
+| Rating | Next interval                                      |
+| ------ | -------------------------------------------------- |
+| Again  | 10 minutes                                         |
+| Hard   | 1 day initially; then the previous interval × 1.2  |
+| Good   | 1 day initially; then the previous interval × 2.5  |
+| Easy   | 4 days initially; then the previous interval × 3.5 |
 
 Intervals are capped at 365 days. A card repeated after an Again rating starts again from the initial day intervals. Each session reviews the cards due when it starts, once each; return later for cards scheduled again. The UI shows the next interval before you rate. Cards retain review and lapse counts, and pausing a card excludes it from sessions.
 
-This is Minerva's simple interval scheduler, not Anki's FSRS algorithm. This first version supports question/answer cards; cloze deletion, media cards, shared decks, Anki import, and detailed study analytics are not implemented.
+This is Minerva's simple interval scheduler, not Anki's FSRS algorithm. This first version supports question/answer cards; cloze cards are imported from Anki as question/answer pairs; media cards, shared decks, and detailed study analytics are not implemented.
 
 ## Limits and privacy
 

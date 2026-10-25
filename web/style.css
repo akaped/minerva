@@ -4491,3 +4491,5 @@ dialog:has(#metadata-form) {
 .fc-draft legend { padding:0 8px; }
 .fc-draft legend label { display:flex; align-items:center; }
 .flashcards-page [hidden] { display:none; }
+.fc-picture { display:block; max-width:100%; max-height:360px; margin:8px auto; border-radius:6px; }
+.fc-card-row .fc-picture { max-height:120px; margin:6px 0; }

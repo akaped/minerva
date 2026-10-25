@@ -1,0 +1,26 @@
+# Minerva on a server, from the published image. Settings are in .env next to
+# this file (see .env.server.example):
+#
+#   docker compose up -d                              # start
+#   docker compose pull && docker compose up -d       # update
+services:
+  minerva:
+    image: ghcr.io/akaped/minerva:latest
+    container_name: minerva
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    env_file: .env
+
+    volumes:
+      - minerva-data:/data
+
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  minerva-data:

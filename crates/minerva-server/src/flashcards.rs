@@ -24,7 +24,8 @@ struct Deck {
     revision: u64,
 }
 pub(super) fn initialize(db: &Connection) -> Result<(), rusqlite::Error> {
-    db.execute_batch("CREATE TABLE IF NOT EXISTS flashcard_decks(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_owner ON flashcard_decks(user_id);")
+    db.execute_batch("CREATE TABLE IF NOT EXISTS flashcard_decks(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_owner ON flashcard_decks(user_id);
+        CREATE TABLE IF NOT EXISTS flashcard_media(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,deck_id TEXT NOT NULL,media_type TEXT NOT NULL,content BLOB NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_media_deck ON flashcard_media(deck_id);")
 }
 fn load(s: &Store, user: &str, id: &str) -> Result<Deck, ApiError> {
     let raw: Option<String> =
@@ -205,6 +206,27 @@ pub(super) async fn endpoint(
             return Ok((StatusCode::CREATED, axum::Json(d)).into_response());
         }
     }
+    // Pictures imported with a deck, for their owner only.
+    if let (true, ["media", media_id]) = (method == Method::GET, parts.as_slice()) {
+        let row: Option<(String, Vec<u8>)> =
+            s.db.query_row(
+                "SELECT media_type, content FROM flashcard_media WHERE id=?1 AND user_id=?2",
+                params![media_id, u.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| internal())?;
+        let (kind, content) = row.ok_or_else(missing)?;
+        return Ok((
+            [
+                ("content-type", kind),
+                ("cache-control", "private, max-age=86400".into()),
+                ("cross-origin-resource-policy", "same-origin".into()),
+            ],
+            content,
+        )
+            .into_response());
+    }
     if parts.len() < 2 || parts[0] != "decks" {
         return Err(missing());
     }
@@ -217,6 +239,11 @@ pub(super) async fn endpoint(
         if method == Method::DELETE {
             s.db.execute(
                 "DELETE FROM flashcard_decks WHERE id=?1 AND user_id=?2",
+                params![d.id, u.id],
+            )
+            .map_err(|_| internal())?;
+            s.db.execute(
+                "DELETE FROM flashcard_media WHERE deck_id=?1 AND user_id=?2",
                 params![d.id, u.id],
             )
             .map_err(|_| internal())?;
@@ -272,6 +299,166 @@ pub(super) async fn endpoint(
     }
     save(&s, &u.id, &mut d)?;
     Ok(axum::Json(json!({"deck":d,"now":now()})).into_response())
+}
+
+/// `POST /api/v1/flashcards/import?name=<file>&progress=1`: an Anki package or
+/// text export as the request body. Each Anki deck becomes a deck here, split
+/// into parts of 2,000 cards; `progress=0` starts every card as new.
+pub(super) async fn import(
+    State(store): State<Shared>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, ApiError> {
+    if method != Method::POST {
+        return Err(missing());
+    }
+    if headers
+        .get("x-minerva-client")
+        .and_then(|h| h.to_str().ok())
+        != Some("1")
+    {
+        return Err(bad("X-Minerva-Client: 1 is required"));
+    }
+    // Signed in before the file is read.
+    {
+        let s = store.lock().map_err(|_| internal())?;
+        authenticate(&s.data, &headers)?;
+    }
+    if body.is_empty() {
+        return Err(bad("Choose an Anki file to import"));
+    }
+    let query: HashMap<String, String> =
+        url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+            .into_owned()
+            .collect();
+    let file = query.get("name").cloned().unwrap_or_default();
+    let progress = query.get("progress").map(String::as_str) != Some("0");
+    let name = file.clone();
+    let imported = tokio::task::spawn_blocking(move || anki::read(&body, &name, progress))
+        .await
+        .map_err(|_| internal())??;
+    let mut parts = vec![];
+    for deck in imported.decks {
+        let name = deck.name.replace("::", " › ");
+        let total = deck.cards.len().div_ceil(2000);
+        let mut cards = deck.cards.into_iter().peekable();
+        let mut part = 0;
+        while cards.peek().is_some() {
+            part += 1;
+            let chunk: Vec<_> = cards.by_ref().take(2000).collect();
+            let label = if total > 1 {
+                format!("{name} ({part}/{total})")
+            } else {
+                name.clone()
+            };
+            parts.push((anki::limit(&label, 120), chunk));
+        }
+    }
+    if parts.is_empty() {
+        return Err(bad("No cards were found in this file"));
+    }
+    let s = store.lock().map_err(|_| internal())?;
+    let u = authenticate(&s.data, &headers)?;
+    let existing: i64 =
+        s.db.query_row(
+            "SELECT count(*) FROM flashcard_decks WHERE user_id=?1",
+            params![u.id],
+            |r| r.get(0),
+        )
+        .map_err(|_| internal())?;
+    if existing as usize + parts.len() > 100 {
+        return Err(bad(&format!(
+            "This file has {} decks; you have room for {} more (100 at most).",
+            parts.len(),
+            100usize.saturating_sub(existing as usize)
+        )));
+    }
+    let description = anki::limit(
+        &format!(
+            "Imported from Anki ({})",
+            file.rsplit(['/', '\\']).next().unwrap_or("")
+        ),
+        1000,
+    );
+    let mut created = vec![];
+    let mut total = 0;
+    for (name, cards) in parts {
+        total += cards.len();
+        let deck_id = id();
+        // Each deck keeps its own copy of the pictures its cards show, as
+        // `![](media:<id>)`; a picture that was not in the package stays [image].
+        let mut stored: HashMap<String, String> = HashMap::new();
+        let mut picture = |text: &str| -> Result<String, ApiError> {
+            let mut out = String::new();
+            let mut rest = text;
+            while let Some(start) = rest.find(anki::IMAGE_START) {
+                out.push_str(&rest[..start]);
+                let after = &rest[start + anki::IMAGE_START.len_utf8()..];
+                let end = after.find(anki::IMAGE_END).unwrap_or(after.len());
+                let file = &after[..end];
+                rest = after.get(end + anki::IMAGE_END.len_utf8()..).unwrap_or("");
+                let Some((kind, bytes)) = imported.media.get(file) else {
+                    out.push_str("[image]");
+                    continue;
+                };
+                let media_id = match stored.get(file) {
+                    Some(existing) => existing.clone(),
+                    None => {
+                        let media_id = id();
+                        s.db.execute(
+                            "INSERT INTO flashcard_media(id,user_id,deck_id,media_type,content) VALUES(?1,?2,?3,?4,?5)",
+                            params![media_id, u.id, deck_id, kind, bytes],
+                        )
+                        .map_err(|_| internal())?;
+                        stored.insert(file.to_string(), media_id.clone());
+                        media_id
+                    }
+                };
+                out.push_str(&format!("![](media:{media_id})"));
+            }
+            out.push_str(rest);
+            Ok(out)
+        };
+        let mut converted = Vec::with_capacity(cards.len());
+        for c in cards {
+            let front = anki::limit(&picture(&c.front)?, 4000);
+            let back = anki::limit(&picture(&c.back)?, 8000);
+            converted.push((front, back, c));
+        }
+        let mut deck = Deck {
+            id: deck_id,
+            name,
+            description: description.clone(),
+            cards: converted
+                .into_iter()
+                .map(|(front, back, c)| Card {
+                    id: id(),
+                    front,
+                    back,
+                    sources: vec![],
+                    due: c.due,
+                    interval: c.interval,
+                    reviews: c.reviews,
+                    lapses: c.lapses,
+                    suspended: c.suspended,
+                    revision: 0,
+                })
+                .collect(),
+            updated_at: now(),
+            revision: 0,
+        };
+        save(&s, &u.id, &mut deck)?;
+        created.push(json!({"id":deck.id,"name":deck.name,"count":deck.cards.len()}));
+    }
+    Ok(axum::Json(json!({
+        "decks": created,
+        "cards": total,
+        "skipped": imported.skipped,
+        "warnings": imported.warnings,
+    }))
+    .into_response())
 }
 
 // Bound simultaneous paid requests; an RAII guard releases even on disconnect.

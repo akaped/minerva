@@ -1,4 +1,5 @@
 mod ai;
+mod anki;
 mod attachments;
 mod collaboration;
 mod databases;
@@ -656,6 +657,8 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/notes/{note_id}/attachments/{attachment_id}", any(attachments::endpoint).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/api/v1/attachments/{attachment_id}", get(attachments::endpoint))
         .route("/api/v1/attachments/{attachment_id}/preview", get(attachments::endpoint))
+        // Anki packages can be large; their media is not kept.
+        .route("/api/v1/flashcards/import", any(flashcards::import).layer(DefaultBodyLimit::max(100 * 1024 * 1024)))
         .route("/api/v1/flashcards/{*path}", any(flashcards::endpoint))
         .route("/api/v1/ai/{*path}", any(ai::endpoint))
         .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
