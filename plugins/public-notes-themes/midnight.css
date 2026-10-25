@@ -1,0 +1,35 @@
+/*
+ * name: Midnight
+ * scheme: dark
+ * description: A calm dark layout with an indigo accent, for any time of day.
+ */
+:root {
+  --ink: #dfe3f0;
+  --muted: #9aa3bd;
+  --line: #262c40;
+  --accent: #9fa8ff;
+  --page: #10131d;
+  --code-bg: #181d2b;
+  --mark: #5b4d14;
+  --tag-bg: #232947;
+  --tag-ink: #b4bbff;
+  --banner-bg: #3d3416;
+  --banner-ink: #ffe9a8;
+  --danger: #ff8a95;
+  --hl-comment: #7f89a3;
+  --hl-string: #8fd19e;
+  --hl-constant: #f2b072;
+  --hl-keyword: #c7a6ff;
+  --hl-function: #8fb8ff;
+  --hl-type: #f59cc3;
+  --hl-attribute: #e6c66e;
+}
+.post h1 {
+  background: linear-gradient(90deg, #dfe3f0, #9fa8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.posts li {
+  border-bottom-color: #1d2233;
+}

@@ -1,0 +1,6 @@
+# TLS termination for Minerva with automatic certificates.
+{$MINERVA_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy minerva:3000
+}

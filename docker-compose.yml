@@ -1,0 +1,66 @@
+# Minerva: server and web app in one container.
+#
+#   cp .env.example .env      # set the first administrator and your public URL
+#   docker compose up -d --build
+#
+# With automatic HTTPS (Caddy + Let's Encrypt) for a public domain:
+#   docker compose --profile https up -d --build
+name: minerva
+
+services:
+  minerva:
+    build: .
+    image: minerva-server:latest
+    restart: unless-stopped
+    init: true
+    environment:
+      # Used only on the first start, when the database does not exist yet.
+      MINERVA_ADMIN_EMAIL: ${MINERVA_ADMIN_EMAIL:-admin@minerva.local}
+      MINERVA_ADMIN_PASSWORD: ${MINERVA_ADMIN_PASSWORD:-}
+      # Public origin, e.g. https://notes.example.com (MCP origin checks, feed links).
+      MINERVA_PUBLIC_URL: ${MINERVA_PUBLIC_URL:-}
+      # Set to 1 whenever users reach Minerva over HTTPS (always with the https profile).
+      MINERVA_SECURE_COOKIE: ${MINERVA_SECURE_COOKIE:-0}
+      MINERVA_SITE_NAME: ${MINERVA_SITE_NAME:-}
+      MINERVA_TOTP_ISSUER: ${MINERVA_TOTP_ISSUER:-}
+      # Public theme for pages without a site, e.g. paper (see plugins/public-notes-themes).
+      MINERVA_PUBLIC_THEME: ${MINERVA_PUBLIC_THEME:-}
+      MINERVA_EMBED_ORIGINS: ${MINERVA_EMBED_ORIGINS:-}
+    volumes:
+      # Database and the .ai-key file live here; back up both together.
+      - minerva-data:/data
+      # App and public website themes; edits apply without a restart.
+      - ./plugins:/plugins:ro
+    ports:
+      # Local only by default; publish through the https profile or your own proxy.
+      - "127.0.0.1:${MINERVA_PORT:-3000}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      minerva:
+        condition: service_healthy
+    environment:
+      MINERVA_DOMAIN: ${MINERVA_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  minerva-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,99 @@
+/*
+ * name: Legal / Policy Document
+ * description: Numbered clauses, revision date, document control, and approval fields.
+ * users: Legal, compliance, HR
+ * variables: title, document_id, version, effective_date, revision_date, owner, approver, classification
+ * toc: yes
+ * orientation: portrait
+ */
+body.pdf {
+  font-family: "Source Serif 4", "Times New Roman", Georgia, serif;
+  font-size: 11pt;
+  text-align: justify;
+}
+.pdf-header,
+.pdf-footer,
+.pdf-docinfo,
+.pdf-toc,
+.pdf-approval {
+  display: block;
+}
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock {
+  text-align: center;
+}
+.pdf-titleblock .post-icon {
+  display: none;
+}
+.pdf-titleblock h1 {
+  font-size: 18pt;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pdf-docinfo::before {
+  content: "Document control";
+  display: block;
+  margin-bottom: 2mm;
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+/* Clauses: 1, 1.1, and lettered sub-items. */
+.pdf-content h2 {
+  margin-top: 1.4em;
+  font-size: 12pt;
+  text-transform: uppercase;
+}
+.pdf-content h3 {
+  font-size: 11pt;
+}
+.pdf-content ol ol {
+  list-style-type: lower-alpha;
+}
+.pdf-content ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

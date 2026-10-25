@@ -1,0 +1,57 @@
+/*
+ * name: Terminal
+ * scheme: dark
+ * description: Monospace text on black with an old-terminal phosphor green.
+ */
+:root {
+  --ink: #b8f5c4;
+  --muted: #5fa86e;
+  --line: #17301c;
+  --accent: #39ff6a;
+  --page: #050805;
+  --code-bg: #0b140c;
+  --font-body:
+    "JetBrains Mono", "Fira Code", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-mono: var(--font-body);
+  --radius: 2px;
+  --mark: #1f6b33;
+  --tag-bg: #0f2a15;
+  --tag-ink: #39ff6a;
+  --banner-bg: #0f2a15;
+  --banner-ink: #39ff6a;
+  --danger: #ff6b6b;
+  --hl-comment: #4f8f5c;
+  --hl-string: #9dffb3;
+  --hl-constant: #ffd166;
+  --hl-keyword: #39ff6a;
+  --hl-function: #7dffe0;
+  --hl-type: #c6ff7a;
+  --hl-attribute: #ffd166;
+}
+body {
+  font-size: 15px;
+}
+::selection {
+  background: #39ff6a;
+  color: #041004;
+}
+.site a::before {
+  content: "~/";
+  color: var(--accent);
+}
+.post h1 {
+  color: var(--accent);
+  text-shadow: 0 0 10px #39ff6a55;
+  font-size: clamp(24px, 4vw, 32px);
+}
+.post h1::before {
+  content: "> ";
+  color: #1fae47;
+}
+.posts a::before {
+  content: "$ ";
+  color: var(--muted);
+}
+a {
+  text-decoration-style: dotted;
+}

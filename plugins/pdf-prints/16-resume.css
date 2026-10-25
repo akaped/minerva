@@ -1,0 +1,81 @@
+/*
+ * name: Resume / CV
+ * description: Compact professional layout with contact details, experience, skills, and education.
+ * users: Job seekers
+ * variables: name, role, email, phone, location, website, linkedin, photo
+ * toc: no
+ * orientation: portrait
+ */
+@page {
+  margin: 13mm 14mm;
+}
+body.pdf {
+  font-size: 10pt;
+  line-height: 1.45;
+}
+.resume-head {
+  display: flex;
+  align-items: center;
+  gap: 6mm;
+  margin-bottom: 6mm;
+  padding-bottom: 4mm;
+  border-bottom: 2pt solid #0f172a;
+}
+.resume-photo {
+  width: 24mm;
+  height: 24mm;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+.resume-photo.pdf-placeholder {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 8pt;
+}
+.resume-head h1 {
+  margin: 0;
+  font-size: 24pt;
+  letter-spacing: -0.01em;
+}
+.resume-role {
+  margin: 1mm 0 2mm;
+  color: #2563eb;
+  font-size: 12pt;
+  font-weight: 600;
+}
+.resume-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1mm 5mm;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #475569;
+  font-size: 9pt;
+}
+.pdf-content h2 {
+  margin: 5mm 0 2mm;
+  padding-bottom: 1mm;
+  border-bottom: 0.8pt solid #cbd5e1;
+  color: #0f172a;
+  font-size: 11pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.pdf-content h3 {
+  margin: 3mm 0 0.5mm;
+  font-size: 10.5pt;
+}
+.pdf-content h3 + p {
+  margin-top: 0;
+  color: #64748b;
+  font-size: 9pt;
+}
+.pdf-content li {
+  margin: 0.5mm 0;
+}
+.block {
+  margin-bottom: 1mm;
+}

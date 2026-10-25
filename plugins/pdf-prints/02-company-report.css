@@ -1,0 +1,63 @@
+/*
+ * name: Company Report
+ * description: Cover with title, company logo, author and generation date; repeating header and footer, page numbers, and a confidentiality label.
+ * users: Businesses, consultants, professionals
+ * variables: title, subtitle, company, logo, author, department, date, version, classification
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-cover,
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-toc {
+  display: block;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-cover {
+  border-top: 10mm solid #1e3a5f;
+  padding-top: 10mm;
+}
+.pdf-title {
+  color: #1e3a5f;
+  font-size: 32pt;
+}
+.pdf-subtitle {
+  color: #4a6a8f;
+}
+.pdf-facts {
+  border-top-color: #1e3a5f;
+}
+.pdf-content h2 {
+  margin-top: 1.6em;
+  padding-bottom: 1.5mm;
+  border-bottom: 1.2pt solid #1e3a5f;
+  color: #1e3a5f;
+}
+.pdf-content h3 {
+  color: #2f5788;
+}
+.pdf-content th {
+  background: #1e3a5f;
+  color: #fff;
+}
+.pdf-content tr:nth-child(even) td {
+  background: #f4f7fb;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

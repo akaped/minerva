@@ -1,0 +1,102 @@
+/*
+ * name: Client Deliverable
+ * description: Branded cover with client information, version, approval status, and a confidentiality footer.
+ * users: Consultants, agencies
+ * variables: title, subtitle, client, company, logo, author, version, approval_status, date, classification
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-cover,
+.pdf-header,
+.pdf-footer,
+.pdf-toc,
+.pdf-approval {
+  display: block;
+}
+.pdf-cover,
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-cover {
+  padding: 8mm;
+  border-radius: 6px;
+  background: #0b1f3a;
+  color: #fff;
+}
+.pdf-cover .pdf-title {
+  color: #fff;
+}
+.pdf-cover .pdf-subtitle,
+.pdf-cover .pdf-facts dt {
+  color: #9fb3d1;
+}
+.pdf-cover .pdf-facts {
+  border-top-color: #35507a;
+}
+.pdf-cover .pdf-placeholder {
+  border-color: #6b84a8;
+  color: #c4d2e6;
+}
+.pdf-classification {
+  color: #fca5a5;
+}
+.pdf-footer-left {
+  font-weight: 600;
+}
+.pdf-content h2 {
+  margin-top: 1.6em;
+  color: #0b1f3a;
+}
+.pdf-content h2::before {
+  color: #6b84a8;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

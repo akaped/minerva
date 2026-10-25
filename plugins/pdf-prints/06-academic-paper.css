@@ -1,0 +1,109 @@
+/*
+ * name: Academic Paper
+ * description: Title page, abstract, numbered sections, citations, bibliography, and footnotes.
+ * users: Students, researchers
+ * variables: title, author, affiliation, course, supervisor, date, abstract, keywords
+ * toc: no
+ * orientation: portrait
+ */
+body.pdf {
+  font-family:
+    "Latin Modern Roman", "CMU Serif", "Times New Roman", Georgia, serif;
+  font-size: 11.5pt;
+  line-height: 1.55;
+  text-align: justify;
+  hyphens: auto;
+}
+.pdf-cover,
+.pdf-abstract {
+  display: block;
+}
+.pdf-cover {
+  display: flex;
+  text-align: center;
+}
+.pdf-cover-top {
+  display: none;
+}
+.pdf-title {
+  font-size: 24pt;
+  font-weight: 600;
+}
+.pdf-facts {
+  display: block;
+  border: 0;
+  text-align: center;
+}
+.pdf-facts dt {
+  display: none;
+}
+.pdf-facts dd {
+  margin: 1.5mm 0;
+  font-size: 12pt;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-abstract {
+  margin: 0 12mm 10mm;
+  border: 0;
+  background: none;
+  font-size: 10.5pt;
+}
+.pdf-abstract h2 {
+  text-align: center;
+}
+.pdf-content h2,
+.pdf-content h3 {
+  font-family: inherit;
+  text-align: left;
+}
+.pdf-content h2 {
+  font-size: 14pt;
+}
+.pdf-content h3 {
+  font-size: 12pt;
+  font-style: italic;
+}
+/* Footnotes and the reference list. */
+.pdf-content .footnote-definition {
+  font-size: 9pt;
+  border-top: 0.5pt solid #9ca3af;
+  padding-top: 1.5mm;
+}
+.pdf-content sup {
+  font-size: 0.75em;
+}
+.pdf-content ol li {
+  margin: 1mm 0;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-center {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-center {
+    content: none;
+  }
+}

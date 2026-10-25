@@ -1,0 +1,105 @@
+/*
+ * name: Proposal
+ * description: Cover page, executive summary, objectives, scope, deliverables, timeline, pricing, and next steps.
+ * users: Freelancers, agencies, consultants
+ * variables: title, subtitle, client, company, logo, author, date, valid_until, version
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-cover,
+.pdf-footer {
+  display: flex;
+}
+.pdf-toc {
+  display: block;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-cover {
+  background: linear-gradient(160deg, #fdf6ec 0%, #ffffff 55%);
+  margin: -2mm;
+  padding: 10mm;
+}
+.pdf-eyebrow,
+.pdf-cover-main::before {
+  color: #c2410c;
+}
+.pdf-cover-main::before {
+  content: "Proposal";
+  display: block;
+  margin-bottom: 3mm;
+  font-size: 10pt;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pdf-title {
+  font-size: 34pt;
+  color: #1c1917;
+}
+.pdf-facts {
+  border-top: 2pt solid #c2410c;
+}
+.pdf-content h2 {
+  margin-top: 1.8em;
+  color: #9a3412;
+  font-size: 15pt;
+}
+.pdf-content h2::before {
+  color: #fdba74;
+}
+.pdf-content th {
+  background: #fff3e6;
+}
+/* Pricing tables: the last row reads as a total. */
+.pdf-content table tr:last-child td {
+  font-weight: 700;
+  border-top: 1.2pt solid #9a3412;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

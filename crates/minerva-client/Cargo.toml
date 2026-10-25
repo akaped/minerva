@@ -1,0 +1,25 @@
+[package]
+name = "minerva-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Transport, connection registry, and credential storage for native Minerva clients"
+[dependencies]
+minerva-core = { path = "../minerva-core" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+http = "1"
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
+# The desktop app's embedded server and its sync worker.
+minerva-server = { path = "../minerva-server" }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+hmac = "0.12"
+sha1 = "0.10"

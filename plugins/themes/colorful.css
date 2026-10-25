@@ -1,0 +1,201 @@
+/*
+ * name: Colorful
+ * base: light
+ * description: The light theme with a warm, many-colored palette.
+ *
+ * Rules are scoped to [data-variant="colorful"].
+ */
+[data-variant="colorful"] {
+  --surface: #fffdf9;
+  --surface-alt: #fff6fa;
+  --ink: #2b2250;
+  --subtle: #7d6f9e;
+  --muted: #8f84ad;
+  --border: #f0e4f2;
+  --line: #f1e6f3;
+  --accent: #e23d78;
+  --soft: #ffe6ef;
+  color: #2b2250;
+  background: #fffdf9;
+}
+[data-variant="colorful"] .sidebar {
+  background: linear-gradient(180deg, #fff0f6 0%, #f3efff 50%, #e8faf5 100%);
+  border-color: #f1e6f3;
+}
+[data-variant="colorful"] .brand-mark {
+  color: #ff5f8f;
+}
+[data-variant="colorful"] .square {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  color: #fff;
+}
+[data-variant="colorful"] .workspace-button,
+[data-variant="colorful"] .workspace-menu {
+  border-color: #eedcf2;
+  box-shadow: 0 2px 8px #b4519712;
+}
+[data-variant="colorful"] .workspace-menu button:hover {
+  background: #fdeef5;
+}
+[data-variant="colorful"] .workspace-menu button > svg {
+  color: #e23d78;
+}
+[data-variant="colorful"] button:hover {
+  background: #fdeff5;
+}
+[data-variant="colorful"] .nav button.active,
+[data-variant="colorful"] .folder-button.active {
+  background: #ffe1ec;
+  color: #c0185a;
+}
+/* Each main navigation entry gets its own color. */
+[data-variant="colorful"] .nav button:nth-child(6n + 1) svg {
+  color: #e23d78;
+}
+[data-variant="colorful"] .nav button:nth-child(6n + 2) svg {
+  color: #f08c00;
+}
+[data-variant="colorful"] .nav button:nth-child(6n + 3) svg {
+  color: #12a594;
+}
+[data-variant="colorful"] .nav button:nth-child(6n + 4) svg {
+  color: #3b82f6;
+}
+[data-variant="colorful"] .nav button:nth-child(6n + 5) svg {
+  color: #8b5cf6;
+}
+[data-variant="colorful"] .nav button:nth-child(6n) svg {
+  color: #d9a400;
+}
+[data-variant="colorful"] .page-heading h1 {
+  background: linear-gradient(90deg, #7c3aed, #e23d78 55%, #f08c00);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+[data-variant="colorful"] .eyebrow {
+  color: #12a594;
+}
+[data-variant="colorful"] .subtitle {
+  color: #8f84ad;
+}
+[data-variant="colorful"] .btn {
+  border-color: #eedcf2;
+}
+[data-variant="colorful"] .btn.primary {
+  background: linear-gradient(135deg, #ff4f8b, #ff9a3d);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 12px #ff5f8f40;
+}
+[data-variant="colorful"] .btn.primary:hover {
+  background: linear-gradient(135deg, #f43f7f, #ff8a1f);
+}
+[data-variant="colorful"] input:focus,
+[data-variant="colorful"] textarea:focus,
+[data-variant="colorful"] select:focus,
+[data-variant="colorful"] .workspace-menu button:focus-visible {
+  outline: 2px solid #ffc2d7;
+  border-color: #ff7aa6;
+}
+[data-variant="colorful"] .welcome-banner {
+  background: linear-gradient(120deg, #ffe8f1, #f1ecff 50%, #e3f8f3);
+  border-color: #f3dcef;
+}
+[data-variant="colorful"] .badge {
+  background: #fff3d6;
+  border-color: #ffe2a3;
+  color: #9a6400;
+}
+[data-variant="colorful"] .folder-card,
+[data-variant="colorful"] .note-card {
+  border-color: #f0e2f2;
+}
+[data-variant="colorful"] .folder-card:nth-child(4n + 1) .folder-icon {
+  background: #ffe4ee;
+  color: #e23d78;
+}
+[data-variant="colorful"] .folder-card:nth-child(4n + 2) .folder-icon {
+  background: #dcf7f1;
+  color: #0e9384;
+}
+[data-variant="colorful"] .folder-card:nth-child(4n + 3) .folder-icon {
+  background: #fff0d6;
+  color: #e07a00;
+}
+[data-variant="colorful"] .folder-card:nth-child(4n) .folder-icon {
+  background: #ece6ff;
+  color: #7c3aed;
+}
+[data-variant="colorful"] .note-card {
+  border-top: 3px solid #ff5f8f;
+}
+[data-variant="colorful"] .note-card:nth-child(4n + 2) {
+  border-top-color: #12a594;
+}
+[data-variant="colorful"] .note-card:nth-child(4n + 3) {
+  border-top-color: #f59e0b;
+}
+[data-variant="colorful"] .note-card:nth-child(4n) {
+  border-top-color: #8b5cf6;
+}
+[data-variant="colorful"] .note-preview {
+  background: #fff5f9;
+}
+[data-variant="colorful"] .note-card:nth-child(4n + 2) .note-preview {
+  background: #effbf8;
+}
+[data-variant="colorful"] .note-card:nth-child(4n + 3) .note-preview {
+  background: #fff8ec;
+}
+[data-variant="colorful"] .note-card:nth-child(4n) .note-preview {
+  background: #f5f1ff;
+}
+[data-variant="colorful"] .tabs .active {
+  color: #c0185a;
+  border-color: #ff5f8f;
+}
+[data-variant="colorful"] .avatar {
+  background: linear-gradient(135deg, #ffd166, #ff8fab);
+  color: #6b1f3a;
+}
+[data-variant="colorful"] .preview-symbol {
+  color: #c08bd8;
+}
+[data-variant="colorful"] .tag {
+  background: #ffe4ee;
+  color: #c0185a;
+}
+[data-variant="colorful"] mark {
+  background: #ffe066;
+}
+[data-variant="colorful"] .pill {
+  background: #e9f9f5;
+  color: #0e7d70;
+}
+
+[data-variant="colorful"] {
+  --row-hover: #fdeef5;
+  --row-action-hover: #fbdcea;
+  --drop: #ffe1ec;
+}
+[data-variant="colorful"] .tree-row.active {
+  background: #ffe1ec;
+  color: #c0185a;
+}
+[data-variant="colorful"] .folder-row .tree-icon {
+  color: #f08c00;
+}
+[data-variant="colorful"] .tree-children .folder-row .tree-icon {
+  color: #12a594;
+}
+[data-variant="colorful"] .section-toggle {
+  color: #a77bc4;
+}
+[data-variant="colorful"] .db-embed-head {
+  background: linear-gradient(90deg, #fff0f6, #f3efff);
+}
+[data-variant="colorful"] .db-embed-actions button.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #ff4f8b, #ff9a3d);
+}

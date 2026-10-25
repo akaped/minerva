@@ -1,0 +1,74 @@
+/*
+ * name: Presentation Handout
+ * description: Landscape pages, large headings, spacious sections, and diagrams; each section starts a new page.
+ * users: Trainers, presenters
+ * variables: title, presenter, event, date
+ * toc: no
+ * orientation: landscape
+ */
+@page {
+  margin: 14mm 18mm;
+}
+body.pdf {
+  font-size: 13pt;
+  line-height: 1.5;
+}
+body.pdf .export-document {
+  max-width: none;
+}
+.pdf-cover,
+.pdf-footer {
+  display: block;
+}
+.pdf-cover,
+.pdf-footer {
+  display: flex;
+}
+.pdf-cover {
+  min-height: 165mm;
+}
+.pdf-cover-top {
+  display: none;
+}
+.pdf-title {
+  font-size: 40pt;
+}
+.pdf-titleblock {
+  display: none;
+}
+/* Each level-2 heading is a slide: a new page with a large title. */
+.pdf-content h2 {
+  break-before: page;
+  margin: 0 0 8mm;
+  padding-bottom: 3mm;
+  border-bottom: 2pt solid #4338ca;
+  color: #312e81;
+  font-size: 26pt;
+}
+.pdf-content > .block:first-child h2 {
+  break-before: auto;
+}
+.pdf-content h3 {
+  color: #4338ca;
+  font-size: 17pt;
+}
+.pdf-content li {
+  margin: 2mm 0;
+}
+.pdf-content .mermaid-diagram svg {
+  max-height: 120mm;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

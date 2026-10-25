@@ -1,0 +1,414 @@
+/* Published pages: clean reading layout without application chrome.
+
+   Everything themeable is a custom property. Public themes
+   (plugins/public-notes-themes) override these tokens and may add rules of
+   their own. A theme that sets `scheme` pins the page to light or dark;
+   otherwise the reader's system preference decides. */
+:root {
+  --ink: #263249;
+  --muted: #6b7486;
+  --line: #e9edf2;
+  --accent: #4d59c3;
+  --page: #fff;
+  --code-bg: #f6f7fb;
+  --font-body:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-heading: var(--font-body);
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --measure: 720px;
+  --radius: 8px;
+  --mark: #fff1a8;
+  --tag-bg: #eef0fd;
+  --tag-ink: #4d59c3;
+  --banner-bg: #fff4d6;
+  --banner-ink: #5c4500;
+  --danger: #c4313f;
+  --hl-comment: #7a8396;
+  --hl-string: #2f7d4f;
+  --hl-constant: #b05a00;
+  --hl-keyword: #7542c4;
+  --hl-function: #2a62c9;
+  --hl-type: #a3366b;
+  --hl-attribute: #9a6a00;
+  color-scheme: light;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--page);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) {
+    --ink: #e1e6f1;
+    --muted: #a6b1c6;
+    --line: #2c3445;
+    --accent: #a3adff;
+    --page: #151a24;
+    --code-bg: #1d2432;
+    --mark: #6b5a12;
+    --tag-bg: #282d4a;
+    --tag-ink: #a3adff;
+    --banner-bg: #3d3416;
+    --banner-ink: #ffe9a8;
+    --danger: #ff8a95;
+    --hl-comment: #8b95a8;
+    --hl-string: #8fd19e;
+    --hl-constant: #f2b072;
+    --hl-keyword: #c7a6ff;
+    --hl-function: #8fb8ff;
+    --hl-type: #f59cc3;
+    --hl-attribute: #e6c66e;
+    color-scheme: dark;
+  }
+}
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--page);
+  line-height: 1.65;
+}
+a {
+  color: var(--accent);
+}
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+}
+.site {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 28px 24px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.site a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.post {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+}
+.post-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+.post h1 {
+  margin: 12px 0 4px;
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1.2;
+}
+.site-description {
+  margin: -8px 0 8px;
+  color: var(--muted);
+}
+.post-date {
+  margin: 0 0 32px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.block > :first-child {
+  margin-top: 0;
+}
+.block {
+  margin-bottom: 14px;
+}
+.youtube-embed {
+  aspect-ratio: 16/9;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.youtube-embed iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.youtube-link {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+blockquote {
+  margin: 0;
+  padding: 2px 18px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th,
+td {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 28px 0;
+}
+pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+code {
+  font-family: var(--font-mono);
+}
+:not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+.code-diagnostic {
+  margin: -6px 0 12px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.post-nav {
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.posts {
+  list-style: none;
+  padding: 0;
+}
+.posts li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.posts a {
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.posts time {
+  color: var(--muted);
+  font-size: 14px;
+}
+.posts p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+}
+.preview-banner {
+  margin: 0;
+  padding: 10px 24px;
+  background: var(--banner-bg);
+  color: var(--banner-ink);
+  font-size: 14px;
+  text-align: center;
+}
+/* Syntax highlighting (shared palette with the app). */
+.hl-comment {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hl-string,
+.hl-markup.hl-inserted {
+  color: var(--hl-string);
+}
+.hl-constant.hl-numeric,
+.hl-constant.hl-language,
+.hl-constant.hl-character {
+  color: var(--hl-constant);
+}
+.hl-keyword,
+.hl-storage {
+  color: var(--hl-keyword);
+}
+.hl-entity.hl-name.hl-function,
+.hl-support.hl-function {
+  color: var(--hl-function);
+}
+.hl-entity.hl-name.hl-type,
+.hl-entity.hl-name.hl-class,
+.hl-support.hl-type,
+.hl-support.hl-class,
+.hl-entity.hl-name.hl-tag {
+  color: var(--hl-type);
+}
+.hl-entity.hl-other.hl-attribute-name,
+.hl-variable.hl-parameter {
+  color: var(--hl-attribute);
+}
+.hl-invalid,
+.hl-markup.hl-deleted {
+  color: var(--danger);
+}
+/* Rendered content shared by the app and published pages. */
+mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--mark);
+  color: inherit;
+}
+.tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: default;
+}
+blockquote[class^="markdown-alert-"] {
+  margin: 4px 0;
+  padding: 10px 14px 10px 16px;
+  border: 0;
+  border-left: 4px solid var(--alert, #5e69d6);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--alert, #5e69d6) 9%, transparent);
+  color: inherit;
+}
+blockquote[class^="markdown-alert-"]::before {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--alert);
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+blockquote[class^="markdown-alert-"] p {
+  margin: 0;
+}
+.markdown-alert-note {
+  --alert: #3b6fd8;
+}
+.markdown-alert-note::before {
+  content: "ⓘ Note";
+}
+.markdown-alert-tip {
+  --alert: #23864b;
+}
+.markdown-alert-tip::before {
+  content: "💡 Tip";
+}
+.markdown-alert-important {
+  --alert: #7b4cd6;
+}
+.markdown-alert-important::before {
+  content: "❗ Important";
+}
+.markdown-alert-warning {
+  --alert: #b36b00;
+}
+.markdown-alert-warning::before {
+  content: "⚠ Warning";
+}
+.markdown-alert-caution {
+  --alert: #c4313f;
+}
+.markdown-alert-caution::before {
+  content: "⛔ Caution";
+}
+math {
+  font-size: 1.1em;
+  /* An OpenType MATH font gives proper limits, fractions, and radicals. */
+  font-family:
+    "STIX Two Math", "Latin Modern Math", "Cambria Math", "Noto Sans Math", math;
+}
+/* MathML keeps its own display type (`block math`); overriding it breaks layout. */
+math[display="block"] {
+  margin: 10px 0;
+}
+.math-error,
+merror {
+  color: var(--danger);
+}
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.cover-gradient-1 {
+  background: linear-gradient(135deg, #a1c4fd, #c2e9fb);
+}
+.cover-gradient-2 {
+  background: linear-gradient(135deg, #fbc2eb, #a6c1ee);
+}
+.cover-gradient-3 {
+  background: linear-gradient(135deg, #fddb92, #d1fdff);
+}
+.cover-gradient-4 {
+  background: linear-gradient(135deg, #84fab0, #8fd3f4);
+}
+.cover-gradient-5 {
+  background: linear-gradient(135deg, #5865d8, #a3adff);
+}
+.cover-gradient-6 {
+  background: linear-gradient(135deg, #f6d365, #fda085);
+}
+.cover-gradient-7 {
+  background: linear-gradient(135deg, #2b3a55, #5e69d6);
+}
+.cover-gradient-8 {
+  background: linear-gradient(135deg, #e0e3ea, #f7f8fa);
+}
+.post-cover {
+  height: clamp(140px, 24vw, 260px);
+  overflow: hidden;
+}
+.post-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+/* Nested blocks: two leading spaces per level in the source. */
+.md-indent-1 {
+  margin-left: 1.5em;
+}
+.md-indent-2 {
+  margin-left: 3em;
+}
+.md-indent-3 {
+  margin-left: 4.5em;
+}
+.md-indent-4 {
+  margin-left: 6em;
+}
+.md-indent-5 {
+  margin-left: 7.5em;
+}
+.md-indent-6 {
+  margin-left: 9em;
+}
+.md-indent-1 ul,
+.md-indent-4 ul {
+  list-style-type: circle;
+}
+.md-indent-2 ul,
+.md-indent-5 ul {
+  list-style-type: square;
+}

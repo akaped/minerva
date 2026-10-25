@@ -1,0 +1,263 @@
+:root {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  --ink: #263249;
+  --muted: #8590a2;
+  --line: #e9edf2;
+  --field: #fff;
+  --field-line: #dde2eb;
+  --card: #fff;
+  --hover: #eef0f5;
+  --accent: #5e69d6;
+  --accent-hover: #4d59c3;
+  --soft: #eef0fd;
+  --danger: #bf5261;
+  --page: #f7f8fa;
+  color: var(--ink);
+  background: var(--page);
+  font-synthesis: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e1e6f1;
+    --muted: #a6b1c6;
+    --line: #2c3445;
+    --field: #1d2432;
+    --field-line: #343e53;
+    --card: #181d28;
+    --hover: #293247;
+    --accent: #7c86f0;
+    --accent-hover: #8f98ff;
+    --soft: #282d4a;
+    --danger: #ef8592;
+    --page: #131823;
+    color-scheme: dark;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--page);
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+.launcher {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 48px 24px 32px;
+}
+header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 32px;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: white;
+  font-size: 28px;
+}
+h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+p {
+  margin: 0;
+}
+.muted {
+  color: var(--muted);
+}
+section {
+  margin-bottom: 32px;
+}
+.servers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.server {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.server .info {
+  flex: 1;
+  min-width: 0;
+}
+.server .name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server .meta {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--soft);
+  color: var(--accent);
+  vertical-align: 1px;
+}
+.server .buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.empty {
+  padding: 20px;
+  border: 1px dashed var(--field-line);
+  border-radius: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.add {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.add label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.add label.check {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.add input:not([type="checkbox"]) {
+  border: 1px solid var(--field-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--field);
+}
+.add input:focus {
+  outline: 2px solid #c6ccff;
+  border-color: #8792ec;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 13px;
+  border: 1px solid var(--field-line);
+  border-radius: 7px;
+  background: var(--field);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--hover);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+.btn.danger {
+  color: var(--danger);
+}
+.status {
+  min-height: 1.4em;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.status.error {
+  color: var(--danger);
+}
+.warning {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  font-size: 13px;
+}
+.warning .buttons {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+footer {
+  font-size: 12px;
+}
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--field-line);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.offline {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.offline p {
+  margin: 0;
+}
+.offline label.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

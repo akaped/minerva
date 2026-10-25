@@ -1,0 +1,92 @@
+/*
+ * name: Technical Documentation
+ * description: Automatic table of contents, numbered headings, highlighted code, diagrams, callouts, and version information.
+ * users: Developers, engineers, IT teams
+ * variables: title, product, version, status, author, date
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-header,
+.pdf-footer,
+.pdf-docinfo,
+.pdf-toc {
+  display: block;
+}
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-header-left::before {
+  content: "▣ ";
+  color: #2563eb;
+}
+.pdf-titleblock h1 {
+  font-size: 26pt;
+}
+.pdf-titleblock .post-icon {
+  display: none;
+}
+.pdf-docinfo table {
+  font-size: 9pt;
+}
+.pdf-docinfo th {
+  background: #eff4ff;
+}
+.pdf-content h2 {
+  margin-top: 1.6em;
+  border-bottom: 0.8pt solid #dbe3f0;
+  padding-bottom: 1.2mm;
+}
+.pdf-content h2::before,
+.pdf-content h3::before {
+  color: #2563eb;
+}
+.pdf-content pre {
+  border-left: 3pt solid #2563eb;
+  background: #f6f8fc;
+}
+.pdf-content :not(pre) > code {
+  color: #1e40af;
+  background: #eef2fb;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

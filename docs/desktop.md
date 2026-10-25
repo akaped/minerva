@@ -1,0 +1,58 @@
+# Desktop client (Windows and Linux)
+
+`crates/minerva-desktop` builds a native Minerva application for Windows and Linux. A native window hosts the system webview (WebView2 on Windows, WebKitGTK 4.1 on Linux).
+
+The app runs its own Minerva server in-process, so it works without any server or network. It holds personal notes and **offline copies** of workspaces from other servers, which sync in the background and merge edits made offline. See [sync.md](sync.md). Each registered server's own web interface is also available online through a Rust gateway (`crates/minerva-client`). That interface always matches the server's API version, while sign-in tokens stay in the operating system's credential store.
+
+## Build and run
+
+Linux needs the WebKitGTK 4.1 and GTK 3 development packages (Fedora: `webkit2gtk4.1-devel gtk3-devel`; Debian/Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev`) and a running Secret Service (GNOME Keyring or KWallet).
+
+```sh
+cargo run -p minerva-desktop                    # Linux, debug build with developer tools
+scripts/package-desktop.sh                      # dist/*-linux-x86_64.tar.gz and *-windows-x86_64.zip
+scripts/package-desktop.sh linux                # or one platform only
+```
+
+The Windows package is cross-compiled from Linux with the `x86_64-pc-windows-gnu` target and MinGW-w64 (`rustup target add x86_64-pc-windows-gnu`, plus `mingw64-gcc` or `gcc-mingw-w64-x86-64`). The zip contains `Minerva.exe` and `WebView2Loader.dll`, which must stay in the same folder. Windows 10 and 11 include the required Microsoft Edge WebView2 Runtime. The executable embeds its icon and version information.
+
+The Linux archive contains the binary, a `.desktop` entry, a 256 px icon, and `install.sh` (installs into `~/.local`, or `PREFIX`). Application and web icons are generated from `favicon.png` into `crates/minerva-desktop/assets/` and `web/icons/`.
+
+The desktop crate is not one of the workspace's default members, so `cargo build` and `cargo run -p minerva-server` work without GUI libraries. `cargo test --workspace` includes it.
+
+## Using it
+
+The app opens **This computer**: personal notes and offline copies. Nothing needs to be configured. The launcher (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) lists servers. **Add a server** with its address: HTTPS is assumed, and `localhost`/`127.x` may use HTTP. The client calls `/api/v1/health`, requires API version 1, and records the server's persistent UUID. **Open** loads the server's normal web interface; sign in there as usual. Use **Minerva → Servers…** or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> to return to the launcher. The launcher also offers **Offline…** (choose workspaces to keep on this computer; sign in first), **Sign out** (revokes the session on the server, and pauses syncing), **Rename**, and **Remove**.
+
+Offline copies appear in This computer's workspace menu. Their top-bar badge shows the sync state: synced, offline with changes waiting, or changes to review. Click it to see every copy and resolve conflicts.
+
+Attachments download to the Downloads folder. Existing files are never overwritten; a numbered name is chosen instead. Links to other sites open in the system browser.
+
+| Data | Linux | Windows |
+| --- | --- | --- |
+| Server registry (no secrets) | `~/.config/minerva/connections.json` | `%APPDATA%\minerva\connections.json` |
+| Personal notes, offline copies, unsent changes | `~/.local/share/minerva/local.db` | `%LOCALAPPDATA%\minerva\local.db` |
+| Session tokens | Secret Service, service `minerva-desktop` | Credential Manager, `connection:<id>.minerva-desktop` |
+| Webview storage (theme, layout) | `~/.local/share/minerva/webview` | `%LOCALAPPDATA%\minerva\webview` |
+
+Set `MINERVA_CREDENTIAL_STORE=memory` to keep sign-ins only until the application exits. This is for kiosks, automated tests, or systems without a credential service.
+
+## Security model
+
+- **One origin per server.** The launcher is served from `minerva://app.localhost`, this computer's server from `minerva://local.localhost`, and each connection from `minerva://s<id>.localhost`. On Windows these are `https://minerva.<host>`, because WebView2 only intercepts HTTP(S). One server's pages cannot read another server's responses, and the gateway also rejects any request whose `Origin` or `Referer` belongs to a different origin.
+- **Tokens never reach the page.** The gateway forwards a connection's requests only to that server, adding `Authorization: Bearer` from the credential store. It removes `token` from sign-in responses and drops `Set-Cookie`. Webview cookies and authorization headers are never forwarded, and only a short allow-list of request headers is passed through. Logout or an HTTP 401 deletes the stored token.
+- **Server identity.** Tokens are attached only after `/health` confirms the server UUID recorded when it was added. If the UUID changes (for example after a reinstall or a redirected address), requests are refused and the launcher asks whether to trust the new server; trusting it discards the old sign-in.
+- **TLS policy.** HTTPS uses the operating system's trust store. Plain HTTP is accepted for loopback addresses, or for an address where the user explicitly allowed it. Redirects are not followed, so a token is never forwarded to a different origin.
+- **Local server.** It runs inside the app process and listens on no port. Its session token is created at each start and never reaches the page. `local.db` is not encrypted by Minerva; protect it like any other personal files, and use disk encryption.
+- **Launcher commands** (add, open, sign out, remove…) are accepted only from the launcher page. Server pages can only ask to return to the launcher. Navigation is limited to the launcher and registered servers.
+
+The web interface itself is unchanged, except that the gateway adds `<meta name="minerva-server-origin">` so that MCP configuration shows the server's real URL rather than the local origin.
+
+## Limitations
+
+- Responses are buffered by the webview protocol handler. Streaming AI chat answers therefore appear when complete instead of word by word.
+- WebKitGTK cannot download from custom schemes. On Linux, attachment downloads are fetched by the client and saved directly, without a progress indicator.
+- Windows builds are cross-compiled and statically checked, but have not yet been exercised on a Windows machine. See `verification.md`.
+- Share links (`/share#…`) and the publishing **Preview** need browser cookies, which the gateway does not keep. Links to published pages and absolute share URLs open in the system browser.
+- Offline copies sync about every two seconds and do not relay presence. For live co-editing with presence, use **Open** on the server. Sharing, publishing, and administration are online-only. See [sync.md](sync.md#limits).
+- No notifications, auto-update, or installer (MSI or Flatpak) yet.

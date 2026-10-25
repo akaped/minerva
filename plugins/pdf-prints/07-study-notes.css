@@ -1,0 +1,62 @@
+/*
+ * name: Study Notes
+ * description: Chapter structure, highlighted definitions, examples, summaries, and diagrams.
+ * users: Students, educators
+ * variables: title, subject, course, author, date
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-header,
+.pdf-toc {
+  display: block;
+}
+.pdf-header {
+  display: flex;
+}
+.pdf-titleblock h1 {
+  color: #6d28d9;
+}
+.pdf-content h1,
+.pdf-content h2 {
+  margin-top: 1.4em;
+  padding: 2mm 4mm;
+  border-radius: 4px;
+  background: #f3effe;
+  color: #5b21b6;
+}
+.pdf-content h3 {
+  color: #7c3aed;
+}
+/* Quotes are definitions; callouts are examples, tips, and summaries. */
+.pdf-content blockquote:not([class]) {
+  border-left: 3pt solid #7c3aed;
+  background: #faf7ff;
+  color: #2e1065;
+  padding: 2.5mm 4mm;
+  font-style: normal;
+}
+.pdf-content blockquote:not([class])::before {
+  content: "Definition";
+  display: block;
+  margin-bottom: 1mm;
+  color: #7c3aed;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.pdf-content mark {
+  background: #fde68a;
+}
+.pdf-content strong {
+  color: #4c1d95;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-center {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

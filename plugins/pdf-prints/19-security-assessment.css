@@ -1,0 +1,172 @@
+/*
+ * name: Security Assessment
+ * description: Executive summary, severity labels, technical findings, a risk matrix, and remediation.
+ * users: Cybersecurity teams
+ * variables: title, client, assessor, company, logo, scope, date, version, classification
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-cover,
+.pdf-header,
+.pdf-footer,
+.pdf-toc,
+.pdf-docinfo {
+  display: block;
+}
+.pdf-cover,
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-cover {
+  padding: 8mm;
+  border-radius: 6px;
+  background: #0b0f17;
+  color: #e5e7eb;
+}
+.pdf-cover .pdf-title {
+  color: #fff;
+}
+.pdf-cover-main::before {
+  content: "Security assessment";
+  display: block;
+  margin-bottom: 3mm;
+  color: #f87171;
+  font-size: 10pt;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pdf-cover .pdf-facts {
+  border-top-color: #374151;
+}
+.pdf-cover .pdf-facts dt {
+  color: #9ca3af;
+}
+.pdf-cover .pdf-placeholder {
+  border-color: #4b5563;
+  color: #9ca3af;
+}
+.pdf-classification {
+  color: #f87171;
+}
+.pdf-docinfo::before {
+  content: "Engagement details";
+  display: block;
+  margin-bottom: 2mm;
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.pdf-content h2 {
+  margin-top: 1.6em;
+  border-bottom: 1pt solid #111827;
+}
+/* Severity labels: write #critical, #high, #medium, #low, or #info. */
+.tag[data-tag="critical"],
+.tag[data-tag="high"],
+.tag[data-tag="medium"],
+.tag[data-tag="low"],
+.tag[data-tag="info"] {
+  padding: 0.2mm 2.5mm;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tag[data-tag="critical"] {
+  background: #7f1d1d;
+}
+.tag[data-tag="high"] {
+  background: #dc2626;
+}
+.tag[data-tag="medium"] {
+  background: #ea580c;
+}
+.tag[data-tag="low"] {
+  background: #ca8a04;
+}
+.tag[data-tag="info"] {
+  background: #2563eb;
+}
+/* Callouts double as severities: Caution = critical, Warning = high,
+   Important = medium, Note = low, Tip = informational. */
+.markdown-alert-caution::before {
+  content: "■ Critical";
+}
+.markdown-alert-warning::before {
+  content: "■ High";
+}
+.markdown-alert-important::before {
+  content: "■ Medium";
+  --alert: #ea580c;
+}
+.markdown-alert-important {
+  --alert: #ea580c;
+  --alert-bg: #fff4ec;
+}
+.markdown-alert-note::before {
+  content: "■ Low";
+}
+.markdown-alert-tip::before {
+  content: "■ Informational";
+}
+/* Risk matrix: a table with likelihood rows and impact columns. */
+.pdf-content table td {
+  text-align: center;
+}
+.pdf-content table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

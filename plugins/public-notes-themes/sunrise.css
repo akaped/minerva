@@ -1,0 +1,61 @@
+/*
+ * name: Sunrise
+ * scheme: light
+ * description: A bright, colorful layout with warm gradients and bold headings.
+ */
+:root {
+  --ink: #2b2250;
+  --muted: #7d6f9e;
+  --line: #f1e3ef;
+  --accent: #e23d78;
+  --page: #fffdf9;
+  --code-bg: #fdf1f6;
+  --radius: 12px;
+  --mark: #ffe066;
+  --tag-bg: #ffe4ee;
+  --tag-ink: #c0185a;
+  --hl-comment: #9a8cb8;
+  --hl-string: #0e9384;
+  --hl-constant: #e07a00;
+  --hl-keyword: #7c3aed;
+  --hl-function: #2563eb;
+  --hl-type: #c0185a;
+  --hl-attribute: #b07800;
+}
+body {
+  background:
+    radial-gradient(1200px 300px at 50% -120px, #ffe1ec, transparent),
+    var(--page);
+}
+.site a {
+  color: #c0185a;
+}
+.post h1,
+.index h1 {
+  background: linear-gradient(90deg, #7c3aed, #e23d78 55%, #f08c00);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
+}
+.posts li {
+  border-bottom: 0;
+  margin-bottom: 12px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 4px 16px #e23d7814;
+  border-left: 4px solid #ff5f8f;
+}
+.posts li:nth-child(4n + 2) {
+  border-left-color: #12a594;
+}
+.posts li:nth-child(4n + 3) {
+  border-left-color: #f59e0b;
+}
+.posts li:nth-child(4n) {
+  border-left-color: #8b5cf6;
+}
+blockquote {
+  border-left-color: #ff9a3d;
+}

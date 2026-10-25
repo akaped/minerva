@@ -1,0 +1,103 @@
+/*
+ * name: Research Report
+ * description: Cover, abstract, methodology, findings, figures, references, and appendix.
+ * users: Analysts, researchers
+ * variables: title, subtitle, author, organization, date, version, abstract, keywords
+ * toc: yes
+ * orientation: portrait
+ */
+.pdf-cover,
+.pdf-abstract,
+.pdf-toc,
+.pdf-header,
+.pdf-footer {
+  display: block;
+}
+.pdf-cover,
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-cover-top .pdf-logo {
+  visibility: hidden;
+}
+.pdf-titleblock {
+  display: none;
+}
+.pdf-cover-main {
+  border-left: 3mm solid #0e7490;
+  padding-left: 8mm;
+}
+.pdf-title {
+  color: #164e63;
+}
+.pdf-content h2 {
+  margin-top: 1.7em;
+  color: #164e63;
+}
+.pdf-content h2::before,
+.pdf-content h3::before {
+  color: #0e7490;
+}
+/* Figures: an image followed by an italic line reads as its caption. */
+.pdf-content img + em,
+.pdf-content p:has(> img) + p > em:only-child {
+  display: block;
+  margin-top: 1.5mm;
+  color: #4b5563;
+  font-size: 9pt;
+  text-align: center;
+}
+.pdf-content p:has(> img) {
+  text-align: center;
+}
+/* "Appendix" sections start on a new page when written as a level-1 heading. */
+.pdf-content h1 {
+  break-before: page;
+}
+
+.pdf-content {
+  counter-reset: h2 h3;
+}
+.pdf-content h2 {
+  counter-increment: h2;
+  counter-set: h3 0;
+}
+.pdf-content h2::before {
+  content: counter(h2) ".\00a0\00a0";
+}
+.pdf-content h3 {
+  counter-increment: h3;
+}
+.pdf-content h3::before {
+  content: counter(h2) "." counter(h3) "\00a0\00a0";
+}
+.pdf-toc ol {
+  counter-reset: t2 t3;
+}
+.pdf-toc .toc-2 {
+  counter-increment: t2;
+  counter-set: t3 0;
+}
+.pdf-toc .toc-2::before {
+  content: counter(t2) ".\00a0\00a0";
+}
+.pdf-toc .toc-3 {
+  counter-increment: t3;
+}
+.pdf-toc .toc-3::before {
+  content: counter(t2) "." counter(t3) "\00a0\00a0";
+}
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-right {
+    content: none;
+  }
+}

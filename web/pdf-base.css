@@ -1,0 +1,212 @@
+/* Shared by every PDF template (plugins/pdf-prints). Every layout region is
+   hidden here; each template shows the ones it uses. */
+.pdf-cover,
+.pdf-header,
+.pdf-footer,
+.pdf-docinfo,
+.pdf-abstract,
+.pdf-toc,
+.pdf-approval {
+  display: none;
+}
+body.pdf .export-document {
+  max-width: 780px;
+}
+/* The page frame: thead and tfoot rows repeat on every printed page. */
+.pdf-frame {
+  width: 100%;
+  border-collapse: collapse;
+  border: 0;
+  margin: 0;
+  font-size: inherit;
+}
+.pdf-frame > thead > tr > td,
+.pdf-frame > tfoot > tr > td,
+.pdf-frame > tbody > tr > td {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.pdf-frame > thead {
+  display: table-header-group;
+}
+.pdf-frame > tfoot {
+  display: table-footer-group;
+}
+.pdf-header,
+.pdf-footer {
+  justify-content: space-between;
+  gap: 16px;
+  color: #6b7280;
+  font-size: 8.5pt;
+}
+.pdf-header {
+  margin-bottom: 8mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 0.6pt solid #d6dae4;
+}
+.pdf-footer {
+  margin-top: 8mm;
+  padding-top: 2.5mm;
+  border-top: 0.6pt solid #d6dae4;
+}
+/* Missing names and images print as visible placeholders. */
+.pdf-placeholder {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px dashed #b8bfcc;
+  border-radius: 4px;
+  color: #8a93a3;
+  font-style: italic;
+  font-weight: 400;
+}
+.pdf-logo img {
+  max-width: 48mm;
+  max-height: 18mm;
+  object-fit: contain;
+}
+.pdf-logo-placeholder {
+  padding: 3mm 6mm;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+/* Cover */
+.pdf-cover {
+  flex-direction: column;
+  min-height: 225mm;
+  break-after: page;
+}
+.pdf-cover-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pdf-cover-main {
+  margin: auto 0;
+  padding: 20mm 0;
+}
+.pdf-title {
+  margin: 0;
+  font-size: 30pt;
+  line-height: 1.15;
+}
+.pdf-subtitle {
+  margin: 4mm 0 0;
+  color: #4b5563;
+  font-size: 14pt;
+}
+.pdf-eyebrow {
+  margin: 0 0 3mm;
+  color: #6b7280;
+  font-size: 9pt;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.pdf-classification {
+  padding: 1mm 3mm;
+  border: 1pt solid currentColor;
+  border-radius: 3px;
+  color: #b42335;
+  font-size: 8.5pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pdf-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4mm 10mm;
+  margin: 0;
+  padding-top: 6mm;
+  border-top: 0.8pt solid #d6dae4;
+}
+.pdf-facts dt {
+  color: #6b7280;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pdf-facts dd {
+  margin: 1mm 0 0;
+  font-size: 10.5pt;
+}
+.export-cover.pdf-cover-image {
+  margin: 8mm 0 0;
+}
+/* Document information */
+.pdf-docinfo table {
+  width: 100%;
+  margin: 0 0 6mm;
+  font-size: 9.5pt;
+}
+.pdf-docinfo th {
+  width: 32%;
+  background: #f5f6fa;
+}
+.pdf-docinfo th,
+.pdf-docinfo td {
+  white-space: pre-line;
+}
+/* Abstract */
+.pdf-abstract {
+  margin: 0 0 8mm;
+  padding: 4mm 6mm;
+  border-left: 3px solid #d6dae4;
+  background: #f8f9fb;
+}
+.pdf-abstract h2 {
+  margin: 0 0 2mm;
+  font-size: 11pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pdf-abstract p {
+  margin: 0 0 2mm;
+  white-space: pre-line;
+}
+/* Table of contents */
+.pdf-toc {
+  margin: 0 0 8mm;
+  break-after: page;
+}
+.pdf-toc h2 {
+  margin: 0 0 4mm;
+}
+.pdf-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pdf-toc li {
+  margin: 1.2mm 0;
+}
+.pdf-toc a {
+  color: inherit;
+  text-decoration: none;
+}
+.pdf-toc .toc-2 {
+  padding-left: 6mm;
+}
+.pdf-toc .toc-3 {
+  padding-left: 12mm;
+  font-size: 0.94em;
+}
+/* Approval */
+.pdf-approval {
+  margin-top: 10mm;
+  break-inside: avoid;
+}
+.pdf-approval td {
+  height: 11mm;
+}
+@media print {
+  body.pdf .export-document {
+    max-width: none;
+  }
+  body.pdf .block a[href^="http"]::after {
+    content: none;
+  }
+}

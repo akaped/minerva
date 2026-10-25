@@ -1,0 +1,59 @@
+/*
+ * name: Project Status Report
+ * description: Progress summary, milestones, blockers, risks, and next steps.
+ * users: Project managers
+ * variables: title, project, project_manager, period, date, status
+ * toc: no
+ * orientation: portrait
+ */
+.pdf-docinfo,
+.pdf-header,
+.pdf-footer {
+  display: block;
+}
+.pdf-header,
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock h1 {
+  font-size: 22pt;
+}
+.pdf-docinfo table {
+  font-size: 9.5pt;
+}
+.pdf-docinfo th {
+  background: #f0f7ee;
+}
+.pdf-content h2 {
+  margin-top: 1.4em;
+  padding-left: 3mm;
+  border-left: 3pt solid #4d7c0f;
+  color: #365314;
+}
+/* Status tags: #on-track, #at-risk, #off-track, #blocked, #done. */
+.tag[data-tag="on-track"],
+.tag[data-tag="done"] {
+  background: #dcfce7;
+  color: #166534;
+}
+.tag[data-tag="at-risk"] {
+  background: #fef3c7;
+  color: #92400e;
+}
+.tag[data-tag="off-track"],
+.tag[data-tag="blocked"] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.pdf-content th {
+  background: #f0f7ee;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

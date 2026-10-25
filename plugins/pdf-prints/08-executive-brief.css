@@ -1,0 +1,71 @@
+/*
+ * name: Executive Brief
+ * description: A compact one-to-three page layout with key findings, recommendations, and a concise conclusion.
+ * users: Executives, managers
+ * variables: title, prepared_for, author, date, classification
+ * toc: no
+ * orientation: portrait
+ */
+@page {
+  margin: 14mm 15mm 16mm;
+}
+body.pdf {
+  font-size: 10pt;
+  line-height: 1.45;
+}
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock {
+  padding: 4mm 5mm;
+  margin-bottom: 5mm;
+  border-radius: 4px;
+  background: #111827;
+  color: #fff;
+}
+.pdf-titleblock h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 18pt;
+}
+.pdf-titleblock .post-icon {
+  display: none;
+}
+.pdf-titleblock .export-meta {
+  margin: 1.5mm 0 0;
+  padding: 0;
+  border: 0;
+  color: #d1d5db;
+}
+.pdf-titleblock .tag {
+  background: #374151;
+  color: #e5e7eb;
+}
+.pdf-content h2 {
+  margin: 4mm 0 1.5mm;
+  color: #111827;
+  font-size: 11.5pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pdf-content p,
+.pdf-content li {
+  margin-bottom: 1mm;
+}
+/* Callouts are the key findings. */
+.pdf-content blockquote[class^="markdown-alert-"] {
+  margin: 2mm 0;
+  padding: 2mm 3mm;
+}
+.block {
+  margin-bottom: 1.5mm;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

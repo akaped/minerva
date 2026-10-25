@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Minerva
+GenericName=Notes
+Comment=Collaborative notes and structured knowledge on your own Minerva servers
+Exec=minerva
+Icon=minerva
+Terminal=false
+Categories=Office;Utility;
+Keywords=notes;wiki;knowledge;markdown;
+StartupWMClass=minerva

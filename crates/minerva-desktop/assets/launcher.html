@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minerva · Servers</title>
+    <link rel="stylesheet" href="/launcher.css" />
+    <script src="/launcher.js" defer></script>
+  </head>
+  <body>
+    <main class="launcher">
+      <header>
+        <div class="mark" aria-hidden="true">✳</div>
+        <div>
+          <h1>Minerva</h1>
+          <p class="muted">
+            Your notes on this computer, and the servers you work with.
+          </p>
+        </div>
+      </header>
+
+      <section aria-labelledby="local-heading">
+        <h2 id="local-heading">This computer</h2>
+        <ul class="servers">
+          <li class="server">
+            <div class="info">
+              <div class="name">Personal notes and offline copies</div>
+              <div class="meta">
+                Stored on this computer. Works without a network; offline copies
+                sync when a server is reachable.
+              </div>
+            </div>
+            <div class="buttons">
+              <button id="open-local" class="btn primary" type="button">
+                Open
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="servers-heading">
+        <h2 id="servers-heading">Servers</h2>
+        <p class="muted">
+          Open a server to work online. Choose <b>Offline…</b> to keep copies of
+          its workspaces on this computer.
+        </p>
+        <ul id="servers" class="servers" aria-live="polite"></ul>
+        <p id="empty" class="empty" hidden>
+          No servers yet. Add the address of a Minerva server below.
+        </p>
+      </section>
+
+      <section aria-labelledby="add-heading">
+        <h2 id="add-heading">Add a server</h2>
+        <form id="add" class="add" autocomplete="off">
+          <label>
+            <span>Address</span>
+            <input
+              name="url"
+              required
+              placeholder="https://notes.example.com"
+              inputmode="url"
+              spellcheck="false"
+            />
+          </label>
+          <label>
+            <span>Name <small class="muted">(optional)</small></span>
+            <input name="label" maxlength="80" placeholder="Team notes" />
+          </label>
+          <label class="check">
+            <input type="checkbox" name="allow_insecure_http" />
+            <span
+              >Allow unencrypted HTTP on this network address. Use only on
+              trusted networks; localhost is always allowed.</span
+            >
+          </label>
+          <div class="actions">
+            <button class="btn primary" type="submit">Add server</button>
+          </div>
+        </form>
+      </section>
+
+      <p id="status" class="status" role="status"></p>
+      <footer class="muted">
+        Sign-in tokens are kept in your system credential store. Press
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> to return here.
+      </footer>
+    </main>
+  </body>
+</html>

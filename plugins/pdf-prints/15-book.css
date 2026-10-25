@@ -1,0 +1,93 @@
+/*
+ * name: Book / eBook
+ * description: Title page, table of contents, chapters on new pages, running headers, and page numbers.
+ * users: Authors, educators
+ * variables: title, subtitle, author, publisher, edition, year
+ * toc: yes
+ * orientation: portrait
+ */
+@page {
+  margin: 22mm 20mm 24mm;
+}
+body.pdf {
+  font-family: "EB Garamond", Garamond, "Palatino Linotype", Georgia, serif;
+  font-size: 11.5pt;
+  line-height: 1.6;
+  text-align: justify;
+  hyphens: auto;
+}
+.pdf-cover,
+.pdf-toc,
+.pdf-header {
+  display: block;
+}
+.pdf-cover,
+.pdf-header {
+  display: flex;
+}
+.pdf-header {
+  justify-content: center;
+  border: 0;
+  font-style: italic;
+}
+.pdf-header-left,
+.pdf-header-right {
+  display: none;
+}
+.pdf-cover {
+  text-align: center;
+}
+.pdf-cover-top {
+  display: none;
+}
+.pdf-title {
+  font-size: 30pt;
+  font-weight: 500;
+}
+.pdf-facts {
+  display: block;
+  border: 0;
+}
+.pdf-facts dt {
+  display: none;
+}
+.pdf-facts dd {
+  margin: 1mm 0;
+}
+.pdf-titleblock {
+  display: none;
+}
+/* Level-1 and level-2 headings are chapters: each starts on a new page. */
+.pdf-content h1,
+.pdf-content h2 {
+  break-before: page;
+  margin: 30mm 0 10mm;
+  font-weight: 500;
+  text-align: center;
+}
+.pdf-content > .block:first-child h1,
+.pdf-content > .block:first-child h2 {
+  break-before: auto;
+}
+.pdf-content p + p {
+  text-indent: 1.5em;
+}
+.pdf-content p {
+  margin-bottom: 0.3em;
+  orphans: 3;
+  widows: 3;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-center {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}
+@page :first {
+  @bottom-center {
+    content: none;
+  }
+}

@@ -1,0 +1,85 @@
+/*
+ * name: Newsletter / Editorial
+ * description: Magazine-style typography with pull quotes, image captions, and optional columns.
+ * users: Writers, creators
+ * variables: title, publication, issue, date, author
+ * toc: no
+ * orientation: portrait
+ */
+body.pdf {
+  font-family: "Source Serif 4", Charter, Georgia, serif;
+  font-size: 10.5pt;
+}
+.pdf-footer {
+  display: flex;
+}
+.pdf-titleblock {
+  margin-bottom: 6mm;
+  padding-bottom: 4mm;
+  border-bottom: 3pt double #111827;
+  text-align: center;
+}
+.pdf-titleblock .post-icon {
+  display: none;
+}
+.pdf-titleblock h1 {
+  font-family: "Playfair Display", "Didot", Georgia, serif;
+  font-size: 34pt;
+  letter-spacing: -0.01em;
+}
+.pdf-titleblock .export-meta {
+  justify-content: center;
+  border: 0;
+  font-family: Inter, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+/* Two columns; headings, images, and pull quotes span both. */
+.pdf-content {
+  column-count: 2;
+  column-gap: 8mm;
+  column-rule: 0.5pt solid #e5e7eb;
+}
+.pdf-content h2,
+.pdf-content blockquote,
+.pdf-content p:has(> img) {
+  column-span: all;
+}
+.pdf-content h2 {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 18pt;
+}
+.pdf-content > .block:first-child p:first-of-type::first-letter {
+  float: left;
+  margin: 1mm 2mm 0 0;
+  font-size: 40pt;
+  line-height: 0.8;
+  font-weight: 700;
+}
+/* Quotes are pull quotes. */
+.pdf-content blockquote:not([class]) {
+  margin: 4mm 10mm;
+  padding: 3mm 0;
+  border: 0;
+  border-top: 1.5pt solid #111827;
+  border-bottom: 1.5pt solid #111827;
+  color: #111827;
+  font-size: 15pt;
+  font-style: italic;
+  text-align: center;
+}
+.pdf-content p:has(> img) + p > em:only-child {
+  display: block;
+  color: #6b7280;
+  font-size: 8.5pt;
+  text-align: center;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-center {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

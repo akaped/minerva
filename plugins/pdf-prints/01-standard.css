@@ -1,0 +1,35 @@
+/*
+ * name: Standard
+ * description: Minimal Markdown rendering with clean typography; no cover or decoration.
+ * users: All users, personal note-takers
+ * variables: title, author, date
+ * toc: no
+ * orientation: portrait
+ */
+body.pdf {
+  font-family: "Source Serif 4", Charter, Georgia, serif;
+}
+.export-document h1 {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 22pt;
+}
+.pdf-content h2,
+.pdf-content h3 {
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.export-meta {
+  border-bottom: 0;
+}
+.pdf-content pre {
+  background: #f6f7f9;
+  border-color: #e6e8ec;
+}
+
+/* Page numbers where the browser supports page margin boxes (Chromium). */
+@page {
+  @bottom-center {
+    content: counter(page);
+    font-size: 8pt;
+    color: #6b7280;
+  }
+}

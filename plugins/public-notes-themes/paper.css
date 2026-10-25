@@ -1,0 +1,53 @@
+/*
+ * name: Paper
+ * scheme: light
+ * description: A warm, bookish reading layout with serif type.
+ */
+:root {
+  --ink: #2f2a24;
+  --muted: #7d7365;
+  --line: #e7dfd2;
+  --accent: #9c3d24;
+  --page: #fbf8f2;
+  --code-bg: #f2ece1;
+  --font-body:
+    Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype",
+    Georgia, serif;
+  --font-heading: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --measure: 680px;
+  --radius: 4px;
+  --mark: #f7e3a1;
+  --tag-bg: #f1e3d6;
+  --tag-ink: #8a3a22;
+  --hl-comment: #8d8273;
+  --hl-string: #4f7a3a;
+  --hl-constant: #a8571a;
+  --hl-keyword: #7a3e8e;
+  --hl-function: #2f5d8a;
+  --hl-type: #9c3d24;
+  --hl-attribute: #8a6a1c;
+}
+body {
+  font-size: 18px;
+  line-height: 1.75;
+}
+.site {
+  text-align: center;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+}
+.post h1 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.post-date {
+  font-style: italic;
+}
+.posts a {
+  font-family: var(--font-heading);
+  font-size: 21px;
+}
+blockquote {
+  border-left-color: var(--accent);
+  font-style: italic;
+}

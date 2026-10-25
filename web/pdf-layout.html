@@ -1,0 +1,48 @@
+<!-- Default PDF layout. Templates show or hide each region with CSS; a template
+     can replace this file with its own plugins/pdf-prints/ID.html. See
+     plugins/README.md for the placeholder syntax and the regions Minerva fills. -->
+<section class="pdf-cover">
+  <div class="pdf-cover-top">
+    <div class="pdf-logo">{{#logo}}<img src="{{logo}}" alt="">{{/logo}}{{^logo}}<span class="pdf-placeholder pdf-logo-placeholder">{{#company}}{{company}}{{/company}}{{^company}}Company logo{{/company}}</span>{{/logo}}</div>
+    {{#classification}}<span class="pdf-classification">{{classification}}</span>{{/classification}}
+  </div>
+  {{{cover_image}}}
+  <div class="pdf-cover-main">
+    {{#doc_type}}<p class="pdf-eyebrow">{{doc_type}}</p>{{/doc_type}}
+    <h1 class="pdf-title">{{title}}</h1>
+    {{#subtitle}}<p class="pdf-subtitle">{{subtitle}}</p>{{/subtitle}}
+  </div>
+  {{{cover_facts}}}
+</section>
+<table class="pdf-frame" role="presentation">
+  <thead><tr><td>
+    <div class="pdf-header">
+      <span class="pdf-header-left">{{#company}}{{company}}{{/company}}{{^company}}{{#project}}{{project}}{{/project}}{{/company}}</span>
+      <span class="pdf-header-title">{{title}}</span>
+      <span class="pdf-header-right">{{#classification}}{{classification}}{{/classification}}{{^classification}}{{#version}}Version {{version}}{{/version}}{{/classification}}</span>
+    </div>
+  </td></tr></thead>
+  <tfoot><tr><td>
+    <div class="pdf-footer">
+      <span class="pdf-footer-left">{{#classification}}{{classification}} · {{/classification}}{{title}}</span>
+      <span class="pdf-footer-right">{{#document_id}}{{document_id}} · {{/document_id}}{{#version}}v{{version}} · {{/version}}{{generated}}</span>
+    </div>
+  </td></tr></tfoot>
+  <tbody><tr><td>
+    <div class="pdf-titleblock">{{{titleblock}}}</div>
+    <section class="pdf-docinfo">{{{metadata_table}}}</section>
+    <section class="pdf-abstract">{{#abstract}}<h2>Abstract</h2><p>{{abstract}}</p>{{#keywords}}<p class="pdf-keywords"><strong>Keywords:</strong> {{keywords}}</p>{{/keywords}}{{/abstract}}</section>
+    <nav class="pdf-toc" aria-label="Contents">{{{toc}}}</nav>
+    <main class="pdf-content">{{{content}}}</main>
+    <section class="pdf-approval">
+      <h2>Approval</h2>
+      <table>
+        <thead><tr><th>Role</th><th>Name</th><th>Signature</th><th>Date</th></tr></thead>
+        <tbody>
+          <tr><td>Prepared by</td><td>{{#author}}{{author}}{{/author}}{{^author}}{{#owner}}{{owner}}{{/owner}}{{^owner}}<span class="pdf-placeholder">Author name</span>{{/owner}}{{/author}}</td><td></td><td></td></tr>
+          <tr><td>Approved by</td><td>{{#approver}}{{approver}}{{/approver}}{{^approver}}<span class="pdf-placeholder">Approver name</span>{{/approver}}</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </section>
+  </td></tr></tbody>
+</table>
