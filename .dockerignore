@@ -1,0 +1,14 @@
+# Keep the build context small and free of local data and secrets.
+.git
+target
+node_modules
+dist
+data
+*.db
+*.db-shm
+*.db-wal
+*.ai-key
+.env
+web/dist
+favicon.png
+crates/minerva-desktop/assets/*.ico

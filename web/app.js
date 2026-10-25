@@ -1,9 +1,11 @@
 import "./pane-auth.js";
+import { pluginDialog } from "./plugin-commands.js";
 import { createYouTubeEmbeds } from "./youtube.js";
 import {
   createNoteTabs,
   isPane,
   initialNote,
+  initialChat,
   paneMessage,
 } from "./note-tabs.js";
 import { renderAIChat, renderAISettings, stopAI } from "./ai.js";
@@ -169,6 +171,9 @@ const paths = {
   more: "M5 12h.5 M11.75 12h.5 M18.5 12h.5",
   folderOpen: "M3 19V5h6l2 2h8v3 M3 19l3-9h16l-3 9z",
   edit: "M4 20h4L19 9l-4-4L4 16z M14 6l4 4",
+  // Brain, after Lucide (ISC license, see THIRD_PARTY_NOTICES.md).
+  brain:
+    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4 M17.599 6.5a3 3 0 0 0 .399-1.375 M6.003 5.125A3 3 0 0 0 6.401 6.5 M3.477 10.896a4 4 0 0 1 .585-.396 M19.938 10.5a4 4 0 0 1 .585.396 M6 18a4 4 0 0 1-1.967-.516 M19.967 17.484A4 4 0 0 1 18 18",
 };
 const icon = (n) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[n] || paths.note}"/></svg>`;
@@ -185,6 +190,9 @@ let data,
   closing = Promise.resolve(),
   toastTimer;
 const modal = $("#modal");
+// A tab that shows only an AI chat, usually beside the note it is about.
+const chatPane =
+  isPane && /^(note|folder):[a-f0-9-]{36}$/i.test(initialChat || "");
 let aiScope = null,
   tagFilter = null,
   // Share-link guests use a reduced editor backed by /api/v1/shared.
@@ -204,7 +212,7 @@ if (isPane) document.documentElement.classList.add("editor-pane");
 function paneState() {
   paneMessage("state", {
     noteId: note?.id,
-    title: note?.title || "Browse notes",
+    title: chatPane ? `AI · ${chatTitle()}` : note?.title || "Browse notes",
     workspace: currentWorkspace()?.name || "",
     dirty: dirty || dbDrafts.size > 0 || dbSaves.size > 0,
   });
@@ -219,6 +227,28 @@ if (isPane) {
     )
       return;
     if (e.data.type === "visibility") videos.setVisible(!!e.data.visible);
+    if (e.data.type === "insert-blocks") {
+      // The note may still be loading when the tab was just opened for this.
+      for (let i = 0; i < 100 && !note; i++)
+        await new Promise((r) => setTimeout(r, 100));
+      try {
+        const count = await appendBlocks(
+          (e.data.blocks || []).map(String).slice(0, 500),
+        );
+        paneMessage("inserted", { request: e.data.request, count });
+      } catch (err) {
+        paneMessage("inserted", {
+          request: e.data.request,
+          error: err.message,
+        });
+      }
+    }
+    if (e.data.type === "insert-result") {
+      const r = insertRequests.get(e.data.request);
+      insertRequests.delete(e.data.request);
+      if (e.data.error) r?.reject(new Error(e.data.error));
+      else r?.resolve(e.data.count);
+    }
     if (e.data.type === "flush") {
       try {
         await flush();
@@ -706,7 +736,7 @@ function shell() {
       ["templates", "template", "Templates"],
       ...(localMode ? [] : [["sharing", "users", "Sharing"]]),
       ["databases", "grid", "Databases"],
-      ["chat", "star", "AI chat"],
+      ["chat", "brain", "AI chat"],
     ]
       .map(
         ([v, i, t]) =>
@@ -758,8 +788,14 @@ function shell() {
       data,
       workspaceId,
       initialScope: aiScope,
+      docked: chatPane,
+      dockedTitle: chatPane ? chatTitle() : "",
       openNote,
       openDatabase,
+      sendToNote,
+      noteFromReply,
+      canEditNote: (id) =>
+        data.roles[data.notes.find((n) => n.id === id)?.folder_id] === "editor",
       configure: () => navigate("providers"),
       error,
     }).catch(error);
@@ -768,8 +804,108 @@ function shell() {
   paneState();
 }
 async function askAI(scope) {
+  // Inside a note tab, the chat opens in its own tab beside the note.
+  if (isPane && !chatPane && ["note", "folder"].includes(scope.kind)) {
+    await flush();
+    paneMessage("open-chat", {
+      scope: `${scope.kind}:${scope.id}`,
+      title:
+        scope.kind === "note"
+          ? (note?.id === scope.id ? note.title : null) ||
+            data.notes.find((n) => n.id === scope.id)?.title
+          : data.folders.find((f) => f.id === scope.id)?.name,
+    });
+    return;
+  }
   aiScope = scope;
   await navigate("chat");
+}
+/** What a chat tab is about, for its tab title and heading. */
+function chatTitle() {
+  if (!aiScope) return "AI chat";
+  if (aiScope.kind === "note")
+    return data?.notes.find((n) => n.id === aiScope.id)?.title || "Note";
+  return data?.folders.find((f) => f.id === aiScope.id)?.name || "Folder";
+}
+/** Adds Markdown blocks at the end of the open note. Returns how many. */
+async function appendBlocks(markdowns) {
+  if (!note || !editable())
+    throw new Error("You can only add to a note you can edit.");
+  const extra = markdowns.filter((m) => m.trim()).map(newBlock);
+  if (!extra.length) return 0;
+  live?.boundary();
+  // A note that is only an empty block starts with the reply instead.
+  if (note.blocks.length === 1 && !note.blocks[0].markdown.trim()) {
+    note.blocks = [];
+    note.rendered = [];
+  }
+  const rendered = await Promise.all(
+    extra.map((b) => renderMarkdown(b.markdown)),
+  );
+  note.blocks.push(...extra);
+  note.rendered.push(...rendered);
+  markDirty();
+  renderBlocks();
+  $(`[data-block="${CSS.escape(extra[0].id)}"]`)?.scrollIntoView({
+    block: "center",
+    behavior: "smooth",
+  });
+  announce(`Added ${extra.length} block${extra.length === 1 ? "" : "s"}`);
+  toast(
+    `Added ${extra.length} block${extra.length === 1 ? "" : "s"} from AI chat`,
+  );
+  return extra.length;
+}
+// Requests from this chat tab to its host, by ID.
+const insertRequests = new Map();
+/** Sends reply blocks to a note: through the host, or into the open note. */
+async function sendToNote(id, blocks) {
+  const title = data.notes.find((n) => n.id === id)?.title || "Note";
+  if (isPane)
+    return new Promise((resolve, reject) => {
+      const request = crypto.randomUUID();
+      insertRequests.set(request, { resolve, reject });
+      paneMessage("insert-blocks", { request, id, title, blocks });
+      setTimeout(() => {
+        if (insertRequests.delete(request))
+          reject(new Error("The note did not respond. Nothing was added."));
+      }, 25000);
+    });
+  if (noteTabs) return noteTabs.insertBlocks({ id, title, blocks });
+  if (note?.id === id) return appendBlocks(blocks);
+  throw new Error("Open the note to add to it.");
+}
+/** A new note holding an AI reply, in the chat's folder; then opens it. */
+async function noteFromReply(markdown, question, scope) {
+  const folder =
+    scope.kind === "folder"
+      ? scope.id
+      : scope.kind === "note"
+        ? data.notes.find((n) => n.id === scope.id)?.folder_id
+        : null;
+  const target = [
+    folder,
+    ...data.folders
+      .filter((f) => f.workspace_id === (workspaceId || f.workspace_id))
+      .map((f) => f.id),
+  ].find((f) => f && data.roles[f] === "editor");
+  if (!target) throw new Error("You need edit access to a folder to save it.");
+  const blocks = splitMarkdown(markdown).filter((b) => b.trim());
+  // A leading heading becomes the title; otherwise the question does.
+  let title = question.replace(/\s+/g, " ").trim();
+  if (/^#{1,3} /.test(blocks[0] || ""))
+    title = blocks.shift().replace(/^#+ /, "");
+  const n = await api("notes", "POST", {
+    folder_id: target,
+    title: title.slice(0, 120) || "AI reply",
+  });
+  await api("notes/" + n.id, "PUT", {
+    ...n,
+    blocks: (blocks.length ? blocks : [""]).map((b, i) => newBlock(b, i)),
+  });
+  await refresh();
+  await openNote(n.id);
+  return n.id;
 }
 async function navigate(v, f = null) {
   noteTabs?.hide();
@@ -966,7 +1102,7 @@ async function openNote(id) {
     });
     return;
   }
-  if (isPane && note && note.id !== id) {
+  if (isPane && ((note && note.id !== id) || chatPane)) {
     paneMessage("open-note", {
       id,
       title: data.notes.find((n) => n.id === id)?.title,
@@ -1179,9 +1315,9 @@ function renderEditor() {
         : "";
   const tools = shareMode
     ? `<button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="export">${icon("download")}Export</button>`
-    : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note">Ask AI</button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
+    : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can ? "readonly" : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div><div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can ? "readonly" : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div><div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2225,6 +2361,15 @@ function editBlock(id, caret = null) {
       e.preventDefault();
       ta.blur();
       body.focus();
+    } else if (
+      (e.ctrlKey || e.metaKey) &&
+      e.shiftKey &&
+      e.key.toLowerCase() === "p"
+    ) {
+      e.preventDefault();
+      const selectedText = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+      ta.blur();
+      closing.then(() => blockMenu(id, selectedText)).catch(error);
     } else if (e.key === "/" && !ta.value) {
       e.preventDefault();
       ta.blur();
@@ -2290,19 +2435,78 @@ function newBlock(markdown = "", index = note?.blocks.length || 0) {
     y: 40 + Math.floor(index / 3) * 180,
   };
 }
-function blockMenu(existingId) {
+function blockMenu(existingId, capturedSelection = "") {
   if (!editable()) return;
   modal.innerHTML =
     '<h2>Insert a block</h2><input id="command-search" aria-label="Search block commands" placeholder="Search headings, code, files…" autocomplete="off"><div id="command-results"></div><footer><button class="btn" id="close-modal">Close</button></footer>';
   modal.showModal();
   $("#close-modal").onclick = () => modal.close();
   const input = $("#command-search");
+  const targetNote = note.id;
+  let commands = [...blockCommands];
+  if (!shareMode)
+    api("server-plugins/capabilities")
+      .then((result) => {
+        if (!modal.open || $("#command-search") !== input) return;
+        commands.push(
+          ...result.commands.map((c) => [
+            `/${c.id} · ${c.name}${c.available ? "" : ` (${c.reason || "configuration required"})`}`,
+            "@plugin",
+            c.name,
+            c,
+          ]),
+        );
+        draw(true);
+      })
+      .catch(() => {});
   let selected = 0;
   let matches = [];
   async function choose(index) {
     const command = matches[index];
-    if (!command) return;
+    if (!command || (command[3] && !command[3].available)) return;
     modal.close();
+    if (command[1] === "@plugin") {
+      if (note?.id !== targetNote) return;
+      await flush();
+      if (note?.id !== targetNote) return;
+      let inserted = false;
+      const block = note.blocks.find(
+        (b) => b.id === existingId && b.markdown.trim(),
+      );
+      return pluginDialog({
+        command: command[3],
+        context: {
+          noteId: targetNote,
+          blockId: block?.id,
+          selection: capturedSelection,
+        },
+        api,
+        esc,
+        modal,
+        upload: uploadFile,
+        insert: async (sections, noteId, afterId) => {
+          if (inserted) return flush();
+          if (note?.id !== noteId || !editable())
+            throw new Error(
+              "Reopen the editable source note before inserting.",
+            );
+          const rendered = await Promise.all(sections.map(renderMarkdown));
+          if (note?.id !== noteId || !editable())
+            throw new Error("The active note changed.");
+          live?.boundary();
+          const index = note.blocks.findIndex((b) => b.id === afterId);
+          const at = index < 0 ? note.blocks.length : index + 1;
+          note.blocks.splice(at, 0, ...sections.map((text) => newBlock(text)));
+          note.rendered.splice(at, 0, ...rendered);
+          markDirty();
+          inserted = true;
+          live?.boundary();
+          renderBlocks();
+          await flush();
+          announce("Inserted generated knowledge");
+        },
+      });
+    }
     if (command[1] === null) return attachmentDialog();
     if (command[1] === "@database") return databaseEmbedDialog(existingId);
     let b = note.blocks.find((b) => b.id === existingId);
@@ -2318,7 +2522,7 @@ function blockMenu(existingId) {
       updateLinkPicker($(".block textarea")).catch(() => closeLinkPicker());
   }
   function draw(reset = false) {
-    matches = blockCommands.filter((c) =>
+    matches = commands.filter((c) =>
       `${c[0]} ${c[2]}`
         .toLowerCase()
         .includes(input.value.trim().toLowerCase()),
@@ -2328,7 +2532,7 @@ function blockMenu(existingId) {
       matches
         .map(
           (c, i) =>
-            `<button class="search-result ${i === selected ? "command-selected" : ""}" data-command="${i}">${esc(c[0])}</button>`,
+            `<button class="search-result ${i === selected ? "command-selected" : ""}" data-command="${i}" ${c[3] && !c[3].available ? "disabled" : ""}>${esc(c[0])}</button>`,
         )
         .join("") || "<p>No matching commands</p>";
     $$("[data-command]", modal).forEach((button) =>
@@ -2454,19 +2658,6 @@ function templateOptions(selected) {
     )
     .join("");
 }
-// Fields that hold longer text.
-const LONG_FIELDS = new Set([
-  "abstract",
-  "summary",
-  "participants",
-  "absent",
-  "agenda",
-  "scope",
-  "description",
-  "keywords",
-]);
-const metaLabel = (key) =>
-  (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_/g, " ");
 const metaKey = (raw) =>
   raw
     .trim()
@@ -2474,110 +2665,125 @@ const metaKey = (raw) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
-function metaInput(key, value, readOnly) {
-  const attr = `name="v:${esc(key)}" aria-label="${esc(metaLabel(key))}" ${readOnly ? "readonly" : ""}`;
-  if (LONG_FIELDS.has(key))
-    return `<textarea ${attr} rows="3">${esc(value)}</textarea>`;
-  const date = key === "date" || key.endsWith("_date") || key === "valid_until";
-  return `<input ${attr} ${date && /^(\d{4}-\d{2}-\d{2})?$/.test(value) ? 'type="date"' : ""} value="${esc(value)}">`;
-}
+// Filled in by Minerva when exporting; a note can set its own value instead.
+const AUTOMATIC_VARIABLES = {
+  title: "the note title",
+  date: "the export date (journal entries: their date)",
+  generated: "the export date and time",
+  updated: "when the note last changed",
+  tags: "the note's tags",
+};
 /**
- * Note metadata: values for PDF templates and `{{key}}` placeholders in exports.
- * The chosen template's fields come first, in its order; other fields follow.
+ * Note metadata: variables the user names and fills in. Exports replace
+ * `{{key}}` in the note with the value, and PDF templates place known keys on
+ * covers, headers, and tables. Below the fields, the keys that templates use
+ * can be added with one click.
  */
 function metadataDialog(templateId = note.print_template || "", after = null) {
-  templateId = printTemplateId(templateId);
   const targetId = note.id;
   const readOnly = !editable();
-  // Keeps what was typed when switching templates.
   const current = { ...(note.metadata || {}) };
-  const draw = (chosen) => {
-    const t = printTemplates.find((x) => x.id === chosen);
-    const fields = t?.variables || [];
-    const extra = Object.keys(current).filter((k) => !fields.includes(k));
-    const hint = (k) =>
-      k === "title" && !current.title
-        ? '<small class="hint">Empty uses the note title.</small>'
-        : k === "date" && !current.date
-          ? '<small class="hint">Empty uses the export date.</small>'
-          : ["logo", "photo"].includes(k)
-            ? '<small class="hint">An HTTPS image address or a file link from this note. Empty prints a placeholder.</small>'
-            : "";
-    modal.innerHTML = `<form id="metadata-form"><h2>Metadata</h2><p>Details such as author, company, or version. PDF templates place them on the cover, in headers and footers, and in tables. Type <code>{{key}}</code> in the note to insert a value when exporting.</p><label>PDF template<select name="template" ${readOnly ? "disabled" : ""}>${templateOptions(chosen)}</select></label>${t ? `<p class="hint">${esc(t.description)} For: ${esc(t.users)}.</p>` : ""}<div class="meta-fields">${fields
-      .map(
-        (k) =>
-          `<label><span class="meta-label">${esc(metaLabel(k))} <code class="meta-key">{{${esc(k)}}}</code></span>${metaInput(k, current[k] ?? "", readOnly)}${hint(k)}</label>`,
-      )
-      .join(
-        "",
-      )}</div><fieldset class="meta-custom"><legend>${fields.length ? "Other fields" : "Fields"}</legend><div id="meta-rows">${extra
-      .map((k) => metaRow(k, current[k], readOnly))
-      .join(
-        "",
-      )}</div>${readOnly ? "" : '<button type="button" class="btn" id="meta-add">+ Add field</button>'}</fieldset><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="meta-cancel">${readOnly ? "Close" : "Cancel"}</button>${readOnly ? "" : '<button class="btn primary" type="submit">Save</button>'}</footer></form>`;
-    const form = $("#metadata-form");
-    const collect = () => {
-      $$("[name^='v:']", form).forEach(
-        (el) => (current[el.name.slice(2)] = el.value),
-      );
-      $$(".meta-row", form).forEach((row) => {
-        const key = metaKey($("[name=key]", row).value);
-        const old = row.dataset.key;
-        if (old && old !== key) delete current[old];
-        if (key) current[key] = $("[name=value]", row).value;
-        row.dataset.key = key;
-      });
-    };
-    const bindRows = () =>
-      $$("[data-remove-meta]", form).forEach(
-        (b) =>
-          (b.onclick = () => {
-            const row = b.closest(".meta-row");
-            delete current[row.dataset.key];
-            row.remove();
-          }),
-      );
-    bindRows();
-    form.template?.addEventListener("change", () => {
-      collect();
-      draw(form.template.value);
-    });
-    $("#meta-add", form)?.addEventListener("click", () => {
-      $("#meta-rows", form).insertAdjacentHTML(
-        "beforeend",
-        metaRow("", "", false),
-      );
-      bindRows();
-      $("#meta-rows .meta-row:last-child [name=key]", form).focus();
-    });
-    $("#meta-cancel", form).onclick = () => {
-      modal.close();
-      if (after) after();
-    };
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      collect();
-      try {
-        const saved = await api(`notes/${targetId}/metadata`, "PUT", {
-          metadata: Object.fromEntries(
-            Object.entries(current).filter(([, v]) => String(v).trim()),
-          ),
-          print_template: form.template.value,
-        });
-        if (note?.id === targetId) Object.assign(note, saved);
-        modal.close();
-        toast("Metadata saved");
-        if (after) after();
-      } catch (err) {
-        $(".form-error", form).textContent = err.message;
-      }
-    };
+  const chosen = printTemplates.find((t) => t.id === templateId);
+  const used = new Set(chosen?.variables || []);
+  const known = [...new Set(printTemplates.flatMap((t) => t.variables || []))]
+    .filter((k) => !(k in AUTOMATIC_VARIABLES))
+    .sort();
+  const chip = (k) =>
+    `<button type="button" class="meta-chip" data-meta-key="${esc(k)}" ${readOnly ? "disabled" : ""} title="${esc(
+      AUTOMATIC_VARIABLES[k]
+        ? `Automatic: ${AUTOMATIC_VARIABLES[k]}. Add it to use your own value.`
+        : `Used by ${printTemplates
+            .filter((t) => (t.variables || []).includes(k))
+            .map((t) => t.name)
+            .join(", ")}`,
+    )}">{{${esc(k)}}}</button>`;
+  const suggestions = () => {
+    const free = (k) => !(k in current);
+    const first = [...used].filter(free);
+    const rest = known.filter((k) => free(k) && !used.has(k));
+    return `${first.length ? `<p class="meta-suggest-head">Used by ${esc(chosen.name)}</p><div class="meta-chips">${first.map(chip).join("")}</div>` : ""}${rest.length ? `<p class="meta-suggest-head">${first.length ? "Used by other PDF templates" : "Used by PDF templates"}</p><div class="meta-chips">${rest.map(chip).join("")}</div>` : ""}<p class="meta-suggest-head">Filled in automatically</p><div class="meta-chips">${Object.keys(
+      AUTOMATIC_VARIABLES,
+    )
+      .filter(free)
+      .map(chip)
+      .join("")}</div>`;
   };
-  draw(templateId);
+  modal.innerHTML = `<form id="metadata-form"><h2>Metadata</h2><p>Your own variables for this note: name a field, give it a value, and type <code>{{name}}</code> in the note to insert it when exporting. PDF templates also place some of them on covers, headers, and tables; a PDF shows the name of any it is missing, such as <code>{{company}}</code>.</p><div id="meta-rows" class="meta-custom">${Object.keys(
+    current,
+  )
+    .map((k) => metaRow(k, current[k], readOnly))
+    .join(
+      "",
+    )}</div><p class="meta-empty hint" ${Object.keys(current).length ? "hidden" : ""}>No variables yet.</p>${readOnly ? "" : '<button type="button" class="btn" id="meta-add">+ Add variable</button>'}<section class="meta-suggest" aria-label="Known variables"><div id="meta-suggestions">${suggestions()}</div></section><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="meta-cancel">${readOnly ? "Close" : "Cancel"}</button>${readOnly ? "" : '<button class="btn primary" type="submit">Save</button>'}</footer></form>`;
+  const form = $("#metadata-form");
+  // Reads the rows into `current`, following renamed and removed keys.
+  const collect = () => {
+    for (const k of Object.keys(current)) delete current[k];
+    $$(".meta-row", form).forEach((row) => {
+      const key = metaKey($("[name=key]", row).value);
+      if (key) current[key] = $("[name=value]", row).value;
+    });
+  };
+  const refresh = () => {
+    collect();
+    $(".meta-empty", form).hidden = $$(".meta-row", form).length > 0;
+    $("#meta-suggestions", form).innerHTML = suggestions();
+    bind();
+  };
+  const add = (key) => {
+    $("#meta-rows", form).insertAdjacentHTML(
+      "beforeend",
+      metaRow(key, "", false),
+    );
+    refresh();
+    $(
+      `#meta-rows .meta-row:last-child [name=${key ? "value" : "key"}]`,
+      form,
+    ).focus();
+  };
+  const bind = () => {
+    $$("[data-remove-meta]", form).forEach(
+      (b) =>
+        (b.onclick = () => {
+          b.closest(".meta-row").remove();
+          refresh();
+        }),
+    );
+    $$("[data-meta-key]", form).forEach(
+      (b) => (b.onclick = () => add(b.dataset.metaKey)),
+    );
+    $$(".meta-row [name=key]", form).forEach(
+      (input) => (input.onchange = refresh),
+    );
+  };
+  bind();
+  $("#meta-add", form)?.addEventListener("click", () => add(""));
+  $("#meta-cancel", form).onclick = () => {
+    modal.close();
+    if (after) after();
+  };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    collect();
+    try {
+      const saved = await api(`notes/${targetId}/metadata`, "PUT", {
+        metadata: Object.fromEntries(
+          Object.entries(current).filter(([, v]) => String(v).trim()),
+        ),
+        print_template: note.print_template || "",
+      });
+      if (note?.id === targetId) Object.assign(note, saved);
+      modal.close();
+      toast("Metadata saved");
+      if (after) after();
+    } catch (err) {
+      $(".form-error", form).textContent = err.message;
+    }
+  };
   if (!modal.open) modal.showModal();
 }
 function metaRow(key, value, readOnly) {
-  return `<div class="meta-row" data-key="${esc(key)}"><input name="key" placeholder="Field name" aria-label="Field name" value="${esc(key)}" ${readOnly ? "readonly" : ""}><input name="value" placeholder="Value" aria-label="Value" value="${esc(value ?? "")}" ${readOnly ? "readonly" : ""}>${readOnly ? "" : '<button type="button" class="btn" data-remove-meta aria-label="Remove field">✕</button>'}</div>`;
+  return `<div class="meta-row" data-key="${esc(key)}"><input name="key" placeholder="Variable name" aria-label="Variable name" value="${esc(key)}" ${readOnly ? "readonly" : ""}><input name="value" placeholder="${esc(key === "logo" || key === "photo" ? "HTTPS image address or a file link" : "Value")}" aria-label="Value" value="${esc(value ?? "")}" ${readOnly ? "readonly" : ""}>${readOnly ? "" : '<button type="button" class="btn" data-remove-meta aria-label="Remove field">✕</button>'}</div>`;
 }
 const EXPORT_FORMATS = [
   [
@@ -5044,6 +5250,12 @@ function sharedUnavailable() {
       setInterval(() => loadReplicas().catch(() => {}), 4000);
     }
     await refresh();
+    if (chatPane) {
+      const [kind, id] = initialChat.split(":");
+      aiScope = { kind, id };
+      view = "chat";
+      document.documentElement.classList.add("chat-pane");
+    }
     shell();
     const requested =
       initialNote ||

@@ -1,0 +1,12 @@
+# Build the ordinary image first: docker build -t minerva:local .
+# Then: docker build -f plugins/server/superhuman-learning/Dockerfile.example -t minerva:learning .
+FROM minerva:local
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/minerva-media \
+    && /opt/minerva-media/bin/pip install --no-cache-dir yt-dlp
+ENV MINERVA_PLUGIN_PYTHON=/opt/minerva-media/bin/python
+USER minerva
+# Pin a tested yt-dlp version for repeatable production builds.
+# Mount plugins at /plugins; configure ASR through the server environment.

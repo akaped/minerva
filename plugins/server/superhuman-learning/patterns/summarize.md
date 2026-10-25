@@ -1,0 +1,1 @@
+Summarize the supplied source faithfully and concisely. Keep only ideas supported by the source. Use the source language. Do not invent information or fill quotas. Return a summary item and optional key insights.

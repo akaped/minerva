@@ -1,0 +1,34 @@
+{
+  "id": "superhuman-learning",
+  "name": "Superhuman Learning",
+  "version": "0.2.0",
+  "protocol": 1,
+  "enabled": true,
+  "commands": [
+    {
+      "id": "summary",
+      "name": "Summarize text",
+      "pattern": "summarize"
+    },
+    {
+      "id": "wisdom",
+      "name": "Extract wisdom",
+      "pattern": "extract_wisdom"
+    },
+    {
+      "id": "youtube",
+      "name": "Learn from a YouTube video",
+      "pattern": "extract_wisdom",
+      "input": "youtube",
+      "requires_ai": false
+    },
+    {
+      "id": "transcribe",
+      "name": "Transcribe an audio attachment",
+      "pattern": "summarize",
+      "input": "audio",
+      "requires_ai": false
+    }
+  ],
+  "media": true
+}

@@ -1,0 +1,16 @@
+name: Suggest an improvement
+description: Tell us what would make Minerva more useful to you.
+title: "[Idea] "
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What are you trying to achieve?
+      description: Describe the real workflow and what currently gets in your way.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would help?
+      description: A simpler experience, a new feature, or an example from your work.

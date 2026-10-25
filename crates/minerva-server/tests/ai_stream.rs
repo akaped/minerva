@@ -93,10 +93,14 @@ async fn mock_provider(seen: Seen) -> String {
     let openai = sse(&[
         json!({"type":"response.output_text.delta","delta":"Codename "}),
         json!({"type":"response.output_text.delta","delta":"Aurora [S1]"}),
+        // Web search: a cited page, listed under the answer.
+        json!({"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"https://news.example/aurora","title":"Aurora launch"}}),
+        json!({"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"javascript:alert(1)","title":"Bad"}}),
         json!({"type":"response.completed","response":{"usage":{"input_tokens":11,"output_tokens":4}}}),
     ]);
     let anthropic = sse(&[
         json!({"type":"message_start","message":{"usage":{"input_tokens":12}}}),
+        json!({"type":"content_block_delta","delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://wiki.example/Aurora","title":"Aurora [wiki]"}}}),
         json!({"type":"content_block_delta","delta":{"type":"text_delta","text":"Aurora [S1]"}}),
         json!({"type":"message_stop"}),
     ]);
@@ -233,11 +237,13 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
     let reader = login["token"].as_str().unwrap().to_string();
 
     for (kind, path, expected) in [
-        ("openai", "openai", "Codename Aurora [S1]"),
-        ("anthropic", "anthropic", "Aurora [S1]"),
+        ("openai", "openai", "Codename Aurora [S1]\n\n**Web sources**\n- [Aurora launch](https://news.example/aurora)"),
+        ("anthropic", "anthropic", "Aurora [S1]\n\n**Web sources**\n- [Aurora wiki](https://wiki.example/Aurora)"),
         ("compatible", "compatible", "It is Aurora [S1]"),
     ] {
-        let (status, provider) = call(&router, "POST", "ai/providers", &admin, json!({"kind":kind,"name":kind,"endpoint":format!("{base}/{path}"),"model":"mock-model","api_key":format!("key-{kind}")})).await;
+        // Web search where the provider offers it.
+        let search = kind != "compatible";
+        let (status, provider) = call(&router, "POST", "ai/providers", &admin, json!({"kind":kind,"name":kind,"endpoint":format!("{base}/{path}"),"model":"mock-model","api_key":format!("key-{kind}"),"web_search":search})).await;
         assert_eq!(status, StatusCode::OK, "{provider}");
         let provider = provider["id"].as_str().unwrap().to_string();
         let (_, chat) = call(
@@ -280,6 +286,17 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
             "content outside the user's permissions is never sent"
         );
         assert!(sent.contains("What is the launch codename?"));
+        // Each provider gets the instructions, and notes come with the link the
+        // model copies to cite them.
+        assert!(sent.contains("You are the assistant inside Minerva"));
+        assert_eq!(sent.contains("\"tools\""), search, "{sent}");
+        assert!(
+            sent.contains(&format!(
+                "cite as [Launch plan](#note/{})",
+                note["id"].as_str().unwrap()
+            )),
+            "{sent}"
+        );
 
         let (_, saved) = call(
             &router,
@@ -306,7 +323,8 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
         assert_eq!(status, StatusCode::OK);
         let (_, sent) = seen.lock().unwrap().last().cloned().unwrap();
         assert!(
-            sent.to_string().contains(expected),
+            sent.to_string()
+                .contains(json!(expected).to_string().trim_matches('"')),
             "previous answer included as history"
         );
     }

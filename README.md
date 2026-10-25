@@ -1,156 +1,172 @@
+<div align="center">
+
 # Minerva
 
-A self-hosted workspace for collaborative notes and structured knowledge. Rust API server, shared Rust protocol models, and an embedded, responsive browser application.
+### A home for everything you’re learning.
 
-**Status: working MVP, not AFFiNE feature parity or a production-hardened release.** A native Windows/Linux desktop client is included (see [Desktop client](docs/desktop.md)). The browser UI uses HTML/CSS/JavaScript; API handling, persistence, permissions, authentication, and Markdown rendering run in Rust. Node.js is used only to build/test the browser bundle (Yjs + esbuild); the running server remains a standalone Rust binary.
+Write freely. Connect ideas. Learn with AI. Build something together.
 
-## Start
+**A free, open-source workspace for your notes, knowledge, and next big idea.**
 
-Install Rust and a C toolchain (SQLite is compiled into the binary). This checkout was verified with Rust 1.96.0.
+[Explore Minerva](https://akaped.github.io/minerva/) · [Get started](#get-started) · [Contribute](CONTRIBUTING.md) · [Report a problem](https://github.com/akaped/minerva/issues)
+
+</div>
+
+---
+
+You read something worth remembering. A conversation sparks an idea. A video finally makes a difficult topic click. Then life moves on, and the good stuff gets scattered across tabs, files, and forgotten notes.
+
+**Minerva gives those ideas somewhere to grow.** Capture a thought, connect it to what you already know, ask an AI to help you understand it, and share the result with the people who need it.
+
+## Open, in every sense
+
+- **Free and open source.** Minerva is released under the MIT License. Use it, study it, change it, share it.
+- **Yours to run.** Keep it on your own computer, or host it on your own server for your family, class, or team. There is no account to create with us and no subscription.
+- **Your notes stay yours.** Export everything to Markdown, a ZIP for Obsidian or Joplin, HTML, or PDF, whenever you like.
+- **Built in the open.** The roadmap, the design decisions, and the discussions are public, and anyone can take part.
+
+> **Early access:** Minerva is usable every day and improving quickly. We welcome people who try it, tell us what gets in the way, and help make it better. It is not yet hardened for large organizations.
+
+## What you’ll find inside
+
+### Write the way you think
+
+Every paragraph is a block you can move, nest, and rearrange. Mix notes with checklists, tables, images, code, diagrams, equations, callouts, and YouTube videos that play right in the page. Start from a template, or keep a daily journal where unfinished tasks follow you to the next day. When you need quiet, switch to focus mode.
+
+### Connect what you know
+
+Link notes to each other and see which pages point back. Organize with folders, tags, and favorites, and search everything you can access. Open several notes as tabs, two of them side by side.
+
+For things that belong in a list, use tables and boards: reading lists, research collections, project trackers. Drop them straight into a note.
+
+### An AI that works beside you
+
+Click **Ask AI** in a note and a chat opens next to it, already knowing what the note says.
+
+- **Answers become notes.** Replies arrive as ready-made blocks: add one, or the whole answer, to your note with a click, save it as a new note, or copy it.
+- **Research beyond your notes.** Ask about something new and the AI answers from what it knows and, if your administrator allows it, searches the web and lists its sources.
+- **Your choice of model.** OpenAI, Anthropic Claude, DeepSeek, or any compatible service, including models you run yourself. AI is optional: ordinary note-taking never needs it, and it only sees what you can see.
+
+The optional **Superhuman Learning** plugin goes further:
+
+| Start with                  | What you can do                                                  |
+| --------------------------- | ---------------------------------------------------------------- |
+| A selection, block, or note | Summarize it or pull out insights, concepts, and questions.      |
+| A YouTube video             | Import its captions with timestamps and jump back to the moment. |
+| An audio recording          | Transcribe it with a transcription service you choose.           |
+
+You stay in charge: preview the result, edit it, and keep only what’s useful. [Learning plugin setup →](plugins/server/superhuman-learning/README.md)
+
+### Think together
+
+Edit the same note at the same time and see who else is there. Decide who can view or edit each workspace, folder, or note. Share a link when someone needs a quick way in, and switch it off when you’re done.
+
+### Share your work with the world
+
+Publish notes as clean public pages, a blog, or a wiki, with videos and images included. Export a print-ready PDF from 20 templates, from meeting minutes to a polished report. Give a note your own details, like `{{company}}` or `{{author}}`, and the templates place them on the cover and in the headers.
+
+### Works offline
+
+The Windows and Linux desktop app keeps your personal notes on your computer and works without a connection. It can also keep offline copies of your team’s workspaces: edit them on a plane, and Minerva merges your changes with everyone else’s when you’re back online.
+
+### Make it yours
+
+Pick light, dark, colorful, or a retro command-line theme, and give your published pages their own look. Themes, PDF templates, and plugins are simple files you can add or write yourself. Two-step sign-in keeps accounts safe.
+
+## A few things you could make
+
+- **A learning notebook:** video transcripts, sources, explanations in your own words, and the questions you still want to answer.
+- **A research companion:** ask the AI to dig into a topic, keep the best parts as notes, and link them to what you already know.
+- **A shared project room:** plans, checklists, trackers, and meeting notes in one place.
+- **A small public knowledge garden:** turn selected notes into a blog or wiki while the rest stays private.
+
+## Get started
+
+### Which way is right for you?
+
+| You want…                                                    | Choose                                              |
+| ------------------------------------------------------------ | --------------------------------------------------- |
+| Minerva in your browser, from anywhere, alone or with others | [Your own Minerva server](#your-own-minerva-server) |
+| Notes on your own computer, also without internet            | [The desktop app](#the-desktop-app)                 |
+
+Both work together: the desktop app can connect to your server and keep offline copies.
+
+### Your own Minerva server
+
+You need a computer or rented server that stays on, with [Docker](https://docs.docker.com/get-started/get-docker/) installed.
+
+**1. Download Minerva**
 
 ```sh
-# Set your own initial administrator credentials; only needed on a new database.
-export MINERVA_ADMIN_EMAIL='you@example.com'
-read -rs MINERVA_ADMIN_PASSWORD
-export MINERVA_ADMIN_PASSWORD
-cargo run --locked -p minerva-server
+git clone https://github.com/akaped/minerva.git
+cd minerva
+cp .env.example .env
 ```
 
-Type a password of at least 12 characters at the hidden prompt and press Enter. Open **http://127.0.0.1:3000**. Sign in with those credentials. A private workspace, Getting started folder, and welcome note are created automatically. Subsequent launches use existing accounts; changing bootstrap environment variables does not reset them.
+**2. Fill in your settings.** Open the new `.env` file in any text editor and change the lines marked **CHANGE**:
 
-The preview started during development uses `/tmp/minerva-preview.db`, separately from your normal database. Its disposable local login is `admin@minerva.local` / `preview-only-password`. Do not use those credentials on a deployed server.
+- your email and a password of at least 12 characters, for the first administrator account;
+- the address people will use, such as `https://notes.example.com`;
+- how Minerva reaches the internet: `https` gets a free certificate automatically, and `tunnel` uses Cloudflare when you can’t open ports. The file explains both.
+
+Just trying it on your own computer? Set `COMPOSE_PROFILES=`, `MINERVA_PUBLIC_URL=http://localhost:3000`, and `MINERVA_SECURE_COOKIE=0`.
+
+**3. Start it**
 
 ```sh
-npm ci
-npm run build
-npm test
-cargo test --locked --workspace
-cargo fmt --all --check
-node --check web/app.js
-cargo build --locked -p minerva-server
-node scripts/protocol-smoke.mjs  # starts an isolated local server and tests real MCP/Yjs clients
-cargo build --locked --release -p minerva-server
-./target/release/minerva-server
+docker compose up -d --build
 ```
 
-## Docker
+The first start takes a few minutes. Then open your address (or **http://localhost:3000**) and sign in.
 
-The image contains the server with the web app embedded, built from source in three stages: the browser bundles (Node), the server (Rust), and a slim runtime. The runtime runs as a non-root user with a read-only root filesystem, no capabilities, and a data volume.
+**4. Finishing touches.** Remove the password from `.env`: it was only needed once. Add accounts for other people under _Server administration_, and set up an AI provider under _AI providers_ if you want one.
 
-```sh
-cp .env.example .env            # set MINERVA_ADMIN_EMAIL / MINERVA_ADMIN_PASSWORD and your URL
-docker compose up -d --build    # http://127.0.0.1:3000 (bound to localhost only)
-```
+To update later: `git pull`, then `docker compose up -d --build`. Back up the `minerva_minerva-data` Docker volume regularly; [here’s how](docs/setup.md#docker).
 
-For a public domain with automatic HTTPS (Caddy and Let's Encrypt):
+### The desktop app
 
-1. Point DNS at the host and open ports 80 and 443.
-2. In `.env`, set `MINERVA_DOMAIN`, `MINERVA_PUBLIC_URL=https://…`, and `MINERVA_SECURE_COOKIE=1`.
-3. Start with `docker compose --profile https up -d --build`.
+Ready-made downloads are on the way. Until then, the app is built from its source code, which takes a few commands:
 
-To use your own reverse proxy instead, forward to `127.0.0.1:3000` and keep `MINERVA_SECURE_COOKIE=1` when serving over HTTPS.
+1. Install [Rust](https://www.rust-lang.org/tools/install).
+2. On Linux, also install the WebKitGTK 4.1 and GTK 3 development packages (Fedora: `webkit2gtk4.1-devel gtk3-devel`; Debian or Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev`).
+3. In the `minerva` folder, run `cargo run --release -p minerva-desktop`.
 
-**Data.** The database and its `.ai-key` file live in the `minerva_minerva-data` volume. To back up, stop the container and copy both, for example `docker compose stop minerva && docker run --rm -v minerva_minerva-data:/data -v "$PWD":/backup debian:bookworm-slim tar czf /backup/minerva-backup.tgz -C /data . && docker compose start minerva`.
+The app opens straight to your personal notes. To connect a server, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>. [Desktop app guide →](docs/desktop.md)
 
-**Upgrades.** Run `git pull && docker compose up -d --build`. The administrator variables only matter on the first start; you can remove the password from `.env` afterwards.
+**More detail:** [Full setup, HTTPS, and backups](docs/setup.md) · [Offline copies and sync](docs/sync.md) · [Development guide](CONTRIBUTING.md#development-setup)
 
-## Desktop client
+## Help make Minerva better
 
-```sh
-cargo run -p minerva-desktop        # Linux; needs WebKitGTK 4.1 and GTK 3 development packages
-scripts/package-desktop.sh          # dist/ packages for Linux (tar.gz) and Windows (zip, cross-compiled)
-```
+Our ambition is simple: **make the place where people keep their knowledge feel as useful as the knowledge itself.** That takes more than code. It takes good writing, thoughtful design, and people willing to say what isn’t working.
 
-The desktop client works on its own: it runs a Minerva server in-process for personal notes, with no setup and no network needed. It can also keep **offline copies** of workspaces from your servers. Edits made offline are stored on the computer, sent when the server is reachable again, and merged with other people's changes; conflicts are listed for review. It also opens each server's own interface online, and stores session tokens in Windows Credential Manager or the Linux Secret Service. See [docs/desktop.md](docs/desktop.md) and [docs/sync.md](docs/sync.md).
+You don’t need to be a programmer to contribute:
 
-Web assets are embedded at compile time. Run `npm run build` after changing browser source, then restart through `cargo run`. The generated `web/dist/app.js` is included, so running an unchanged checkout only requires Rust. Rebuild it when changing source.
+- Try it for something real and tell us where you got stuck.
+- Improve a guide, or share a useful template or theme.
+- Test it with a keyboard, a screen reader, or a different device.
+- Help with translations and clearer wording.
+- Suggest a simpler experience, or help build it.
 
-## What works
+[Read the contribution guide](CONTRIBUTING.md) · [Browse issues](https://github.com/akaped/minerva/issues) · [Suggest an improvement](https://github.com/akaped/minerva/issues/new?template=feature_request.yml)
 
-- Server → workspaces → folders → notes, with stable UUID identities.
-- Workspace and folder creation, folder renaming, note creation and title editing.
-- Administrator-created accounts, account disabling, workspace-creation privileges, and workspace access: members added to a workspace can edit (or view) every folder and note in it.
-- Deletion: notes (from the trash) and folders by their editors; personal workspaces by their owners, shared workspaces by administrators.
-- Plugins: app color themes, public website themes, and 20 PDF templates (company report, meeting minutes, proposal, academic paper, security assessment, and more) in [plugins/](plugins/README.md), loaded from a folder at run time.
-- Note metadata (author, company, version, ...) that PDF templates place on covers, headers, footers, and tables, and that `{{key}}` placeholders insert into exports.
-- Inline Markdown blocks:
-  - Click to edit; blur saves.
-  - Enter splits at the cursor (inside code fences it adds a newline), and Backspace/Delete at the edges merge blocks.
-  - Shift+Enter keeps multiple lines in one block, and arrow keys move between blocks.
-  - Tab nests a block under the one above (up to six levels) and Shift+Tab moves it out. Lists continue on Enter.
-  - Undo/redo reverts only your own changes, IME composition is safe during live collaboration, and the editor works with screen readers.
-- Headings, emphasis, lists, links, quotes, fenced code with server-side syntax highlighting (and JSON error reporting), Markdown tables, task toggles, dividers, block ordering and removal.
-- Writing tools:
-  - Formatting shortcuts (Ctrl+B/I/E/K, Ctrl+Shift+H to highlight, Ctrl+Shift+X to strike through) and a floating toolbar for selected text.
-  - Pasting from web pages, Google Docs, or Word converts formatting to Markdown.
-  - Find and replace in a note (Ctrl+F), and focus mode (Ctrl+Shift+F).
-  - Word count and reading time.
-- Rich blocks:
-  - Callouts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), `==highlights==`, and math (`$…$`, `$$…$$`) rendered to MathML on the server.
-  - Mermaid diagrams, rendered in the app and shown as source on published pages.
-- Note covers (gradients, uploaded images, or HTTPS images) and an icon picker.
-- Journals and templates:
-  - One journal note per date, with a calendar, Today, previous/next day, and an optional template for new days.
-  - Templates with `{{date}}`, `{{weekday}}`, `{{long_date}}`, and `{{title}}` placeholders, offered as "Fill from template" on empty notes.
-  - `[[uncompleted_journal_tasks]]` shows open tasks from earlier entries without duplicates; ticking one completes it in its entries.
-- Tags and links between notes:
-  - Note tags plus inline `#tags`, a tag list in the sidebar, tag pages, and `#tag` search.
-  - `[[` links to other notes that survive renames, with a "Linked from" backlinks list. Searchable `/` commands with keyboard navigation; multiline import/paste preserves fenced code and tables.
-- Image upload/paste and general file attachments with authenticated previews/downloads, opaque UUID storage keys, size quotas, and originals retained for note history. The Files dialog lists retained uploads for download or reinsertion.
-- Live collaborative editing using Yjs in the browser and Yrs in Rust: concurrent text merging, collaborator presence, stable block IDs, and reconnect retries.
-- Structured databases inside folders: typed text, number, checkbox, date, select, and URL properties; inline cell editing; filtering and sorting; table and select-grouped board views; recoverable record archive; editable properties and permanent deletion of records, properties, and databases; live databases inside notes (`/` → Database).
-- Light, Dark, and System themes, remembered in the browser.
-- Built-in read-only MCP over stateless Streamable HTTP, with workspace-scoped credentials, expiry, revocation, note search/read, and typed database queries. See [MCP setup](docs/mcp.md).
-- Sharing: share a note with a member (view or edit), or create view/edit links that work without signing in, with revocation. Publish notes as clean public pages at `/p/{slug}`, pinned or live, with an index and an Atom feed, or group them into sites with their own paths, such as a `/blog` or a `/wiki`. See [Sharing](docs/sharing.md).
-- Attachment storage administration with reference-aware cleanup of unreferenced files.
-- Search across accessible note titles and text, grid/list views, favorites, recoverable trash.
-- Export a note as PDF (print-designed, A4 or Letter, with cover, highlighted code, math and diagrams, via the system's "Save as PDF"), Markdown with optional front matter, Markdown + attachments (.zip, ready for Obsidian or Joplin), or a self-contained HTML file. Markdown import.
-- The last 50 saved note revisions, with restore.
-- Two-factor authentication with authenticator apps (TOTP), with recovery codes and administrator reset.
-- SQLite persistence, Argon2id password hashes, seven-day revocable sessions, server-enforced authorization, sanitized Markdown HTML, request-size limits, CSRF header checks, and optimistic concurrency.
+Small, focused contributions are welcome; for larger changes, open an issue first so we can agree on the approach. A star helps others find the project.
 
-Favorites belong to the note, so they are shared among its readers. Open notes synchronize automatically: edits are sent after a short debounce and active clients exchange CRDT updates every 650 ms. Presence expires after 15 seconds without a heartbeat. This is online collaboration using HTTP polling, not WebSocket transport. Pending changes retry after temporary connection loss while the page remains open; there is no durable offline queue across page reloads. Export an unsaved draft before closing the browser. History keeps up to 50 checkpoints, grouping frequent live edits into roughly 30-second intervals.
+## What’s still growing
 
-Structured records use optimistic revision checks rather than text CRDTs; concurrent edits to the same record produce a visible conflict. Local cell writes are serialized. Database views refresh every 2.5 seconds when there are no active/pending cell edits. Invalid or conflicting values remain visible until corrected or explicitly discarded with Reload records.
+- **In the browser, Minerva needs a connection.** For offline work, use the desktop app.
+- **Ready-made desktop downloads** and installers are not available yet.
+- **Large teams and very large collections** need more performance work.
+- **AI features** depend on the provider you configure, and their answers still need your judgment.
+- **Not yet available:** flashcards and spaced repetition, end-to-end encryption, single sign-on, email invitations, and password reset by email.
 
-Import preserves each Markdown source line as a block. Multiline structures such as fenced code and tables need an explicit multiline block for correct rendering. Existing canvas coordinates remain compatible in stored notes, but the canvas UI is no longer offered and further canvas work is out of scope.
+The [roadmap](TODO.md) and [architecture notes](docs/architecture.md) go into more depth.
 
-## Configuration
+## Documentation
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MINERVA_BIND` | `127.0.0.1:3000` | Listen address |
-| `MINERVA_DATABASE` | `data/minerva.db` | SQLite file |
-| `MINERVA_ADMIN_EMAIL` | `admin@minerva.local` | Initial admin only |
-| `MINERVA_ADMIN_PASSWORD` | none | Required on initial setup, minimum 12 characters |
-| `MINERVA_SECURE_COOKIE` | unset | Set to `1` behind HTTPS |
-| `MINERVA_PUBLIC_URL` | HTTP listen address | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com` |
-| `MINERVA_SITE_NAME` | `Published notes` | Title of the published pages index and feed |
-| `MINERVA_TOTP_ISSUER` | `Minerva` | Name shown in authenticator apps |
-| `MINERVA_PLUGINS` | `plugins` | Folder with extra or replacement themes; read on each request (see [plugins/README.md](plugins/README.md)) |
-| `MINERVA_PUBLIC_THEME` | none | Public theme for pages under `/p/`, e.g. `paper` |
+[Setup and operations](docs/setup.md) · [Desktop app](docs/desktop.md) · [Offline sync](docs/sync.md) · [Sharing and publishing](docs/sharing.md) · [Connect external AI tools (MCP)](docs/mcp.md) · [Themes, templates, and plugins](plugins/README.md) · [API reference](docs/api.md)
 
-Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
+## License
 
-For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/p/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Email invitations, password self-service, audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+Minerva is free software under the [MIT License](LICENSE): you may use, study, modify, and share it. Third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-To back up: stop the server and copy the database, or use SQLite's online backup API while it runs. Do not copy only the main file from a running WAL-mode database. Restore with the server stopped. Database file access exposes private notes and password hashes, so protect the file and its backups.
-
-## Project
-
-- `crates/minerva-core`: serializable Rust wire models shared by server and clients.
-- `crates/minerva-client`: native client transport, server connection registry, OS credential storage, and the authenticating webview gateway.
-- `crates/minerva-desktop`: Windows/Linux desktop application (system webview, launcher, menus, downloads).
-- `crates/minerva-server`: Axum API, authorization, persistence, rendering, embedded UI.
-- `web`: browser interface and Yjs collaboration provider; esbuild emits `web/dist/app.js`.
-- `docs/architecture.md`: AFFiNE study, architectural decisions, client design, and feature roadmap.
-- `docs/api.md`: versioned API and permission contract.
-- `docs/verification.md`: checks performed and remaining validation.
-- `docs/mcp.md`: client configuration, tools, credential scope, and security model.
-- `docs/desktop.md`: desktop client build, packaging, data locations, and security model.
-- `docs/sync.md`: offline copies, the sync protocol, merge rules, and limits.
-- `docs/sharing.md`: member shares, share links, published pages, and the cross-server sharing design.
-- `TODO.md`: requested follow-up features, including images/files, contextual LLM chat, editor improvements, and public/member sharing.
-- `THIRD_PARTY_NOTICES.md`: licenses for bundled browser dependencies.
-
-This is independently authored code. No AFFiNE implementation code or artwork was copied.
+Independently authored. Built in the open. Better with you.

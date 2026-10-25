@@ -1,14 +1,14 @@
 <!-- Resume / CV layout: a contact header, then the note as the resume body.
      Missing details print as placeholders. -->
 <header class="resume-head">
-  {{#photo}}<img class="resume-photo" src="{{photo}}" alt="">{{/photo}}{{^photo}}<span class="resume-photo pdf-placeholder">Photo</span>{{/photo}}
+  {{#photo}}<img class="resume-photo" src="{{photo}}" alt="">{{/photo}}{{^photo}}<span class="resume-photo pdf-placeholder">&#123;&#123;photo&#125;&#125;</span>{{/photo}}
   <div>
     <h1>{{#name}}{{name}}{{/name}}{{^name}}{{title}}{{/name}}</h1>
-    <p class="resume-role">{{#role}}{{role}}{{/role}}{{^role}}<span class="pdf-placeholder">Role</span>{{/role}}</p>
+    <p class="resume-role">{{#role}}{{role}}{{/role}}{{^role}}<span class="pdf-placeholder">&#123;&#123;role&#125;&#125;</span>{{/role}}</p>
     <ul class="resume-contact">
-      <li>{{#email}}{{email}}{{/email}}{{^email}}<span class="pdf-placeholder">Email</span>{{/email}}</li>
-      <li>{{#phone}}{{phone}}{{/phone}}{{^phone}}<span class="pdf-placeholder">Phone</span>{{/phone}}</li>
-      <li>{{#location}}{{location}}{{/location}}{{^location}}<span class="pdf-placeholder">Location</span>{{/location}}</li>
+      <li>{{#email}}{{email}}{{/email}}{{^email}}<span class="pdf-placeholder">&#123;&#123;email&#125;&#125;</span>{{/email}}</li>
+      <li>{{#phone}}{{phone}}{{/phone}}{{^phone}}<span class="pdf-placeholder">&#123;&#123;phone&#125;&#125;</span>{{/phone}}</li>
+      <li>{{#location}}{{location}}{{/location}}{{^location}}<span class="pdf-placeholder">&#123;&#123;location&#125;&#125;</span>{{/location}}</li>
       {{#website}}<li>{{website}}</li>{{/website}}
       {{#linkedin}}<li>{{linkedin}}</li>{{/linkedin}}
     </ul>

@@ -9,6 +9,7 @@ mod plugins;
 mod removal;
 mod render;
 mod replication;
+mod server_plugins;
 mod sharing;
 mod sites;
 mod twofactor;
@@ -120,6 +121,7 @@ pub struct Store {
     data: Data,
     attempts: Limiter,
     ai: ai::Runtime,
+    plugin_tasks: HashMap<String, tokio::task::AbortHandle>,
 }
 pub type Shared = Arc<Mutex<Store>>;
 fn now() -> u64 {
@@ -189,6 +191,7 @@ impl Store {
         attachments::initialize(&db)?;
         replication::initialize(&db)?;
         let ai = ai::initialize(&db, path)?;
+        server_plugins::initialize(&db)?;
         let raw: Option<String> = db
             .query_row("SELECT payload FROM state WHERE id=1", [], |r| r.get(0))
             .optional()?;
@@ -211,6 +214,7 @@ impl Store {
             data,
             attempts: Limiter::default(),
             ai,
+            plugin_tasks: HashMap::new(),
         })))
     }
 }
@@ -651,6 +655,7 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/attachments/{attachment_id}", get(attachments::endpoint))
         .route("/api/v1/attachments/{attachment_id}/preview", get(attachments::endpoint))
         .route("/api/v1/ai/{*path}", any(ai::endpoint))
+        .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
         .route("/api/v1/{*path}", any(api))
         .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint))
         // Public sites (`/blog/...`); paths the server uses are reserved and win.
@@ -1160,6 +1165,20 @@ fn dispatch(
             json!(d.history.get(*nid).cloned().unwrap_or_default())
         }
         ("POST", ["render"]) => {
+            // One block, or a list of blocks (an AI reply) in one request.
+            if let Some(blocks) = v["blocks"].as_array() {
+                if blocks.len() > 500 {
+                    return Err(bad("Too many blocks"));
+                }
+                let html = blocks
+                    .iter()
+                    .map(|b| match b.as_str() {
+                        Some(md) if md.len() <= 100_000 => Ok(render(md)),
+                        _ => Err(bad("Invalid block")),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok((json!({ "html": html }), None));
+            }
             let md = v["markdown"]
                 .as_str()
                 .ok_or_else(|| bad("Missing markdown"))?;

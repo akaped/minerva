@@ -146,7 +146,7 @@ async fn templates_fill_from_note_metadata() {
     assert!(html.contains("<h1 class=\"pdf-title\">Quarterly Security Review</h1>"));
     assert!(html.contains("Acme Corporation") && html.contains("Confidential"));
     assert!(
-        html.contains("<span class=\"pdf-placeholder\">Department</span>"),
+        html.contains("<span class=\"pdf-placeholder\">&#123;&#123;department&#125;&#125;</span>"),
         "missing values print placeholders"
     );
     assert!(html
@@ -200,7 +200,8 @@ async fn templates_fill_from_note_metadata() {
     .await;
     assert!(
         resume.contains("<h1>Quarterly Security Review</h1>")
-            && resume.contains("<span class=\"pdf-placeholder\">Role</span>")
+            && resume
+                .contains("<span class=\"pdf-placeholder\">&#123;&#123;role&#125;&#125;</span>")
     );
     // An unknown or missing template uses Standard; there is no unstyled export.
     for query in ["template=nope", "template="] {

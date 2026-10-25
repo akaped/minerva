@@ -1,0 +1,3 @@
+# Templates use {{placeholder}} syntax that a formatter would break.
+plugins/**/*.html
+web/pdf-layout.html

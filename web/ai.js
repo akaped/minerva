@@ -1,3 +1,4 @@
+import { splitMarkdown } from "./markdown.js";
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 let controller = null;
@@ -25,16 +26,22 @@ export async function renderAISettings({ api, esc, data, error }) {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">IN-APP INTELLIGENCE</div><div class="page-heading"><div><h1>AI providers</h1><p class="subtitle">Choose the models your server can use for contextual chat.</p></div>${data.user.admin ? '<button class="btn primary" id="add-provider">+ Add provider</button>' : ""}</div>
     <div class="panel ai-notice"><h2>Your context, your choice</h2><p>Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Uploaded image and file contents are not sent. Provider usage may incur API charges.</p><p>API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.</p></div>
-    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored</p>${data.user.admin ? `<button class="btn danger" data-remove-provider="${p.id}">Remove provider</button>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
-  $("#add-provider")?.addEventListener("click", () => {
+    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? " · web search on" : ""}</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">Edit</button><button class="btn danger" data-remove-provider="${p.id}">Remove provider</button></div>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
+  // Adds a provider, or edits `existing`. The stored key is never shown: an
+  // empty key field keeps it, and pointing it at another server needs it again.
+  const providerForm = (existing = null) => {
     const modal = $("#modal");
-    modal.innerHTML = `<form id="provider-form"><h2>Add an AI provider</h2><p>This profile is available to server members. Requests use this API key and its billing account.</p><label>Provider<select name="kind">${Object.entries(
+    const p = existing || { kind: "openai", endpoint: presets.openai.endpoint };
+    modal.innerHTML = `<form id="provider-form"><h2>${existing ? "Edit AI provider" : "Add an AI provider"}</h2><p>This profile is available to server members. Requests use this API key and its billing account.</p><label>Provider<select name="kind">${Object.entries(
       presets,
     )
-      .map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`)
+      .map(
+        ([k, preset]) =>
+          `<option value="${k}" ${k === p.kind ? "selected" : ""}>${esc(preset.label)}</option>`,
+      )
       .join(
         "",
-      )}</select></label><label>Profile name<input name="name" maxlength="200" placeholder="e.g. Team assistant" required></label><label>API base URL<input name="endpoint" type="url" value="https://api.openai.com/v1" required></label><label>Model ID<input name="model" placeholder="Exact model ID from your provider" maxlength="200" required></label><label>API key<input name="api_key" type="password" autocomplete="new-password" required maxlength="4096"></label><p>Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">Cancel</button><button class="btn primary" type="submit">Save provider</button></footer></form>`;
+      )}</select></label><label>Profile name<input name="name" maxlength="200" placeholder="e.g. Team assistant" value="${esc(p.name || "")}" required></label><label>API base URL<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>Model ID<input name="model" placeholder="Exact model ID from your provider" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>Allow web search</label><p class="hint web-search-hint"></p><label>API key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? "<p>The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.</p>" : ""}<p>Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">Cancel</button><button class="btn primary" type="submit">Save provider</button></footer></form>`;
     modal.showModal();
     const clear = () => {
       modal.close();
@@ -49,8 +56,21 @@ export async function renderAISettings({ api, esc, data, error }) {
       },
       { once: true },
     );
+    // Only OpenAI and Anthropic have a web search tool of their own.
+    const searchable = () => {
+      const kind = $("select[name=kind]", modal).value;
+      const box = $("input[name=web_search]", modal);
+      const supported = kind === "openai" || kind === "anthropic";
+      box.disabled = !supported;
+      if (!supported) box.checked = false;
+      $(".web-search-hint", modal).textContent = supported
+        ? "The model may search the web while answering. Searches run at the provider, are billed per search, and receive search terms based on the question and notes."
+        : "Web search is available for OpenAI and Anthropic providers.";
+    };
+    searchable();
     $("select[name=kind]", modal).onchange = (e) => {
       $("input[name=endpoint]", modal).value = presets[e.target.value].endpoint;
+      searchable();
     };
     $("#provider-form").onsubmit = async (e) => {
       e.preventDefault();
@@ -58,7 +78,9 @@ export async function renderAISettings({ api, esc, data, error }) {
       button.disabled = true;
       try {
         const values = Object.fromEntries(new FormData(e.target));
-        await api("ai/providers", "POST", values);
+        values.web_search = $("input[name=web_search]", modal).checked;
+        if (existing) await api(`ai/providers/${existing.id}`, "PATCH", values);
+        else await api("ai/providers", "POST", values);
         clear();
         await renderAISettings({ api, esc, data, error });
       } catch (err) {
@@ -66,7 +88,15 @@ export async function renderAISettings({ api, esc, data, error }) {
         button.disabled = false;
       }
     };
-  });
+  };
+  $("#add-provider")?.addEventListener("click", () => providerForm());
+  $$("[data-edit-provider]").forEach(
+    (button) =>
+      (button.onclick = () =>
+        providerForm(
+          providers.find((p) => p.id === button.dataset.editProvider),
+        )),
+  );
   $$("[data-remove-provider]").forEach(
     (button) =>
       (button.onclick = async () => {
@@ -97,8 +127,13 @@ export async function renderAIChat({
   data,
   workspaceId,
   initialScope,
+  docked = false,
+  dockedTitle = "",
   openNote,
   openDatabase,
+  sendToNote,
+  noteFromReply,
+  canEditNote,
   configure,
   error,
 }) {
@@ -110,33 +145,46 @@ export async function renderAIChat({
   if (epoch !== generation) return;
   let chat = null,
     running = false;
-  const scopeOptions = [
-    {
-      kind: "workspace",
-      id: workspaceId,
-      label:
-        "Workspace · " +
-        (data.workspaces.find((w) => w.id === workspaceId)?.name || ""),
-    },
-    ...data.folders
-      .filter((f) => f.workspace_id === workspaceId)
-      .map((f) => ({ kind: "folder", id: f.id, label: "Folder · " + f.name })),
-    ...data.notes
-      .filter(
-        (n) =>
-          !n.trashed &&
-          data.folders.some(
-            (f) => f.id === n.folder_id && f.workspace_id === workspaceId,
-          ),
-      )
-      .map((n) => ({ kind: "note", id: n.id, label: "Note · " + n.title })),
-  ];
+  // A docked chat (a tab beside a note) stays on its one context.
+  const scopeOptions = docked
+    ? [
+        {
+          kind: initialScope.kind,
+          id: initialScope.id,
+          label: `${initialScope.kind === "note" ? "Note" : "Folder"} · ${dockedTitle}`,
+        },
+      ]
+    : [
+        {
+          kind: "workspace",
+          id: workspaceId,
+          label:
+            "Workspace · " +
+            (data.workspaces.find((w) => w.id === workspaceId)?.name || ""),
+        },
+        ...data.folders
+          .filter((f) => f.workspace_id === workspaceId)
+          .map((f) => ({
+            kind: "folder",
+            id: f.id,
+            label: "Folder · " + f.name,
+          })),
+        ...data.notes
+          .filter(
+            (n) =>
+              !n.trashed &&
+              data.folders.some(
+                (f) => f.id === n.folder_id && f.workspace_id === workspaceId,
+              ),
+          )
+          .map((n) => ({ kind: "note", id: n.id, label: "Note · " + n.title })),
+      ];
   const chosen = scopeOptions.findIndex(
     (s) => s.kind === initialScope?.kind && s.id === initialScope?.id,
   );
   $("#breadcrumb").textContent = "AI chat";
   $("#content").innerHTML =
-    `<section class="page ai-page"><div class="eyebrow">ANSWERS FROM YOUR KNOWLEDGE</div><div class="page-heading"><div><h1>Ask your workspace</h1><p class="subtitle">A focused conversation, with sources you can open.</p></div><button class="btn" id="ai-settings">Provider settings</button></div><div class="ai-layout"><aside class="panel ai-history"><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><p class="ai-disclosure">Only permitted text from this context is sent to the selected provider, together with recent conversation. Context is capped; source coverage appears with each answer. Replies may be inaccurate.</p><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Summarize a project, compare ideas, or ask about a note.</p></div></div><form id="chat-form"><label for="chat-question">Your question</label><textarea id="chat-question" rows="3" maxlength="8000" placeholder="Ask a question about this context…" required ${providers.length ? "" : "disabled"}></textarea><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Ready" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button><button class="btn primary" id="send-chat" ${providers.length ? "" : "disabled"}>Send</button></div></form></section></div></section>`;
+    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1>AI · ${esc(dockedTitle)}</h1><button class="btn" id="ai-settings">Providers</button></div>` : '<div class="eyebrow">ANSWERS FROM YOUR KNOWLEDGE</div><div class="page-heading"><div><h1>Ask your workspace</h1><p class="subtitle">A focused conversation, with sources you can open.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history"><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><p class="ai-disclosure">Only permitted text from this context is sent to the selected provider, together with recent conversation. Context is capped; source coverage appears with each answer. Replies may be inaccurate.</p><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Summarize a project, compare ideas, or ask about a note.</p></div></div><form id="chat-form"><label for="chat-question">Your question</label><textarea id="chat-question" rows="3" maxlength="8000" placeholder="Ask a question about this context…" required ${providers.length ? "" : "disabled"}></textarea><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Ready" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button><button class="btn primary" id="send-chat" ${providers.length ? "" : "disabled"}>Send</button></div></form></section></div></section>`;
   $("#ai-settings").onclick = configure;
   const scope = () => {
     const selected = scopeOptions[Number($("#chat-scope").value)];
@@ -152,9 +200,65 @@ export async function renderAIChat({
         )
         .map(
           (c) =>
-            `<button class="search-result ${chat?.id === c.id ? "command-selected" : ""}" data-chat="${c.id}">${esc(c.title)}</button>`,
+            `<div class="chat-history-row"><button class="search-result ${chat?.id === c.id ? "command-selected" : ""}" data-chat="${c.id}">${esc(c.title)}</button><button class="chat-delete" data-delete-chat="${c.id}" aria-label="Delete conversation “${esc(c.title)}”" title="Delete conversation">×</button></div>`,
         )
         .join("") || "<p>No conversations yet.</p>";
+    // Every conversation, also those of other workspaces and of contexts no
+    // longer available, which the list above does not show.
+    if (history.length)
+      $("#chat-history").insertAdjacentHTML(
+        "beforeend",
+        `<button class="text-link chat-delete-all" id="delete-all-chats">Delete all conversations (${history.length})</button>`,
+      );
+    // Deleting asks once more on the same button, then cannot be undone.
+    const confirmed = (button, label) => {
+      if (button.dataset.armed) return true;
+      button.dataset.armed = "1";
+      const original = button.textContent;
+      button.textContent = label;
+      button.classList.add("armed");
+      setTimeout(() => {
+        if (!button.isConnected) return;
+        delete button.dataset.armed;
+        button.textContent = original;
+        button.classList.remove("armed");
+      }, 4000);
+      return false;
+    };
+    $$("[data-delete-chat]").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          if (running || !confirmed(button, "Delete?")) return;
+          const id = button.dataset.deleteChat;
+          try {
+            await api(`ai/chats/${id}`, "DELETE");
+            history.splice(
+              history.findIndex((c) => c.id === id),
+              1,
+            );
+            if (chat?.id === id) reset();
+            else drawHistory();
+          } catch (err) {
+            error(err);
+          }
+        }),
+    );
+    const all = $("#delete-all-chats");
+    if (all)
+      all.onclick = async () => {
+        if (
+          running ||
+          !confirmed(all, "Delete every conversation? Click again")
+        )
+          return;
+        try {
+          await api("ai/chats", "DELETE");
+          history.length = 0;
+          reset();
+        } catch (err) {
+          error(err);
+        }
+      };
     $$("[data-chat]").forEach(
       (button) =>
         (button.onclick = async () => {
@@ -205,6 +309,95 @@ export async function renderAIChat({
         .join("") ||
       '<div class="empty"><h3>A new conversation</h3><p>Ask a question to get started.</p></div>';
     bindSources($("#chat-messages"));
+    const scope = chat?.scope;
+    $$(".chat-turn", $("#chat-messages")).forEach((turn, i) =>
+      reply(turn, chat.turns[i].answer, chat.turns[i].question, scope),
+    );
+  }
+  // Rendered reply blocks by Markdown, shared by every redraw.
+  const rendered = new Map();
+  async function renderBlocks(blocks) {
+    const missing = [...new Set(blocks.filter((b) => !rendered.has(b)))];
+    if (missing.length) {
+      const { html } = await api("render", "POST", { blocks: missing });
+      missing.forEach((b, i) => rendered.set(b, html[i]));
+    }
+    return blocks.map((b) => rendered.get(b));
+  }
+  /** Shows a finished reply as note blocks, with actions to keep it. */
+  async function reply(turn, markdown, question, scope) {
+    const answer = $(".chat-answer", turn);
+    const blocks = splitMarkdown(markdown).filter((b) => b.trim());
+    let html;
+    try {
+      html = await renderBlocks(blocks);
+    } catch {
+      return; // Keep the plain text.
+    }
+    if (!answer.isConnected) return;
+    const target =
+      scope?.kind === "note" && canEditNote(scope.id) ? scope.id : null;
+    answer.classList.add("chat-blocks");
+    answer.innerHTML = blocks
+      .map(
+        (_, i) =>
+          `<div class="chat-block"><div class="chat-block-body">${html[i]}</div>${target ? `<button class="chat-block-add" data-add-block="${i}" title="Add this block to the end of the note" aria-label="Add this block to the note">＋ Note</button>` : ""}</div>`,
+      )
+      .join("");
+    turn.querySelector(".chat-reply-actions")?.remove();
+    const actions = document.createElement("div");
+    actions.className = "chat-reply-actions";
+    actions.innerHTML = `<button class="btn" data-reply="copy">Copy</button><button class="btn" data-reply="note">New note</button>${target ? '<button class="btn primary" data-reply="add">Add all to note</button>' : ""}`;
+    answer.after(actions);
+    // Button feedback: a short confirmation, or the error.
+    const run = async (button, label, work) => {
+      button.disabled = true;
+      const original = button.textContent;
+      try {
+        await work();
+        button.textContent = label;
+        setTimeout(() => (button.textContent = original), 1800);
+      } catch (err) {
+        error(err);
+      } finally {
+        button.disabled = false;
+      }
+    };
+    $$("[data-add-block]", answer).forEach(
+      (button) =>
+        (button.onclick = () =>
+          run(button, "✓ Added", () =>
+            sendToNote(target, [blocks[Number(button.dataset.addBlock)]]),
+          )),
+    );
+    $$("[data-reply]", actions).forEach(
+      (button) =>
+        (button.onclick = () =>
+          ({
+            copy: () => run(button, "✓ Copied", () => copy(markdown)),
+            note: () =>
+              run(button, "✓ Saved", () =>
+                noteFromReply(markdown, question, scope),
+              ),
+            add: () => run(button, "✓ Added", () => sendToNote(target, blocks)),
+          })[button.dataset.reply]()),
+    );
+  }
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard API unavailable (for example without focus): select and copy.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.append(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      if (!ok) throw new Error("Copying is not allowed here.");
+    }
   }
   function usageLabel(usage) {
     const input = usage?.input_tokens ?? usage?.prompt_tokens;
@@ -309,6 +502,7 @@ export async function renderAIChat({
         throw new Error("Response interrupted. Partial output was not saved.");
       chat = await api(`ai/chats/${chat.id}`);
       if (epoch !== generation) return;
+      reply(turn, answer, question, chat.scope);
       Object.assign(
         history.find((c) => c.id === chat.id),
         chat,

@@ -4001,3 +4001,223 @@ dialog:has(#metadata-form) {
   background: #3a2c12;
   border-color: #9a6d1f;
 }
+
+/* Worker actions must remain hidden until their stage is available. */
+#modal [id^="plugin-"][hidden] {
+  display: none;
+}
+#plugin-preview + footer {
+  flex-wrap: wrap;
+}
+#plugin-preview section {
+  margin-top: 1rem;
+}
+
+/* Metadata: suggested variable names. */
+.meta-suggest {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.meta-suggest-head {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.meta-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft, #eef0fd);
+  color: inherit;
+}
+.meta-chip:hover:not(:disabled) {
+  border-color: var(--accent, #5e69d6);
+}
+.ai-provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-history-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-history-row .search-result {
+  flex: 1;
+  min-width: 0;
+}
+.chat-delete {
+  flex-shrink: 0;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--muted);
+  opacity: 0.55;
+}
+.chat-history-row:hover .chat-delete,
+.chat-delete:focus-visible,
+.chat-delete.armed {
+  opacity: 1;
+}
+.chat-delete:hover,
+.chat-delete.armed {
+  color: #c43d4b;
+}
+.chat-delete.armed {
+  padding: 0 6px;
+  font-size: 12px;
+}
+.chat-delete-all {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.chat-delete-all.armed {
+  color: #c43d4b;
+}
+/* An AI chat tab beside a note: no sidebar, the conversation fills the pane. */
+.editor-pane.chat-pane .sidebar,
+.editor-pane.chat-pane.pane-browsing .sidebar {
+  display: none;
+}
+.editor-pane.chat-pane .main,
+.editor-pane.chat-pane.pane-browsing .main {
+  margin-left: 0;
+  width: 100%;
+}
+.ai-page.docked {
+  padding: 18px 20px;
+}
+.ai-page.docked .ai-docked-heading {
+  margin-bottom: 12px;
+}
+.ai-page.docked .ai-docked-heading h1 {
+  font-size: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-page.docked .ai-layout {
+  grid-template-columns: 1fr;
+}
+.ai-page.docked .ai-history {
+  order: 2;
+  max-height: 180px;
+  overflow: auto;
+  padding: 14px;
+}
+.ai-page.docked .ai-history h3 {
+  margin-top: 10px;
+}
+.ai-page.docked .ai-conversation {
+  padding: 16px;
+}
+.ai-page.docked .chat-messages {
+  max-height: calc(100vh - 380px);
+}
+/* Replies shown as note blocks. */
+.chat-answer.chat-blocks {
+  white-space: normal;
+  line-height: 1.6;
+}
+.chat-block {
+  position: relative;
+  padding: 2px 64px 2px 8px;
+  border-radius: 6px;
+}
+/* Reply blocks read like note blocks, not like panel captions. */
+.ai-conversation .chat-block-body p,
+.ai-conversation .chat-block-body li {
+  font-size: 14px;
+  color: inherit;
+  margin: 0.35em 0;
+}
+.chat-block-body h1 {
+  font-size: 1.45em;
+}
+.chat-block-body h2 {
+  font-size: 1.25em;
+}
+.chat-block-body h3 {
+  font-size: 1.1em;
+}
+.chat-block-body h1,
+.chat-block-body h2,
+.chat-block-body h3 {
+  margin: 0.5em 0 0.25em;
+}
+.chat-block-body pre {
+  padding: 12px;
+  background: #f2f4f8;
+  border-radius: 7px;
+  overflow: auto;
+}
+.chat-block-body code {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.chat-block-body :not(pre) > code {
+  background: #f0f2f7;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+[data-theme="dark"] .chat-block-body pre,
+[data-theme="dark"] .chat-block-body :not(pre) > code {
+  background: #1d2432;
+}
+/* A docked chat has one fixed context. */
+.ai-page.docked .ai-controls {
+  grid-template-columns: 1fr;
+}
+.ai-page.docked .ai-controls label:first-child {
+  display: none;
+}
+.chat-block:hover {
+  background: var(--row-hover, #f4f5f9);
+}
+.chat-block-body > :first-child {
+  margin-top: 0;
+}
+.chat-block-body > :last-child {
+  margin-bottom: 0;
+}
+.chat-block-body pre {
+  white-space: pre-wrap;
+}
+.chat-messages {
+  overflow-x: hidden;
+}
+.chat-block-add {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  opacity: 0;
+}
+.chat-block:hover .chat-block-add,
+.chat-block-add:focus-visible {
+  opacity: 1;
+}
+.chat-reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+@media (hover: none) {
+  .chat-block-add {
+    opacity: 1;
+  }
+}

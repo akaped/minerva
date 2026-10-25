@@ -113,13 +113,13 @@ A template is a stylesheet with a header:
  */
 ```
 
-- `variables`: the metadata fields the template uses, in order. The note's **Metadata** dialog shows these fields first when the template is chosen, and covers list them. A field without a value prints a dashed placeholder (for example "Company logo" or "Author name").
+- `variables`: the metadata fields the template uses, in order. The note's **Metadata** dialog suggests them (the chosen template's first) for the user to add, and covers list them. A field without a value prints its variable name in a dashed box, such as `{{company}}`, so readers of the PDF see what to set.
 - `toc: yes` adds a table of contents built from the note's headings.
 - `orientation: landscape` prints landscape pages.
 
 ### Metadata and placeholders
 
-Notes have metadata: the **Metadata** button in the note toolbar. Field names are normalized to lowercase with underscores, so "Client Name" becomes `client_name`. Fields the template does not declare still appear in its document information table.
+Notes have metadata: the **Metadata** button in the note toolbar. Notes start with none; users add their own variables, with any name, and the dialog lists the names PDF templates use and those Minerva fills in automatically. Names are normalized to lowercase with underscores, so "Client Name" becomes `client_name`. Fields the template does not declare still appear in its document information table.
 
 - In the note's text, `{{client_name}}` is replaced by the value when exporting (PDF, HTML, and Markdown, where metadata is also added to the front matter). Unknown names stay as written; code is never changed.
 - Always available, unless the note sets them: `title` (the note title), `date` (today, or the journal entry's date), `generated` (export date and time), `updated`, and `tags`.
@@ -153,3 +153,13 @@ A template can replace the layout with its own `{id}.html` (see `16-resume.html`
 - Headers and footers repeat on every page in Chromium and Firefox; WebKit prints them once. Page numbers use CSS page margin boxes (`@page { @bottom-right { content: counter(page) } }`), which Chromium-based browsers print; elsewhere they are left out.
 - Headings are numbered with `counter-set`, so numbering continues across blocks.
 - Inline tags carry their name, so templates can style particular tags: the Security Assessment turns `#critical`, `#high`, `#medium`, `#low`, and `#info` into severity labels, and the Project Status Report styles `#on-track`, `#at-risk`, `#off-track`, `#blocked`, and `#done`.
+
+## Optional server workers
+
+`server/` contains independently discovered executable plugins, separate from the
+built-in themes above. Unlike themes, these are never embedded or restored from a
+compiled fallback. Missing, disabled, or invalid worker plugins contribute no
+commands. Only administrators should be able to write this directory.
+
+[Superhuman Learning](server/superhuman-learning/README.md) adds `/summary`, `/wisdom`, `/youtube`, and `/transcribe` using Python 3, optional media dependencies, and existing AI provider profiles. Its documentation covers
+installation, diagnostics, the versioned worker protocol and current limits.

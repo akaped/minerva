@@ -1,10 +1,15 @@
 # Minerva: server and web app in one container.
 #
-#   cp .env.example .env      # set the first administrator and your public URL
+#   cp .env.example .env      # every setting, with production values to adjust
 #   docker compose up -d --build
+#
+# COMPOSE_PROFILES in .env chooses how it is reached (https, tunnel, or neither).
 #
 # With automatic HTTPS (Caddy + Let's Encrypt) for a public domain:
 #   docker compose --profile https up -d --build
+#
+# Or through a Cloudflare Tunnel (no open ports; set CLOUDFLARE_TUNNEL_TOKEN):
+#   docker compose --profile tunnel up -d --build
 name: minerva
 
 services:
@@ -26,6 +31,10 @@ services:
       # Public theme for pages without a site, e.g. paper (see plugins/public-notes-themes).
       MINERVA_PUBLIC_THEME: ${MINERVA_PUBLIC_THEME:-}
       MINERVA_EMBED_ORIGINS: ${MINERVA_EMBED_ORIGINS:-}
+      # Optional learning-plugin transcription, using an existing encrypted AI profile.
+      MINERVA_ASR_PROVIDER: ${MINERVA_ASR_PROVIDER:-}
+      MINERVA_ASR_MODEL: ${MINERVA_ASR_MODEL:-}
+      MINERVA_PLUGIN_PYTHON: ${MINERVA_PLUGIN_PYTHON:-}
     volumes:
       # Database and the .ai-key file live here; back up both together.
       - minerva-data:/data
@@ -59,6 +68,26 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+
+  # Cloudflare Tunnel: an outbound-only connection to Cloudflare, which serves
+  # HTTPS for your hostname. In the Zero Trust dashboard, create a tunnel, copy
+  # its token into .env, and add a public hostname with service http://minerva:3000.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      minerva:
+        condition: service_healthy
+    # The token comes from the environment, so it never shows in process lists.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   minerva-data:

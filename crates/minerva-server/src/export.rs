@@ -324,9 +324,10 @@ fn ordered_keys(n: &Note, template: &plugins::PrintTemplate) -> Vec<String> {
 fn fact_value(values: &HashMap<String, String>, key: &str) -> String {
     match values.get(key).filter(|v| !v.is_empty()) {
         Some(v) => escape(v),
+        // The variable to set, so the reader learns its name from the PDF.
         None => format!(
-            "<span class=\"pdf-placeholder\">{}</span>",
-            escape(&label(key))
+            "<span class=\"pdf-placeholder\">&#123;&#123;{}&#125;&#125;</span>",
+            escape(key)
         ),
     }
 }

@@ -1,0 +1,18 @@
+name: Report a problem
+description: Help us make a real workflow more reliable.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you trying to do?
+      description: Include expected behavior, what happened, and steps to reproduce. Remove private information.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Minerva revision, browser or desktop app, and operating system.
+    validations:
+      required: true

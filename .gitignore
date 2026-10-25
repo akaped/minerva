@@ -1,0 +1,26 @@
+# Build output (web/dist is committed on purpose: the server embeds it).
+/target
+/node_modules
+/dist
+
+# Local data. A database anywhere in the tree, with its WAL files and the
+# AI provider key stored beside it (`<database>.ai-key`).
+/data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.ai-key
+
+# Secrets and local settings.
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

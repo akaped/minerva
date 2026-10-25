@@ -1,0 +1,1 @@
+Extract useful knowledge from the supplied source in its original language: summary, insights, concepts, mental models, actionable ideas, exact quotes and questions. Prefer a few well-supported items. Do not fill quotas. Mark interpretations and proposed questions as analysis, not extraction. Do not claim to independently verify facts.

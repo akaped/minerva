@@ -3,7 +3,7 @@
      plugins/README.md for the placeholder syntax and the regions Minerva fills. -->
 <section class="pdf-cover">
   <div class="pdf-cover-top">
-    <div class="pdf-logo">{{#logo}}<img src="{{logo}}" alt="">{{/logo}}{{^logo}}<span class="pdf-placeholder pdf-logo-placeholder">{{#company}}{{company}}{{/company}}{{^company}}Company logo{{/company}}</span>{{/logo}}</div>
+    <div class="pdf-logo">{{#logo}}<img src="{{logo}}" alt="">{{/logo}}{{^logo}}<span class="pdf-placeholder pdf-logo-placeholder">{{#company}}{{company}}{{/company}}{{^company}}&#123;&#123;logo&#125;&#125;{{/company}}</span>{{/logo}}</div>
     {{#classification}}<span class="pdf-classification">{{classification}}</span>{{/classification}}
   </div>
   {{{cover_image}}}
@@ -39,8 +39,8 @@
       <table>
         <thead><tr><th>Role</th><th>Name</th><th>Signature</th><th>Date</th></tr></thead>
         <tbody>
-          <tr><td>Prepared by</td><td>{{#author}}{{author}}{{/author}}{{^author}}{{#owner}}{{owner}}{{/owner}}{{^owner}}<span class="pdf-placeholder">Author name</span>{{/owner}}{{/author}}</td><td></td><td></td></tr>
-          <tr><td>Approved by</td><td>{{#approver}}{{approver}}{{/approver}}{{^approver}}<span class="pdf-placeholder">Approver name</span>{{/approver}}</td><td></td><td></td></tr>
+          <tr><td>Prepared by</td><td>{{#author}}{{author}}{{/author}}{{^author}}{{#owner}}{{owner}}{{/owner}}{{^owner}}<span class="pdf-placeholder">&#123;&#123;author&#125;&#125;</span>{{/owner}}{{/author}}</td><td></td><td></td></tr>
+          <tr><td>Approved by</td><td>{{#approver}}{{approver}}{{/approver}}{{^approver}}<span class="pdf-placeholder">&#123;&#123;approver&#125;&#125;</span>{{/approver}}</td><td></td><td></td></tr>
         </tbody>
       </table>
     </section>

@@ -30,6 +30,8 @@ const params = new URLSearchParams(
   typeof location === "undefined" ? "" : location.search,
 );
 export const initialNote = params.get("note");
+/** An AI chat tab's context, `kind:id` (for example `note:<uuid>`). */
+export const initialChat = params.get("chat");
 const parentOrigin = params.get("host");
 export function paneMessage(type, payload = {}) {
   if (isPane && parentOrigin)
@@ -213,9 +215,10 @@ export function createNoteTabs({ esc, error, onBrowse }) {
     origin = location.origin,
     title = "Note",
     workspace = "",
+    chat = "",
   }) {
-    const key = origin + "|" + id;
-    const existing = tabs.find((t) => t.origin === origin && t.id === id);
+    const key = origin + "|" + (chat ? `chat:${chat}` : id);
+    const existing = tabs.find((t) => t.key === key);
     if (existing) {
       active = key;
       shown = true;
@@ -230,13 +233,16 @@ export function createNoteTabs({ esc, error, onBrowse }) {
     const url = new URL("/pane", origin);
     url.searchParams.set("host", location.origin);
     url.searchParams.set("group", group);
-    if (id) url.searchParams.set("note", id);
+    if (chat) url.searchParams.set("chat", chat);
+    else if (id) url.searchParams.set("note", id);
     frame.src = url.href;
     frame.allow = "autoplay; fullscreen; picture-in-picture; clipboard-write";
     frame.referrerPolicy = "strict-origin-when-cross-origin";
     const tab = {
       key,
-      id,
+      id: chat ? "" : id,
+      chat,
+      queue: [],
       origin,
       title,
       workspace,
@@ -257,6 +263,43 @@ export function createNoteTabs({ esc, error, onBrowse }) {
         );
     }, 15000);
     draw();
+  }
+  /** Opens (or shows) an AI chat tab side by side with the tab `beside`. */
+  function openChat({ scope, title, beside, origin = location.origin }) {
+    open({ origin, chat: scope, title: `AI · ${title}` });
+    const key = `${origin}|chat:${scope}`;
+    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
+      active = beside;
+      secondary = key;
+    }
+    shown = true;
+    draw();
+  }
+  /**
+   * Adds Markdown blocks to a note, opening its tab when needed; resolves with
+   * the number of blocks added once the note has saved them into its editor.
+   */
+  function insertBlocks({ origin = location.origin, id, title, blocks }) {
+    let tab = tabs.find((t) => t.origin === origin && t.id === id);
+    if (!tab) {
+      const chat = secondary;
+      open({ origin, id, title });
+      tab = tabs.find((t) => t.origin === origin && t.id === id);
+      // Keep the chat that sent the blocks beside the note.
+      if (chat && chat !== tab.key) secondary = chat;
+      draw();
+    }
+    return new Promise((resolve, reject) => {
+      const request = crypto.randomUUID();
+      const timeout = setTimeout(() => {
+        requests.delete(request);
+        reject(new Error("The note did not respond. Nothing was added."));
+      }, 20000);
+      requests.set(request, { tab, resolve, reject, timeout });
+      const deliver = () => send(tab, "insert-blocks", { request, blocks });
+      if (tab.ready) deliver();
+      else tab.queue.push(deliver);
+    });
   }
   async function flushTab(tab) {
     if (!tab.ready) {
@@ -298,8 +341,39 @@ export function createNoteTabs({ esc, error, onBrowse }) {
     if (message.type === "ready") {
       tab.ready = true;
       clearTimeout(tab.timer);
+      tab.queue.splice(0).forEach((deliver) => deliver());
       place();
     }
+    // A note asks for an AI chat about itself, beside it.
+    if (
+      message.type === "open-chat" &&
+      /^(note|folder):[a-f0-9-]{36}$/i.test(message.scope || "")
+    )
+      openChat({
+        scope: message.scope,
+        title: String(message.title || "Note").slice(0, 200),
+        beside: tab.key,
+      });
+    // An AI chat sends reply blocks to a note of the same server.
+    if (
+      message.type === "insert-blocks" &&
+      /^[a-f0-9-]{36}$/i.test(message.id || "") &&
+      Array.isArray(message.blocks)
+    )
+      insertBlocks({
+        origin: tab.origin,
+        id: message.id,
+        title: String(message.title || "Note"),
+        blocks: message.blocks.map(String).slice(0, 500),
+      }).then(
+        (count) =>
+          send(tab, "insert-result", { request: message.request, count }),
+        (err) =>
+          send(tab, "insert-result", {
+            request: message.request,
+            error: err.message,
+          }),
+      );
     if (message.type === "state") {
       if (/^[a-f0-9-]{36}$/i.test(message.noteId || ""))
         tab.id = message.noteId;
@@ -324,6 +398,16 @@ export function createNoteTabs({ esc, error, onBrowse }) {
         origin: tab.origin,
         title: String(message.title || "Note"),
       });
+    if (message.type === "inserted") {
+      const r = requests.get(message.request);
+      if (r?.tab === tab) {
+        clearTimeout(r.timeout);
+        requests.delete(message.request);
+        message.error
+          ? r.reject(new Error(String(message.error)))
+          : r.resolve(message.count);
+      }
+    }
     if (message.type === "flushed") {
       const r = requests.get(message.request);
       if (r?.tab === tab) {
@@ -345,6 +429,8 @@ export function createNoteTabs({ esc, error, onBrowse }) {
   });
   return {
     open,
+    openChat,
+    insertBlocks,
     place,
     hide() {
       shown = false;
