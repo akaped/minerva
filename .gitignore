@@ -24,3 +24,10 @@
 *~
 .DS_Store
 Thumbs.db
+
+# Rust tooling leftovers: rustfmt backups, Windows debug symbols, cargo-mutants
+# output, and compiler crash reports.
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+rustc-ice-*.txt
