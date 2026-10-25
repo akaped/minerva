@@ -210,7 +210,7 @@ async fn folders_nest_notes_move_and_grants_cover_subfolders() {
         &router,
         "PUT",
         "permissions",
-        &admin,
+        &alice,
         json!({"folder_id":projects,"user_id":carol_id,"role":"viewer"}),
     )
     .await;
@@ -294,7 +294,7 @@ async fn folders_nest_notes_move_and_grants_cover_subfolders() {
         &router,
         "PUT",
         "permissions",
-        &admin,
+        &alice,
         json!({"folder_id":projects,"user_id":carol_id,"role":"none"}),
     )
     .await;

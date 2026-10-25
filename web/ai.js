@@ -190,21 +190,54 @@ export async function renderAIChat({
     const selected = scopeOptions[Number($("#chat-scope").value)];
     return selected && { kind: selected.kind, id: selected.id };
   };
+  // What a conversation is about, by name, wherever it is.
+  const scopeLabel = (scope) => {
+    const find = (list, id) => (list || []).find((x) => x.id === id);
+    if (scope.kind === "workspace")
+      return `Workspace · ${find(data.workspaces, scope.id)?.name || "unavailable"}`;
+    if (scope.kind === "folder")
+      return `Folder · ${find(data.folders, scope.id)?.name || "unavailable"}`;
+    const n = find(data.notes, scope.id) || find(data.shared_notes, scope.id);
+    return `Note · ${n?.title || "unavailable"}`;
+  };
+  // The context select also offers a conversation's context from elsewhere.
+  const scopeIndex = (scope) => {
+    let i = scopeOptions.findIndex(
+      (s) => s.kind === scope.kind && s.id === scope.id,
+    );
+    if (i < 0) {
+      scopeOptions.push({ ...scope, label: scopeLabel(scope) });
+      i = scopeOptions.length - 1;
+      $("#chat-scope").insertAdjacentHTML(
+        "beforeend",
+        `<option value="${i}">${esc(scopeOptions[i].label)}</option>`,
+      );
+    }
+    return i;
+  };
+  const ago = (seconds) => {
+    const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    if (minutes < 1440) return `${Math.round(minutes / 60)} h ago`;
+    return new Date(seconds * 1000).toLocaleDateString();
+  };
   const drawHistory = () => {
-    $("#chat-history").innerHTML =
-      history
-        .filter((c) =>
-          scopeOptions.some(
-            (s) => s.kind === c.scope.kind && s.id === c.scope.id,
-          ),
+    // Every conversation, newest first; a chat beside a note shows that note's.
+    const shown = docked
+      ? history.filter(
+          (c) =>
+            c.scope.kind === initialScope.kind &&
+            c.scope.id === initialScope.id,
         )
+      : history;
+    $("#chat-history").innerHTML =
+      shown
         .map(
           (c) =>
-            `<div class="chat-history-row"><button class="search-result ${chat?.id === c.id ? "command-selected" : ""}" data-chat="${c.id}">${esc(c.title)}</button><button class="chat-delete" data-delete-chat="${c.id}" aria-label="Delete conversation “${esc(c.title)}”" title="Delete conversation">×</button></div>`,
+            `<div class="chat-history-row ${chat?.id === c.id ? "current" : ""}"><button class="chat-history-item" data-chat="${c.id}" title="${esc(c.title)}"><span class="chat-history-title">${esc(c.title)}</span><small>${esc(scopeLabel(c.scope))} · ${ago(c.updated_at)}</small></button><button class="chat-delete" data-delete-chat="${c.id}" aria-label="Delete conversation “${esc(c.title)}”" title="Delete conversation">×</button></div>`,
         )
-        .join("") || "<p>No conversations yet.</p>";
-    // Every conversation, also those of other workspaces and of contexts no
-    // longer available, which the list above does not show.
+        .join("") || '<p class="chat-history-empty">No conversations yet.</p>';
     if (history.length)
       $("#chat-history").insertAdjacentHTML(
         "beforeend",
@@ -267,11 +300,7 @@ export async function renderAIChat({
             const loaded = await api(`ai/chats/${button.dataset.chat}`);
             if (epoch !== generation) return;
             chat = loaded;
-            $("#chat-scope").value = String(
-              scopeOptions.findIndex(
-                (s) => s.kind === chat.scope.kind && s.id === chat.scope.id,
-              ),
-            );
+            $("#chat-scope").value = String(scopeIndex(chat.scope));
             drawTurns();
             drawHistory();
           } catch (err) {
@@ -319,8 +348,14 @@ export async function renderAIChat({
   async function renderBlocks(blocks) {
     const missing = [...new Set(blocks.filter((b) => !rendered.has(b)))];
     if (missing.length) {
-      const { html } = await api("render", "POST", { blocks: missing });
-      missing.forEach((b, i) => rendered.set(b, html[i]));
+      try {
+        const { html } = await api("render", "POST", { blocks: missing });
+        missing.forEach((b, i) => rendered.set(b, html[i]));
+      } catch {
+        // A server without batch rendering: one block at a time.
+        for (const b of missing)
+          rendered.set(b, (await api("render", "POST", { markdown: b })).html);
+      }
     }
     return blocks.map((b) => rendered.get(b));
   }
@@ -432,9 +467,37 @@ export async function renderAIChat({
     if (!chat?.turns.length) messages.innerHTML = "";
     const turn = document.createElement("article");
     turn.className = "chat-turn";
-    turn.innerHTML = `<p class="chat-question">${esc(question)}</p><div class="chat-answer"></div><div class="chat-sources"></div><small class="chat-usage"></small>`;
+    turn.innerHTML = `<p class="chat-question">${esc(question)}</p><div class="chat-answer chat-pending">Thinking…</div><div class="chat-sources"></div><small class="chat-usage"></small>`;
     messages.append(turn);
+    turn.scrollIntoView({ block: "start", behavior: "smooth" });
+    // The question is on its way: the box is free for the next one.
+    $("#chat-question").value = "";
     let complete = false;
+    // The reply is shown formatted while it streams, redrawn a few times a
+    // second rather than on every token.
+    let drawn = 0,
+      drawing = null;
+    const live = (text) => {
+      const box = $(".chat-answer", turn);
+      if (!drawn) box.classList.remove("chat-pending");
+      if (drawing) return;
+      drawing = setTimeout(
+        async () => {
+          drawing = null;
+          const blocks = splitMarkdown(text).filter((b) => b.trim());
+          try {
+            const html = await renderBlocks(blocks);
+            if (box.isConnected && !box.classList.contains("chat-blocks"))
+              box.innerHTML = html
+                .map((h) => `<div class="chat-block-body">${h}</div>`)
+                .join("");
+          } catch {
+            box.textContent = text;
+          }
+        },
+        drawn++ ? 350 : 0,
+      );
+    };
     try {
       if (!chat) {
         chat = await api("ai/chats", "POST", { scope: scope() });
@@ -487,7 +550,7 @@ export async function renderAIChat({
           }
           if (event.type === "delta") {
             answer += event.text;
-            $(".chat-answer", turn).textContent = answer;
+            live(answer);
           }
           if (event.type === "error") throw new Error(event.message);
           if (event.type === "done") {
@@ -516,6 +579,8 @@ export async function renderAIChat({
             ? "Stopped · partial output was not saved"
             : err.message;
         turn.classList.add("chat-incomplete");
+        // Not answered: the question goes back in the box to try again.
+        if (!$("#chat-question").value) $("#chat-question").value = question;
       }
     } finally {
       if (epoch === generation) {

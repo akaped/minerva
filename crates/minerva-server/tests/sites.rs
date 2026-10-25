@@ -201,7 +201,7 @@ async fn sites_group_pages_under_their_own_paths() {
         &router,
         "PUT",
         "permissions",
-        &admin,
+        &alice,
         json!({"folder_id":folder,"user_id":carol_id,"role":"editor"}),
     )
     .await;

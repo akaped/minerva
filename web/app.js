@@ -548,8 +548,58 @@ function owner() {
 }
 async function refresh() {
   data = await api("bootstrap");
+  // The account's default workspace first, then any other.
   if (!data.workspaces.some((w) => w.id === workspaceId))
-    workspaceId = data.workspaces[0]?.id;
+    workspaceId = data.workspaces.some((w) => w.id === data.default_workspace)
+      ? data.default_workspace
+      : data.workspaces[0]?.id;
+}
+/**
+ * First sign-in of an account an administrator created: choose your own
+ * password and, if you have none, create your personal workspace, which then
+ * opens by default. It cannot be skipped, only left by signing out.
+ */
+function firstSignIn() {
+  if (!data?.must_change_password || localMode) return;
+  const workspace = !data.owns_workspace;
+  modal.innerHTML = `<form id="first-sign-in"><h2>Welcome to Minerva, ${esc(data.user.name)}</h2><p>Before you start, replace the temporary password your administrator gave you${workspace ? ", and name your personal workspace: a private place for your own notes" : ""}.</p><label>Temporary password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>Repeat new password<input name="repeat" type="password" autocomplete="new-password" required></label>${workspace ? '<label>Personal workspace<input name="workspace_name" value="Personal" maxlength="200" required></label>' : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="first-sign-out">Sign out</button><button class="btn primary" type="submit">Get started</button></footer></form>`;
+  const keep = (e) => e.preventDefault();
+  modal.addEventListener("cancel", keep);
+  modal.showModal();
+  $("#first-sign-out").onclick = async () => {
+    modal.removeEventListener("cancel", keep);
+    modal.close();
+    await api("logout", "POST").catch(() => {});
+    login();
+  };
+  $("#first-sign-in").onsubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const button = $("[type=submit]", form);
+    button.disabled = true;
+    try {
+      if (form.new_password.value !== form.repeat.value)
+        throw new Error("The new passwords do not match.");
+      const result = await api("account/password", "POST", {
+        current_password: form.current_password.value,
+        new_password: form.new_password.value,
+        workspace_name: form.workspace_name?.value || "",
+      });
+      modal.removeEventListener("cancel", keep);
+      modal.close();
+      if (result.workspace_id) workspaceId = result.workspace_id;
+      await refresh();
+      shell();
+      toast(
+        workspace
+          ? "You’re all set · this is your personal workspace"
+          : "Password changed",
+      );
+    } catch (err) {
+      $(".form-error", form).textContent = err.message;
+      button.disabled = false;
+    }
+  };
 }
 // The desktop app's own server: personal notes plus offline copies of
 // workspaces on other servers, kept in sync in the background.
@@ -683,6 +733,7 @@ function login() {
       if (result.two_factor_required) return secondFactor(result.challenge);
       await refresh();
       shell();
+      firstSignIn();
       if (initialNote) await openNote(initialNote);
     } catch (err) {
       $(".form-error").textContent = err.message;
@@ -713,6 +764,7 @@ function secondFactor(challenge) {
       await api("login/2fa", "POST", { challenge, code: form.code.value });
       await refresh();
       shell();
+      firstSignIn();
       if (initialNote) await openNote(initialNote);
     } catch (err) {
       $(".form-error", form).textContent = err.message;
@@ -4156,13 +4208,13 @@ async function renderAdmin() {
       const u = info.users.find((x) => x.id === el.dataset.deleteUser);
       formDialog(
         `Delete ${u.name}?`,
-        `${u.email} can no longer sign in. Workspaces this person owns are kept and become yours; their AI conversations, flashcards, and access are deleted. To keep everything instead, set the account to Disabled. This cannot be undone.`,
+        `${u.email} can no longer sign in. Their personal workspaces are deleted with them; workspaces they shared with others become yours, so their members keep them. Their AI conversations, flashcards, and access are deleted too. To keep everything instead, set the account to Disabled. This cannot be undone.`,
         "",
         async () => {
           const result = await api("users/" + u.id, "DELETE");
           toast(
             result.workspaces_transferred
-              ? `Account deleted · ${result.workspaces_transferred} workspace${result.workspaces_transferred === 1 ? "" : "s"} now yours`
+              ? `Account deleted · ${result.workspaces_transferred} shared workspace${result.workspaces_transferred === 1 ? "" : "s"} now yours`
               : "Account deleted",
           );
           await refresh();
@@ -4246,7 +4298,9 @@ async function renderAdmin() {
 function workspacesPanel(info) {
   const name = (id) =>
     esc(info.users.find((u) => u.id === id)?.name || "Unavailable account");
-  const rows = data.workspaces
+  // Administrators manage only the workspaces they own.
+  const mine = data.workspaces.filter((w) => w.owner_id === data.user.id);
+  const rows = mine
     .map((w) => {
       const folderIds = data.folders
         .filter((f) => f.workspace_id === w.id)
@@ -4266,7 +4320,7 @@ function workspacesPanel(info) {
       return `<tr><td>${esc(w.name)}</td><td>${name(w.owner_id)}</td><td>${members.size ? `${members.size} member${members.size === 1 ? "" : "s"}` : "Personal"}</td><td>${folderIds.length} folder${folderIds.length === 1 ? "" : "s"} · ${notes} note${notes === 1 ? "" : "s"}</td><td><button class="btn danger" data-delete-workspace="${w.id}">Delete</button></td></tr>`;
     })
     .join("");
-  return `<section class="panel"><div class="panel-heading"><div><h2>Workspaces</h2><p>Members can delete their own personal workspaces. Workspaces shared with other members can only be deleted here.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>WORKSPACE</th><th>OWNER</th><th>SHARED WITH</th><th>CONTENTS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No workspaces yet.</td></tr>'}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="panel-heading"><div><h2>Workspaces</h2><p>Workspaces you own. Other people’s workspaces, including personal ones, stay private to them and whoever they share with.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>WORKSPACE</th><th>OWNER</th><th>SHARED WITH</th><th>CONTENTS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No workspaces yet.</td></tr>'}</tbody></table></div></section>`;
 }
 // Workspace access for members, plus any older folder-level grants.
 function accessPanel(info) {
@@ -4276,8 +4330,11 @@ function accessPanel(info) {
     esc(
       data.workspaces.find((w) => w.id === id)?.name || "Unavailable workspace",
     );
-  const members = info.users.filter((u) => !u.admin);
-  const rows = data.workspaces
+  // Everyone else, administrators included: nobody sees a workspace unasked.
+  const members = info.users.filter((u) => u.id !== data.user.id);
+  // Administrators manage only the workspaces they own.
+  const mine = data.workspaces.filter((w) => w.owner_id === data.user.id);
+  const rows = mine
     .flatMap((w) => [
       ...(info.users.some((u) => u.id === w.owner_id && !u.admin)
         ? [
@@ -4298,7 +4355,7 @@ function accessPanel(info) {
       return `<tr><td>${name(g.user_id)}</td><td>${f ? `${workspace(f.workspace_id)} / ${esc(f.name)}` : "Unavailable folder"}</td><td><span class="pill">${g.role === "editor" ? "Can edit" : "Can view"}</span></td><td><button class="btn danger" data-remove-folder-grant="${g.folder_id}:${g.user_id}">Remove</button></td></tr>`;
     })
     .join("");
-  return `<section class="panel"><div class="panel-heading"><div><h2>Workspace access</h2><p>Members see nothing until you add them to a workspace. Workspace members can open every folder and note in it, including folders added later. Administrators and workspace owners always have full access.</p></div></div><form class="permission-form" id="workspace-access-form"><label>Member<select name="user_id">${members.map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select></label><label>Workspace<select name="workspace_id">${data.workspaces.map((w) => `<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></label><label>Permission<select name="role"><option value="editor" selected>Can edit</option><option value="viewer">Can view</option><option value="none">Remove access</option></select></label><button class="btn primary" ${!members.length || !data.workspaces.length ? "disabled" : ""}>Save access</button></form><div class="table-wrap"><table class="admin-table"><thead><tr><th>MEMBER</th><th>WORKSPACE</th><th>ACCESS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4">No members have been added to a workspace yet.</td></tr>'}</tbody></table></div>${folderGrants ? `<h3 class="subhead">Folder-level access</h3><p class="hint">Older grants to single folders still apply. Workspace access is simpler to manage; remove these once members have workspace access.</p><div class="table-wrap"><table class="admin-table"><thead><tr><th>MEMBER</th><th>FOLDER</th><th>ACCESS</th><th></th></tr></thead><tbody>${folderGrants}</tbody></table></div>` : ""}</section>`;
+  return `<section class="panel"><div class="panel-heading"><div><h2>Workspace access</h2><p>Share the workspaces you own. Nobody, administrators included, sees a workspace until its owner adds them. Workspace members can open every folder and note in it, including folders added later.</p></div></div><form class="permission-form" id="workspace-access-form"><label>Member<select name="user_id">${members.map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select></label><label>Workspace<select name="workspace_id">${mine.map((w) => `<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></label><label>Permission<select name="role"><option value="editor" selected>Can edit</option><option value="viewer">Can view</option><option value="none">Remove access</option></select></label><button class="btn primary" ${!members.length || !mine.length ? "disabled" : ""}>Save access</button></form><div class="table-wrap"><table class="admin-table"><thead><tr><th>MEMBER</th><th>WORKSPACE</th><th>ACCESS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4">No members have been added to a workspace yet.</td></tr>'}</tbody></table></div>${folderGrants ? `<h3 class="subhead">Folder-level access</h3><p class="hint">Older grants to single folders still apply. Workspace access is simpler to manage; remove these once members have workspace access.</p><div class="table-wrap"><table class="admin-table"><thead><tr><th>MEMBER</th><th>FOLDER</th><th>ACCESS</th><th></th></tr></thead><tbody>${folderGrants}</tbody></table></div>` : ""}</section>`;
 }
 function storagePanel(storage) {
   const percent = Math.min(100, (storage.used / storage.server_quota) * 100);
@@ -5321,6 +5378,7 @@ function sharedUnavailable() {
       document.documentElement.classList.add("chat-pane");
     }
     shell();
+    firstSignIn();
     const requested =
       initialNote ||
       (location.hash.startsWith("#note/") ? location.hash.slice(6) : "");

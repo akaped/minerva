@@ -356,7 +356,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         &router,
         "PUT",
         "permissions",
-        &admin,
+        &alice,
         json!({"folder_id":a.folder,"user_id":carol_id,"role":"viewer"}),
     )
     .await;
@@ -520,20 +520,39 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         json!({"workspace_id":a.workspace,"user_id":carol_id,"role":"editor"}),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::FORBIDDEN,
-        "only administrators assign workspaces"
-    );
+    assert_eq!(status, StatusCode::OK, "owners share their own workspaces");
+    // Administrators cannot open, or share, workspaces of other people.
     let (status, _) = api(
         &router,
         "PUT",
         "workspace-access",
         &admin,
-        json!({"workspace_id":a.workspace,"user_id":carol_id,"role":"editor"}),
+        json!({"workspace_id":a.workspace,"user_id":carol_id,"role":"viewer"}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
+    assert!(!ids(&boot["workspaces"]).contains(&a.workspace.as_str()));
+    for path in [
+        format!("notes/{}", a.note),
+        format!("notes/{}/history", a.note),
+        format!("databases/{}", a.database),
+    ] {
+        assert_eq!(
+            api(&router, "GET", &path, &admin, json!({})).await.0,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    let (status, _) = send(
+        &router,
+        "GET",
+        &format!("/api/v1/attachments/{}", a.attachment),
+        &admin,
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "attachment");
     let (_, later) = api(
         &router,
         "POST",
@@ -584,12 +603,13 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     assert_eq!(status, StatusCode::FORBIDDEN, "folders stay with the owner");
     assert_sealed(&router, &carol, &b, &a.note).await;
     let (_, admin_view) = api(&router, "GET", "admin", &admin, json!({})).await;
-    assert_eq!(admin_view["workspace_grants"][0]["role"], "editor");
+    // Who has access to Alice's workspace is hers to know.
+    assert_eq!(admin_view["workspace_grants"], json!([]));
     api(
         &router,
         "PUT",
         "workspace-access",
-        &admin,
+        &alice,
         json!({"workspace_id":a.workspace,"user_id":carol_id,"role":"viewer"}),
     )
     .await;
@@ -607,7 +627,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         &router,
         "PUT",
         "workspace-access",
-        &admin,
+        &alice,
         json!({"workspace_id":a.workspace,"user_id":carol_id,"role":"none"}),
     )
     .await;
@@ -630,7 +650,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         &router,
         "PUT",
         "permissions",
-        &admin,
+        &alice,
         json!({"folder_id":a.folder,"user_id":carol_id,"role":"none"}),
     )
     .await;

@@ -311,6 +311,8 @@ mod tests {
             user: user.clone(),
             password_hash: String::new(),
             two_factor: Default::default(),
+            must_change_password: false,
+            default_workspace: None,
         });
         d.workspaces.push(Workspace {
             id: "w".into(),

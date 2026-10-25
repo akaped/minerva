@@ -294,7 +294,13 @@ pub(super) async fn storage(
         if method != Method::GET {
             return Err(ApiError(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed".into()));
         }
-        let title = |nid: &str| s.data.notes.iter().find(|n| n.id == nid).map(|n| (n.title.clone(), n.trashed));
+        // Sizes are for every note; titles only for notes the administrator may open.
+        let title = |nid: &str| {
+            s.data.notes.iter().find(|n| n.id == nid).map(|n| {
+                let name = if note_role(&s.data, &user, n).is_some() { n.title.clone() } else { "Private note".into() };
+                (name, n.trashed)
+            })
+        };
         let mut per_note: HashMap<&str, (i64, usize)> = HashMap::new();
         for f in &files {
             let entry = per_note.entry(&f.note_id).or_default();

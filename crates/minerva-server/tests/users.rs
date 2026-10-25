@@ -190,8 +190,8 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Delete: not yourself, not by members; the workspace passes to the
-    // administrator, and the account's sign-ins and private data go.
+    // Delete: not yourself, not by members; the account's sign-ins, private
+    // data, and unshared workspaces go.
     let (status, _) = call(
         &r,
         "DELETE",
@@ -205,8 +205,12 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, deleted) = call(&r, "DELETE", &format!("users/{uid}"), &admin, json!({})).await;
     assert_eq!(
-        (status, deleted["workspaces_transferred"].as_u64()),
-        (StatusCode::OK, Some(1)),
+        (
+            status,
+            deleted["workspaces_transferred"].as_u64(),
+            deleted["workspaces_deleted"].as_u64()
+        ),
+        (StatusCode::OK, Some(0), Some(1)),
         "{deleted}"
     );
     assert_eq!(
@@ -218,13 +222,13 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
         StatusCode::UNAUTHORIZED
     );
     let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
-    let kept = boot["workspaces"]
+    // Her personal workspace was not shared: it is gone, not handed to the
+    // administrator.
+    assert!(!boot["workspaces"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|w| w["id"] == workspace["id"])
-        .unwrap();
-    assert_eq!(kept["owner_id"], admin_id.as_str());
+        .any(|w| w["id"] == workspace["id"]));
     let (_, list) = call(&r, "GET", "admin", &admin, json!({})).await;
     assert!(!list["users"]
         .as_array()
@@ -246,4 +250,163 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
     assert_eq!(decks["decks"], json!([]));
     let (_, chats) = call(&r, "GET", "ai/chats", &ada, json!({})).await;
     assert_eq!(chats, json!([]));
+}
+
+#[tokio::test]
+async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
+    let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
+    assert_eq!(
+        boot["must_change_password"], false,
+        "the first administrator chose their password"
+    );
+
+    // A member who may not create workspaces still gets a personal one.
+    let (_, user) = call(
+        &r,
+        "POST",
+        "users",
+        &admin,
+        json!({"name":"Cleo","email":"cleo@test.local","password":"temporary-pass-1234"}),
+    )
+    .await;
+    let (_, cleo) = login(&r, "cleo@test.local", "temporary-pass-1234").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
+    assert_eq!(
+        (
+            boot["must_change_password"].as_bool(),
+            boot["owns_workspace"].as_bool()
+        ),
+        (Some(true), Some(false))
+    );
+    assert_eq!(boot["default_workspace"], Value::Null);
+    assert_eq!(
+        call(&r, "POST", "workspaces", &cleo, json!({"name":"Mine"}))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+
+    let (status, done) = call(&r, "POST", "account/password", &cleo, json!({"current_password":"temporary-pass-1234","new_password":"cleos-own-password","workspace_name":"Personal"})).await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    let personal = done["workspace_id"].as_str().unwrap().to_string();
+    let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
+    assert_eq!(boot["must_change_password"], false);
+    assert_eq!(boot["default_workspace"], personal.as_str());
+    let w = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["id"] == personal.as_str())
+        .unwrap();
+    assert_eq!(
+        (w["name"].as_str(), w["owner_id"].as_str()),
+        (Some("Personal"), user["id"].as_str())
+    );
+    assert!(
+        boot["folders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["workspace_id"] == personal.as_str()),
+        "with a first folder"
+    );
+
+    // Changing the password again creates nothing more.
+    let (_, again) = call(&r, "POST", "account/password", &cleo, json!({"current_password":"cleos-own-password","new_password":"cleos-next-password","workspace_name":"Second"})).await;
+    assert_eq!(again["workspace_id"], Value::Null);
+
+    // A password set by an administrator must be replaced again.
+    call(
+        &r,
+        "PATCH",
+        &format!("users/{}", user["id"].as_str().unwrap()),
+        &admin,
+        json!({"password":"reset-by-admin-123"}),
+    )
+    .await;
+    let (_, cleo) = login(&r, "cleo@test.local", "reset-by-admin-123").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
+    assert_eq!(
+        (
+            boot["must_change_password"].as_bool(),
+            boot["owns_workspace"].as_bool()
+        ),
+        (Some(true), Some(true))
+    );
+}
+
+#[tokio::test]
+async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
+    let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
+    let (_, eve) = call(&r, "POST", "users", &admin, json!({"name":"Eve","email":"eve@test.local","password":"eve-password-1234","can_create_workspace":true})).await;
+    let (_, finn) = call(
+        &r,
+        "POST",
+        "users",
+        &admin,
+        json!({"name":"Finn","email":"finn@test.local","password":"finn-password-123"}),
+    )
+    .await;
+    let (_, eve_token) = login(&r, "eve@test.local", "eve-password-1234").await;
+    let (_, team) = call(&r, "POST", "workspaces", &eve_token, json!({"name":"Team"})).await;
+    let (_, private) = call(
+        &r,
+        "POST",
+        "workspaces",
+        &eve_token,
+        json!({"name":"Diary"}),
+    )
+    .await;
+    // The administrator cannot see either of them.
+    let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
+    assert!(!boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|w| w["id"] == team["id"] || w["id"] == private["id"]));
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "workspace-access",
+        &eve_token,
+        json!({"workspace_id":team["id"],"user_id":finn["id"],"role":"editor"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, deleted) = call(
+        &r,
+        "DELETE",
+        &format!("users/{}", eve["id"].as_str().unwrap()),
+        &admin,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (
+            deleted["workspaces_transferred"].as_u64(),
+            deleted["workspaces_deleted"].as_u64()
+        ),
+        (Some(1), Some(1))
+    );
+    let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
+    let ids: Vec<_> = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["id"].clone())
+        .collect();
+    assert!(ids.contains(&team["id"]) && !ids.contains(&private["id"]));
+    let (_, finn_token) = login(&r, "finn@test.local", "finn-password-123").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &finn_token, json!({})).await;
+    assert!(
+        boot["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["id"] == team["id"]),
+        "its members keep it"
+    );
 }

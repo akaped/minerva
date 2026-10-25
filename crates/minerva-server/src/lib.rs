@@ -45,6 +45,13 @@ struct Account {
     password_hash: String,
     #[serde(default)]
     two_factor: twofactor::TwoFactor,
+    /// Set when an administrator chooses the password: the person picks their
+    /// own on their next sign-in.
+    #[serde(default)]
+    must_change_password: bool,
+    /// The workspace the app opens first.
+    #[serde(default)]
+    default_workspace: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Session {
@@ -269,6 +276,8 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
             user,
             password_hash: password_hash(password)?,
             two_factor: Default::default(),
+            must_change_password: false,
+            default_workspace: None,
         }],
         workspaces: vec![workspace],
         folders: vec![folder],
@@ -317,10 +326,11 @@ fn role(d: &Data, u: &User, folder_id: &str) -> Option<Role> {
     if let Some(r) = replication::replica(d, &f.workspace_id) {
         return replication::replica_role(d, r, folder_id);
     }
-    if u.admin
-        || d.workspaces
-            .iter()
-            .any(|w| w.id == f.workspace_id && w.owner_id == u.id)
+    // Administrators have no access to other people's workspaces: like
+    // everyone, they see what they own and what is shared with them.
+    if d.workspaces
+        .iter()
+        .any(|w| w.id == f.workspace_id && w.owner_id == u.id)
     {
         return Some(Role::Editor);
     }
@@ -551,7 +561,7 @@ fn owns(d: &Data, u: &User, w: &str) -> bool {
     if let Some(r) = replication::replica(d, w) {
         return d.upstream || (r.owner && !r.revoked);
     }
-    u.admin || d.workspaces.iter().any(|v| v.id == w && v.owner_id == u.id)
+    d.workspaces.iter().any(|v| v.id == w && v.owner_id == u.id)
 }
 fn authenticate(d: &Data, headers: &HeaderMap) -> Result<User, ApiError> {
     let bearer = headers
@@ -956,7 +966,8 @@ fn dispatch(
                     v
                 })
                 .collect();
-            json!({"server_id":d.server_id,"user":u,"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            let account = d.users.iter().find(|a| a.user.id == u.id);
+            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"owns_workspace":d.workspaces.iter().any(|w| w.owner_id == u.id),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -1225,7 +1236,21 @@ fn dispatch(
                     user
                 })
                 .collect();
-            json!({"users":users,"grants":d.grants,"workspace_grants":d.workspace_grants})
+            // Access to the administrator's own workspaces only.
+            let mine = |w: &str| d.workspaces.iter().any(|x| x.id == w && x.owner_id == u.id);
+            let folder_mine =
+                |f: &str| d.folders.iter().any(|x| x.id == f && mine(&x.workspace_id));
+            let grants: Vec<_> = d
+                .grants
+                .iter()
+                .filter(|g| folder_mine(&g.folder_id))
+                .collect();
+            let workspace_grants: Vec<_> = d
+                .workspace_grants
+                .iter()
+                .filter(|g| mine(&g.workspace_id))
+                .collect();
+            json!({"users":users,"grants":grants,"workspace_grants":workspace_grants})
         }
         ("POST", ["users"]) => {
             admin(&u)?;
@@ -1249,6 +1274,8 @@ fn dispatch(
                 user: user.clone(),
                 password_hash: hash,
                 two_factor: Default::default(),
+                must_change_password: true,
+                default_workspace: None,
             });
             json!(user)
         }
@@ -1289,6 +1316,7 @@ fn dispatch(
             }
             if let Some(p) = v["password"].as_str() {
                 a.password_hash = password_hash(p)?;
+                a.must_change_password = true;
             }
             if v["two_factor"].as_bool() == Some(false) {
                 twofactor::reset(a);
@@ -1310,10 +1338,28 @@ fn dispatch(
             if !d.users.iter().any(|a| a.user.id == *uid) {
                 return Err(missing());
             }
-            let mut transferred = 0;
-            for w in d.workspaces.iter_mut().filter(|w| w.owner_id == *uid) {
-                w.owner_id = u.id.clone();
-                transferred += 1;
+            // Personal workspaces go with the account: nobody else may open them.
+            // Workspaces shared with others pass to the administrator, so their
+            // members keep them.
+            let owned: Vec<(String, bool)> = d
+                .workspaces
+                .iter()
+                .filter(|w| w.owner_id == *uid)
+                .map(|w| (w.id.clone(), removal::shared(d, w)))
+                .collect();
+            let (mut transferred, mut removed) = (0, 0);
+            for (wid, shared) in owned {
+                if shared {
+                    if let Some(w) = d.workspaces.iter_mut().find(|w| w.id == wid) {
+                        w.owner_id = u.id.clone();
+                    }
+                    d.workspace_grants
+                        .retain(|g| g.workspace_id != wid || g.user_id != u.id);
+                    transferred += 1;
+                } else {
+                    removal::remove_workspace(d, &wid);
+                    removed += 1;
+                }
             }
             d.users.retain(|a| a.user.id != *uid);
             d.sessions.retain(|_, s| s.user_id != *uid);
@@ -1322,7 +1368,7 @@ fn dispatch(
             d.shares.retain(|s| s.user_id.as_deref() != Some(*uid));
             mcp::forget_user(d, uid);
             twofactor::forget(d, uid);
-            json!({"ok":true,"workspaces_transferred":transferred})
+            json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
         }
         // Changes your own password; other sessions end, this one stays.
         ("POST", ["account", "password"]) => {
@@ -1346,19 +1392,47 @@ fn dispatch(
                 ));
             }
             a.password_hash = password_hash(v["new_password"].as_str().unwrap_or(""))?;
+            a.must_change_password = false;
+            // First sign-in: a personal workspace of their own, opened by default.
+            let personal = v["workspace_name"]
+                .as_str()
+                .filter(|s| !s.trim().is_empty());
+            let mut created = None;
+            if let Some(name) = personal {
+                if !d.workspaces.iter().any(|w| w.owner_id == u.id) {
+                    let w = Workspace {
+                        id: id(),
+                        name: field(&json!({ "name": name }), "name")?,
+                        owner_id: u.id.clone(),
+                    };
+                    d.folders.push(Folder {
+                        id: id(),
+                        workspace_id: w.id.clone(),
+                        name: "General".into(),
+                        parent_id: None,
+                    });
+                    let a = d.users.iter_mut().find(|a| a.user.id == u.id).unwrap();
+                    a.default_workspace = Some(w.id.clone());
+                    created = Some(w.id.clone());
+                    d.workspaces.push(w);
+                }
+            }
             let keep = session_token(headers).map(hash_token);
             d.sessions
                 .retain(|key, s| s.user_id != u.id || keep.as_ref() == Some(key));
             twofactor::forget(d, &u.id);
-            json!({"ok":true})
+            json!({"ok":true,"workspace_id":created})
         }
         ("PUT", ["workspace-access"]) => {
-            admin(&u)?;
+            // Owners share their own workspaces; administrators too, but
+            // only the workspaces they own.
             let wid = field(&v, "workspace_id")?;
             let uid = field(&v, "user_id")?;
-            if !d.workspaces.iter().any(|w| w.id == wid)
-                || !d.users.iter().any(|a| a.user.id == uid)
-            {
+            // Refused before anything else, so nothing is revealed.
+            if !owns(d, &u, &wid) {
+                return Err(forbidden());
+            }
+            if !d.users.iter().any(|a| a.user.id == uid) {
                 return Err(missing());
             }
             let role = match v["role"].as_str() {
@@ -1379,10 +1453,20 @@ fn dispatch(
             json!({"ok":true})
         }
         ("PUT", ["permissions"]) => {
-            admin(&u)?;
+            // Owners share their own workspaces; administrators too, but
+            // only the workspaces they own.
             let fid = field(&v, "folder_id")?;
             let uid = field(&v, "user_id")?;
-            if !d.folders.iter().any(|f| f.id == fid) || !d.users.iter().any(|a| a.user.id == uid) {
+            let workspace = d
+                .folders
+                .iter()
+                .find(|f| f.id == fid)
+                .map(|f| f.workspace_id.clone())
+                .unwrap_or_default();
+            if !owns(d, &u, &workspace) {
+                return Err(forbidden());
+            }
+            if !d.users.iter().any(|a| a.user.id == uid) {
                 return Err(missing());
             }
             let role = match v["role"].as_str() {

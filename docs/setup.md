@@ -84,8 +84,8 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 
 - Server → workspaces → folders → notes, with stable UUID identities.
 - Workspace and folder creation, folder renaming, note creation and title editing.
-- Administrator-created accounts that administrators can edit (name, email, password, administrator role), disable, or delete (owned workspaces pass to the administrator), self-service password changes, workspace-creation privileges, and workspace access: members added to a workspace can edit (or view) every folder and note in it.
-- Deletion: notes (from the trash) and folders by their editors; personal workspaces by their owners, shared workspaces by administrators.
+- Administrator-created accounts that administrators can edit (name, email, password, administrator role), disable, or delete (owned workspaces pass to the administrator), self-service password changes (people an administrator adds choose their own password and get a personal workspace, opened by default, at their first sign-in), workspace-creation privileges, and workspace access: members added to a workspace can edit (or view) every folder and note in it.
+- Deletion: notes (from the trash) and folders by their editors; workspaces by their owners only. Administrators cannot open other people's workspaces; owners share their own.
 - Plugins: app color themes, public website themes, and 20 PDF templates (company report, meeting minutes, proposal, academic paper, security assessment, and more) in [plugins/](../plugins/README.md), loaded from a folder at run time.
 - Note metadata (author, company, version, ...) that PDF templates place on covers, headers, footers, and tables, and that `{{key}}` placeholders insert into exports.
 - Inline Markdown blocks:

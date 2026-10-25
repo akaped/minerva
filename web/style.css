@@ -1858,7 +1858,7 @@ body {
 
 .ai-layout {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -1871,8 +1871,51 @@ body {
 .ai-history h3 {
   margin-top: 24px;
 }
-.ai-history .search-result {
-  overflow-wrap: anywhere;
+/* Past conversations: one line each, with context and age. */
+#chat-history {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+}
+.chat-history-row {
+  border-radius: 8px;
+}
+.chat-history-row:hover,
+.chat-history-row.current {
+  background: var(--soft, #eef0fd);
+}
+.chat-history-item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  padding: 7px 8px;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+}
+.chat-history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.chat-history-row.current .chat-history-title {
+  font-weight: 650;
+}
+.chat-history-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.chat-history-empty {
+  color: var(--muted);
+  font-size: 13px;
 }
 .ai-controls {
   display: grid;
@@ -1906,21 +1949,45 @@ body {
   overflow: auto;
   padding: 12px 0;
 }
+/* A conversation: your question in a bubble on the right, the reply below in
+   its own box. */
 .chat-turn {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
 }
 .chat-question {
-  border-left: 3px solid #8584d6;
-  padding: 8px 14px;
-  font-weight: 600;
+  align-self: flex-end;
+  max-width: 80%;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--soft, #eef0fd);
+  color: var(--ink, inherit);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .chat-answer {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px 14px 14px 14px;
+  background: var(--surface, #fff);
   line-height: 1.75;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.chat-answer.chat-pending {
+  color: var(--muted);
+  font-style: italic;
+}
+.chat-turn > .chat-sources,
+.chat-turn > small,
+.chat-turn > .chat-reply-actions {
+  margin: 0;
+}
+.chat-incomplete .chat-answer {
+  border-color: #e0a43a;
 }
 .chat-sources {
   display: flex;
@@ -4462,36 +4529,156 @@ dialog:has(#metadata-form) {
 }
 
 /* Flashcards: shared theme tokens keep study sessions calm in every theme. */
-.flashcards-page { max-width: 1120px; }
-.fc-intro, .fc-deck-heading, .fc-review-meta { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; align-items:center; margin-bottom:24px; }
-.fc-actions, .fc-ratings { display:flex; gap:10px; flex-wrap:wrap; }
-.fc-decks { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px; }
-.fc-deck, .fc-card-row, .fc-study, .fc-draft { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:24px; }
-.fc-deck { text-align:left; min-height:160px; }
-.fc-deck strong { font-size:21px; }
-.fc-deck p, .fc-card-row p { white-space:pre-wrap; overflow-wrap:anywhere; }
-.fc-deck span, .fc-card-row small { color:var(--subtle); }
-.fc-form { max-width:700px; display:grid; gap:18px; }
-.fc-form label, .fc-draft label { display:grid; gap:8px; }
-.fc-form [hidden] { display:none; }
-.fc-form textarea, .fc-draft textarea { width:100%; resize:vertical; }
-.fc-form .fc-actions { margin-top:12px; }
-.fc-card-list { display:grid; gap:12px; margin-top:24px; }
-.fc-card-row { display:flex; justify-content:space-between; align-items:start; gap:20px; }
-.fc-card-row>div { min-width:0; }
-.fc-card-row strong { overflow-wrap:anywhere; }
-.fc-study { max-width:800px; margin:24px auto; padding:clamp(24px,5vw,56px); text-align:center; }
-.fc-face { white-space:pre-wrap; overflow-wrap:anywhere; font-size:24px; line-height:1.6; margin:24px 0; }
-.fc-study hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
-.fc-ratings { justify-content:center; }
-.fc-ratings button { display:flex; flex-direction:column; min-width:100px; }
-.fc-ratings small { font-size:11px; }
-.fc-sources { margin-top:12px; font-size:12px; overflow-wrap:anywhere; }
-.fc-draft { display:grid; gap:16px; margin:20px 0; }
-.fc-draft legend { padding:0 8px; }
-.fc-draft legend label { display:flex; align-items:center; }
-.flashcards-page [hidden] { display:none; }
-.fc-picture { display:block; max-width:100%; max-height:360px; margin:8px auto; border-radius:6px; }
-.fc-card-row .fc-picture { max-height:120px; margin:6px 0; }
-.user-actions { white-space: nowrap; }
-.user-actions .btn + .btn { margin-left: 6px; }
+.flashcards-page {
+  max-width: 1120px;
+}
+.fc-intro,
+.fc-deck-heading,
+.fc-review-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.fc-actions,
+.fc-ratings {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fc-decks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+.fc-deck,
+.fc-card-row,
+.fc-study,
+.fc-draft {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 24px;
+}
+.fc-deck {
+  text-align: left;
+  min-height: 160px;
+}
+.fc-deck strong {
+  font-size: 21px;
+}
+.fc-deck p,
+.fc-card-row p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.fc-deck span,
+.fc-card-row small {
+  color: var(--subtle);
+}
+.fc-form {
+  max-width: 700px;
+  display: grid;
+  gap: 18px;
+}
+.fc-form label,
+.fc-draft label {
+  display: grid;
+  gap: 8px;
+}
+.fc-form [hidden] {
+  display: none;
+}
+.fc-form textarea,
+.fc-draft textarea {
+  width: 100%;
+  resize: vertical;
+}
+.fc-form .fc-actions {
+  margin-top: 12px;
+}
+.fc-card-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.fc-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 20px;
+}
+.fc-card-row > div {
+  min-width: 0;
+}
+.fc-card-row strong {
+  overflow-wrap: anywhere;
+}
+.fc-study {
+  max-width: 800px;
+  margin: 24px auto;
+  padding: clamp(24px, 5vw, 56px);
+  text-align: center;
+}
+.fc-face {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 24px;
+  line-height: 1.6;
+  margin: 24px 0;
+}
+.fc-study hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 28px 0;
+}
+.fc-ratings {
+  justify-content: center;
+}
+.fc-ratings button {
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+}
+.fc-ratings small {
+  font-size: 11px;
+}
+.fc-sources {
+  margin-top: 12px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fc-draft {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+}
+.fc-draft legend {
+  padding: 0 8px;
+}
+.fc-draft legend label {
+  display: flex;
+  align-items: center;
+}
+.flashcards-page [hidden] {
+  display: none;
+}
+.fc-picture {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  margin: 8px auto;
+  border-radius: 6px;
+}
+.fc-card-row .fc-picture {
+  max-height: 120px;
+  margin: 6px 0;
+}
+.user-actions {
+  white-space: nowrap;
+}
+.user-actions .btn + .btn {
+  margin-left: 6px;
+}

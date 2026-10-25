@@ -67,17 +67,17 @@ The SQLite database currently stores one JSON state row, committed atomically pe
 
 | Actor | Scope | Read | Edit and delete notes, delete folders | Create folders | Create workspaces | Delete workspaces | Manage users/grants |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Server administrator | Entire server | Yes | Yes | Yes | Yes | Any | Yes |
-| Workspace owner | Owned workspace | Yes | Yes | Yes | Only with creation capability | Only while personal | No |
+| Server administrator | Their own workspaces, like any owner | Only owned or shared | Only owned or shared | In owned workspaces | Yes | Only their own | Users; grants on their own workspaces |
+| Workspace owner | Owned workspace | Yes | Yes | Yes | Only with creation capability | Their own | Grants on their own workspace |
 | Workspace editor | Every folder of the assigned workspace, including later ones | Yes | Yes | No | Only with creation capability | No | No |
 | Workspace viewer | Every folder of the assigned workspace | Yes | No | No | Only with creation capability | No | No |
 | Folder editor (older grants) | Granted folder | Yes | Yes | No | Only with creation capability | No | No |
 | Folder viewer (older grants) | Granted folder | Yes | No | No | Only with creation capability | No | No |
 | Ungranted member | None | No | No | No | Only with creation capability | No | No |
 
-Administrators assign members to workspaces in Server administration → Workspace access, with edit access by default. A member's role on a folder is the higher of their workspace access and any older folder grant; a folder grant also covers that folder's subfolders. Removing either does not override workspace ownership or administrator access. There is no implicit access just because a user can create workspaces. Disabling a user invalidates their sessions and rejects future sign-in. User-management changes revoke that user's existing sessions. Revoking workspace or folder access takes effect at the next API request.
+Administrators have no access to other people's workspaces, personal or shared: they see what they own and what is shared with them. Owners share their workspaces (administrators do so in Server administration → Workspace access, with edit access by default). The storage overview shows sizes for every note but titles only for notes the administrator may open. Deleting an account deletes its unshared workspaces and passes its shared ones to the administrator, so their members keep them. A member's role on a folder is the higher of their workspace access and any older folder grant; a folder grant also covers that folder's subfolders. Removing either does not override workspace ownership. There is no implicit access just because a user can create workspaces. Disabling a user invalidates their sessions and rejects future sign-in. User-management changes revoke that user's existing sessions. Revoking workspace or folder access takes effect at the next API request.
 
-**Deletion.** Notes are moved to the trash first; folder editors can then delete them forever. Folder editors can delete a folder with everything in it. A workspace is *personal* while no other member has workspace or folder access to it: its owner can delete it then, and once it is shared only an administrator can. Deleting removes everything that belongs to the item (notes, version history, live editing state, shares, published pages, databases, sites, grants, MCP credentials, and attachment files) and cannot be undone. A share recipient with edit access cannot delete the note. Previously downloaded information cannot be remotely erased.
+**Deletion.** Notes are moved to the trash first; folder editors can then delete them forever. Folder editors can delete a folder with everything in it. Only a workspace's owner can delete it, shared or not; nobody else can, administrators included. Deleting removes everything that belongs to the item (notes, version history, live editing state, shares, published pages, databases, sites, grants, MCP credentials, and attachment files) and cannot be undone. A share recipient with edit access cannot delete the note. Previously downloaded information cannot be remotely erased.
 
 ## Native clients: Windows and Linux
 

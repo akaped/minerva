@@ -226,33 +226,29 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
     let (_, sharing) = api(&router, "GET", "sharing", &bob, json!({})).await;
     assert_eq!(sharing["shared_with_me"], json!([]));
 
-    // Sharing the workspace makes it an administrator's decision.
+    // Shared or not, only the owner deletes a workspace: not its members, not
+    // an administrator.
     api(
         &router,
         "PUT",
         "workspace-access",
-        &admin,
+        &alice,
         json!({"workspace_id":wid,"user_id":bob_id,"role":"viewer"}),
     )
     .await;
     let (_, boot) = api(&router, "GET", "bootstrap", &alice, json!({})).await;
-    assert_eq!(workspace(&boot, &wid).unwrap()["can_delete"], false);
-    let (status, err) = api(
-        &router,
-        "DELETE",
-        &format!("workspaces/{wid}"),
-        &alice,
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(
-        err["error"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("administrator"),
-        "{err}"
-    );
+    assert_eq!(workspace(&boot, &wid).unwrap()["can_delete"], true);
+    for (who, token) in [("member", &bob), ("administrator", &admin)] {
+        let (status, _) = api(
+            &router,
+            "DELETE",
+            &format!("workspaces/{wid}"),
+            token,
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{who}");
+    }
 
     // Folders: viewers cannot delete them, editors can, with their contents.
     let inside = note(&router, &alice, &other, "Inside").await;
@@ -269,7 +265,7 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         &router,
         "PUT",
         "workspace-access",
-        &admin,
+        &alice,
         json!({"workspace_id":wid,"user_id":bob_id,"role":"editor"}),
     )
     .await;
@@ -341,7 +337,7 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         &router,
         "PUT",
         "workspace-access",
-        &admin,
+        &alice,
         json!({"workspace_id":wid,"user_id":bob_id,"role":"none"}),
     )
     .await;
@@ -383,11 +379,11 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         StatusCode::NOT_FOUND
     );
 
-    // Administrators may delete any workspace, shared or not.
+    // Administrators cannot see or delete other people's workspaces.
     let (_, w) = api(&router, "POST", "workspaces", &bob, json!({"name":"Beta"})).await;
     let beta = w["id"].as_str().unwrap();
     let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
-    assert_eq!(workspace(&boot, beta).unwrap()["can_delete"], true);
+    assert!(workspace(&boot, beta).is_none());
     assert_eq!(
         api(
             &router,
@@ -398,6 +394,6 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         )
         .await
         .0,
-        StatusCode::OK
+        StatusCode::FORBIDDEN
     );
 }

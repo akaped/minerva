@@ -38,7 +38,7 @@ fn remove_folders(d: &mut Data, ids: &HashSet<String>) {
     d.template_folders.retain(|_, f| !ids.contains(f));
 }
 /// Whether anyone besides the owner has been given access to the workspace.
-fn shared(d: &Data, w: &Workspace) -> bool {
+pub(super) fn shared(d: &Data, w: &Workspace) -> bool {
     d.workspace_grants
         .iter()
         .any(|g| g.workspace_id == w.id && g.user_id != w.owner_id)
@@ -49,11 +49,33 @@ fn shared(d: &Data, w: &Workspace) -> bool {
                     .any(|f| f.id == g.folder_id && f.workspace_id == w.id)
         })
 }
-/// Administrators delete any workspace; owners only their personal ones.
-pub(super) fn can_delete_workspace(d: &Data, u: &User, w: &Workspace) -> bool {
-    u.admin || (w.owner_id == u.id && !shared(d, w))
+/// Owners delete their workspaces; nobody else can, administrators included.
+pub(super) fn can_delete_workspace(_d: &Data, u: &User, w: &Workspace) -> bool {
+    w.owner_id == u.id
 }
 
+/// Removes a workspace with everything in it.
+pub(super) fn remove_workspace(d: &mut Data, wid: &str) {
+    let folders: HashSet<String> = d
+        .folders
+        .iter()
+        .filter(|f| f.workspace_id == wid)
+        .map(|f| f.id.clone())
+        .collect();
+    remove_folders(d, &folders);
+    d.sites.retain(|s| s.workspace_id != wid);
+    d.workspace_grants.retain(|g| g.workspace_id != wid);
+    d.journal_folders.remove(wid);
+    d.template_folders.remove(wid);
+    d.journal_templates.remove(wid);
+    mcp::forget_workspace(d, wid);
+    d.workspaces.retain(|w| w.id != wid);
+    for a in &mut d.users {
+        if a.default_workspace.as_deref() == Some(wid) {
+            a.default_workspace = None;
+        }
+    }
+}
 /// `DELETE /notes/{id}`, `DELETE /folders/{id}`, and `DELETE /workspaces/{id}`.
 pub(super) fn route(d: &mut Data, u: &User, parts: &[&str]) -> Result<Value, ApiError> {
     match parts {
@@ -95,30 +117,9 @@ pub(super) fn route(d: &mut Data, u: &User, parts: &[&str]) -> Result<Value, Api
                 .find(|w| w.id == *wid)
                 .ok_or_else(missing)?;
             if !can_delete_workspace(d, u, w) {
-                return Err(if w.owner_id == u.id {
-                    ApiError(
-                        StatusCode::FORBIDDEN,
-                        "This workspace is shared with other members. Ask an administrator to delete it."
-                            .into(),
-                    )
-                } else {
-                    forbidden()
-                });
+                return Err(forbidden());
             }
-            let folders: HashSet<String> = d
-                .folders
-                .iter()
-                .filter(|f| f.workspace_id == *wid)
-                .map(|f| f.id.clone())
-                .collect();
-            remove_folders(d, &folders);
-            d.sites.retain(|s| s.workspace_id != *wid);
-            d.workspace_grants.retain(|g| g.workspace_id != *wid);
-            d.journal_folders.remove(*wid);
-            d.template_folders.remove(*wid);
-            d.journal_templates.remove(*wid);
-            mcp::forget_workspace(d, wid);
-            d.workspaces.retain(|w| w.id != *wid);
+            remove_workspace(d, wid);
             Ok(json!({"ok":true}))
         }
         _ => Err(missing()),
