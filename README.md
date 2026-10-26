@@ -1,6 +1,6 @@
 <div align="center">
 
-# Minerva
+# ![minerva](logo.png)
 
 ### A home for everything you’re learning.
 
