@@ -22,7 +22,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check the version and the changelog
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -42,7 +42,7 @@ jobs:
     # as possible (programs built on newer systems need newer libraries).
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # WebKitGTK and GTK for Linux; MinGW-w64 to cross-compile for Windows.
       - name: Install system packages
@@ -62,7 +62,7 @@ jobs:
           key: linux-windows
 
       # The apps embed the web bundle; rebuild it from source.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -77,7 +77,7 @@ jobs:
       - name: Package the server
         run: scripts/package-server.sh linux windows
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: minerva-linux-windows
           path: dist/*
@@ -88,7 +88,7 @@ jobs:
     # Apple Silicon; Intel is cross-compiled, and both join in universal binaries.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
@@ -100,7 +100,7 @@ jobs:
         with:
           key: macos
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -115,7 +115,7 @@ jobs:
       - name: Package the server
         run: scripts/package-server.sh macos
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: minerva-macos
           path: dist/*
@@ -128,9 +128,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
