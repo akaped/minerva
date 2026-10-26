@@ -10,6 +10,9 @@ Write freely. Connect ideas. Learn with AI. Build something together.
 
 [Explore Minerva](https://akaped.github.io/minerva/) · [Get started](#get-started) · [Contribute](CONTRIBUTING.md) · [Report a problem](https://github.com/akaped/minerva/issues)
 
+![minerva_dash](minerva_dash.png)
+
+
 </div>
 
 ---
