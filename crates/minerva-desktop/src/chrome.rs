@@ -1,5 +1,6 @@
 //! Window chrome. Linux uses a single GTK header bar: an application menu on the
-//! left, the page title, and the window buttons. Windows keeps a native menu bar.
+//! left, the page title, and the window buttons. Windows keeps a native menu bar,
+//! and macOS the menu bar at the top of the screen.
 use crate::UserEvent;
 use tao::event_loop::EventLoopProxy;
 use tao::window::Window;
@@ -13,7 +14,7 @@ pub enum Command {
 
 /// Keeps platform menu objects alive for the lifetime of the window.
 pub struct Chrome {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     _menu: muda::Menu,
 }
 
@@ -116,6 +117,86 @@ pub fn install(
     let menu = Menu::with_items(&[&app])?;
     // SAFETY: the HWND belongs to `window`, which outlives the menu.
     unsafe { menu.init_for_hwnd(window.hwnd() as _)? };
+    MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
+        let command = match e.id.as_ref() {
+            "servers" => Command::Servers,
+            "reload" => Command::Reload,
+            "quit" => Command::Quit,
+            _ => return,
+        };
+        let _ = proxy.send_event(UserEvent::Command(command));
+    }));
+    window.set_visible(true);
+    Ok(Chrome { _menu: menu })
+}
+
+/// The application menu, plus Edit and Window menus: without them macOS has no
+/// copy, paste or undo shortcuts in the webview.
+#[cfg(target_os = "macos")]
+pub fn install(
+    window: &Window,
+    proxy: EventLoopProxy<UserEvent>,
+) -> Result<Chrome, Box<dyn std::error::Error>> {
+    use muda::accelerator::{Accelerator, Code, Modifiers};
+    use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+
+    let shortcut = |modifiers, code| Some(Accelerator::new(Some(modifiers), code));
+    let app = Submenu::with_items(
+        "Minerva",
+        true,
+        &[
+            &PredefinedMenuItem::about(None, None),
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id(
+                "servers",
+                "Servers…",
+                true,
+                shortcut(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyO),
+            ),
+            &MenuItem::with_id(
+                "reload",
+                "Reload",
+                true,
+                shortcut(Modifiers::SUPER, Code::KeyR),
+            ),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id(
+                "quit",
+                "Quit Minerva",
+                true,
+                shortcut(Modifiers::SUPER, Code::KeyQ),
+            ),
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(None),
+            &PredefinedMenuItem::redo(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::cut(None),
+            &PredefinedMenuItem::copy(None),
+            &PredefinedMenuItem::paste(None),
+            &PredefinedMenuItem::select_all(None),
+        ],
+    )?;
+    let windows = Submenu::with_items(
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(None),
+            &PredefinedMenuItem::fullscreen(None),
+            &PredefinedMenuItem::close_window(None),
+        ],
+    )?;
+    let menu = Menu::with_items(&[&app, &edit, &windows])?;
+    menu.init_for_nsapp();
+    windows.set_as_windows_menu_for_nsapp();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         let command = match e.id.as_ref() {
             "servers" => Command::Servers,

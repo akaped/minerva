@@ -1,7 +1,7 @@
-//! Minerva desktop client for Windows and Linux.
+//! Minerva desktop client for Windows, macOS and Linux.
 //!
-//! A native window hosts the system webview (WebView2 on Windows, WebKitGTK on
-//! Linux). The app opens its own embedded server first: personal notes and
+//! A native window hosts the system webview (WebView2 on Windows, WKWebView on
+//! macOS, WebKitGTK on Linux). The app opens its own embedded server first: personal notes and
 //! offline copies of remote workspaces, kept in sync in the background. Each
 //! registered server's own web interface is also available online through the
 //! `minerva-client` gateway, while sign-in tokens stay in the OS credential store.

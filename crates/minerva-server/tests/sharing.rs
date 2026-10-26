@@ -172,8 +172,12 @@ async fn member_shares_grant_one_note_and_are_revocable() {
         .await
         .json();
     assert!(
-        boot["notes"].as_array().unwrap().is_empty(),
-        "no folder access is implied"
+        boot["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|n| n["title"] == "Getting Started"),
+        "no folder access is implied: only the guide in their own workspace"
     );
     assert_eq!(boot["shared_notes"][0]["id"], nid);
     let found = api(

@@ -185,6 +185,7 @@ let data,
   folderId = null,
   layout = localStorage.getItem("minerva.layout") || "grid",
   note = null,
+  mailEnabled = false,
   mode = "document",
   dirty = false,
   conflict = false,
@@ -720,7 +721,8 @@ function login() {
   note = null;
   data = null;
   $("#app").innerHTML =
-    `<div class="login-shell"><div class="login-art"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="eyebrow">A HOME FOR YOUR IDEAS</div><h1>Make room for<br>your next big thought.</h1><p>Notes, plans, and a little possibility.<br>A thoughtful workspace, on your own server.</p>${art()}</div><main class="login-main"><form class="login-form"><div class="eyebrow">YOUR SPACE, CONNECTED</div><h2>Welcome to Minerva</h2><p>Sign in to your server to pick up where you left off.</p><label>Email address<input name="email" type="email" autocomplete="username" placeholder="you@example.com" required></label><label>Password<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required></label><div class="form-error" role="alert"></div><button class="btn primary" type="submit">Sign in ${icon("arrow")}</button><p class="footnote">Privately hosted · Powered by Rust<br>Ask your server administrator for an account.</p></form></main></div>`;
+    `<div class="login-shell"><div class="login-art"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="eyebrow">A HOME FOR YOUR IDEAS</div><h1>Make room for<br>your next big thought.</h1><p>Notes, plans, and a little possibility.<br>A thoughtful workspace, on your own server.</p>${art()}</div><main class="login-main"><form class="login-form"><div class="eyebrow">YOUR SPACE, CONNECTED</div><h2>Welcome to Minerva</h2><p>Sign in to your server to pick up where you left off.</p><label>Email address<input name="email" type="email" autocomplete="username" placeholder="you@example.com" required></label><label>Password<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required></label><div class="form-error" role="alert"></div><button class="btn primary" type="submit">Sign in ${icon("arrow")}</button>${mailEnabled ? '<p class="forgot"><button type="button" class="text-link" id="forgot-password">Forgot your password?</button></p>' : ""}<p class="footnote">Privately hosted · Powered by Rust<br>Ask your server administrator for an account.</p></form></main></div>`;
+  action($("#forgot-password"), "click", forgotPassword);
   $(".login-form").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("button", e.target);
@@ -740,6 +742,52 @@ function login() {
       $(".form-error").textContent = err.message;
     } finally {
       btn.disabled = false;
+    }
+  };
+}
+/** Asks for a password-reset link by email. */
+function forgotPassword() {
+  const form = $(".login-form");
+  form.innerHTML = `<div class="eyebrow">FORGOT YOUR PASSWORD</div><h2>Reset your password</h2><p>Enter the email address of your account. We will send you a link to choose a new password.</p><label>Email address<input name="email" type="email" autocomplete="username" placeholder="you@example.com" required autofocus></label><div class="form-error" role="alert"></div><button class="btn primary" type="submit">Send the link ${icon("arrow")}</button><p class="footnote"><button type="button" class="text-link" id="back-to-login">Back to sign in</button></p>`;
+  $("#back-to-login").onclick = login;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("button[type=submit]", form);
+    btn.disabled = true;
+    try {
+      await api("password-reset", "POST", {
+        email: form.email.value.trim(),
+      });
+      form.innerHTML = `<div class="eyebrow">CHECK YOUR EMAIL</div><h2>Look in your inbox</h2><p>If an account uses ${esc(form.email.value.trim())}, an email with a link to choose a new password is on its way. The link works for one hour.</p><p class="footnote"><button type="button" class="text-link" id="back-to-login">Back to sign in</button></p>`;
+      $("#back-to-login").onclick = login;
+    } catch (err) {
+      $(".form-error", form).textContent = err.message;
+      btn.disabled = false;
+    }
+  };
+}
+/** Opened from an emailed link (`/?reset=<token>`): choose a new password. */
+function choosePassword(token) {
+  login();
+  const form = $(".login-form");
+  form.innerHTML = `<div class="eyebrow">YOUR ACCOUNT</div><h2>Choose a password</h2><p>Use at least 12 characters. You then sign in with it.</p><label>New password<input name="password" type="password" autocomplete="new-password" minlength="12" required autofocus></label><label>Repeat it<input name="repeat" type="password" autocomplete="new-password" minlength="12" required></label><div class="form-error" role="alert"></div><button class="btn primary" type="submit">Save password ${icon("arrow")}</button>`;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (form.password.value !== form.repeat.value)
+      return ($(".form-error", form).textContent =
+        "The two passwords are different.");
+    try {
+      const result = await api("password-reset/complete", "POST", {
+        token,
+        password: form.password.value,
+      });
+      history.replaceState(null, "", "/");
+      login();
+      $(".login-form").email.value = result.email || "";
+      $(".login-form p").textContent =
+        "Your password is saved. Sign in with it.";
+    } catch (err) {
+      $(".form-error", form).textContent = err.message;
     }
   };
 }
@@ -989,7 +1037,8 @@ function dashboard() {
     icon,
     data,
     notes: () => workspaceNotes().filter((n) => !n.trashed),
-    folderCards: () => folderChildren(treeFolders(), null).map(folderCard).join(""),
+    folderCards: () =>
+      folderChildren(treeFolders(), null).map(folderCard).join(""),
     art,
     today: localDate,
     calendar: (month) =>
@@ -1858,8 +1907,101 @@ function emptyBlockHTML() {
 function blockHTML(b, i) {
   const position = `block ${i + 1} of ${note.blocks.length}`;
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button data-move="-1" title="Move up" aria-label="Move block up">↑</button><button data-move="1" title="Move down" aria-label="Move block down">↓</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? `role="button" aria-label="Edit ${position}"` : `role="group" aria-label="${position[0].toUpperCase() + position.slice(1)}"`}>${note.rendered?.[i] || emptyBlockHTML()}</div></div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? `role="button" aria-label="Edit ${position}"` : `role="group" aria-label="${position[0].toUpperCase() + position.slice(1)}"`}>${note.rendered?.[i] || emptyBlockHTML()}</div></div>`;
 }
+/** Moves the block at `i` to index `j` and saves. */
+async function moveBlock(i, j) {
+  if (i < 0 || j < 0 || j >= note.blocks.length || i === j) return;
+  live?.boundary();
+  const [block] = note.blocks.splice(i, 1),
+    [html] = note.rendered.splice(i, 1);
+  note.blocks.splice(j, 0, block);
+  note.rendered.splice(j, 0, html);
+  markDirty();
+  renderBlocks();
+  announce(`Block moved to position ${j + 1}`);
+  await queueSave();
+}
+/** Drags a block by its handle; a line shows where it will land. */
+function dragBlock(e, el, id) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const root = $("#blocks"),
+    line = document.createElement("div");
+  line.className = "block-drop-line";
+  root.append(line);
+  el.classList.add("dragging");
+  document.body.classList.add("dragging-block");
+  let target = null;
+  const move = (ev) => {
+    const others = $$(".block", root).filter((b) => b !== el);
+    const after = others.find((b) => {
+      const r = b.getBoundingClientRect();
+      return ev.clientY < r.top + r.height / 2;
+    });
+    target = after ? after.dataset.block : "";
+    const top = after
+      ? after.offsetTop - 2
+      : others.length
+        ? others.at(-1).offsetTop + others.at(-1).offsetHeight
+        : 0;
+    line.style.top = `${top}px`;
+  };
+  const up = async () => {
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", up);
+    removeEventListener("pointercancel", up);
+    line.remove();
+    el.classList.remove("dragging");
+    document.body.classList.remove("dragging-block");
+    if (target === null) return;
+    const i = note.blocks.findIndex((b) => b.id === id);
+    let j = target
+      ? note.blocks.findIndex((b) => b.id === target)
+      : note.blocks.length;
+    if (j > i) j -= 1;
+    await moveBlock(i, j).catch(error);
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", up);
+  addEventListener("pointercancel", up);
+}
+/**
+ * Copying a selection across blocks puts the blocks' Markdown on the clipboard
+ * as plain text, and the rendered text as HTML for rich editors.
+ */
+function copyBlocks(e) {
+  const sel = getSelection();
+  if (sel.isCollapsed || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0),
+    root = $("#blocks");
+  if (!root?.contains(range.commonAncestorContainer)) return;
+  if (range.commonAncestorContainer.closest?.("textarea, input")) return;
+  const ids = $$(".block", root)
+    .filter((b) => range.intersectsNode(b))
+    .map((b) => b.dataset.block);
+  if (ids.length < 2) return; // inside one block, the browser's copy is right
+  const html = document.createElement("div");
+  html.append(range.cloneContents());
+  $$(".block-controls, .task-toggle", html).forEach((n) => n.remove());
+  $$(".block", html).forEach((b) =>
+    b.replaceWith(...($(".block-body", b) || b).childNodes),
+  );
+  e.clipboardData.setData(
+    "text/plain",
+    note.blocks
+      .filter((b) => ids.includes(b.id))
+      .map((b) => b.markdown)
+      .join("\n\n"),
+  );
+  e.clipboardData.setData("text/html", html.innerHTML);
+  e.preventDefault();
+}
+document.addEventListener("copy", (e) => note && copyBlocks(e));
+// Block handles stay out of the way while text is selected.
+document.addEventListener("selectionchange", () =>
+  document.body.classList.toggle("selecting-text", !getSelection().isCollapsed),
+);
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
   const root = $("#blocks");
@@ -1891,6 +2033,8 @@ function renderBlocks() {
         )
       )
         return;
+      // Selecting text to copy it must not open the block for editing.
+      if (!getSelection().isCollapsed) return;
       if (editable()) editBlock(id);
     });
     action($(".block-body", el), "keydown", (e) => {
@@ -1911,26 +2055,15 @@ function renderBlocks() {
         }
       }
     });
-    $$("[data-move]", el).forEach((b) =>
-      action(b, "click", async () => {
-        const i = note.blocks.findIndex((b) => b.id === id),
-          j = i + Number(b.dataset.move);
-        if (j < 0 || j >= note.blocks.length) return;
-        live?.boundary();
-        [note.blocks[i], note.blocks[j]] = [note.blocks[j], note.blocks[i]];
-        [note.rendered[i], note.rendered[j]] = [
-          note.rendered[j],
-          note.rendered[i],
-        ];
-        markDirty();
-        renderBlocks();
-        $(
-          `[data-block="${CSS.escape(id)}"] [data-move="${b.dataset.move}"]`,
-        )?.focus();
-        announce(`Block moved to position ${j + 1}`);
-        await queueSave();
-      }),
-    );
+    const handle = $(".block-handle", el);
+    action(handle, "keydown", async (e) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const i = note.blocks.findIndex((b) => b.id === id);
+      await moveBlock(i, i + (e.key === "ArrowUp" ? -1 : 1));
+      $(`[data-block="${CSS.escape(id)}"] .block-handle`)?.focus();
+    });
+    handle?.addEventListener("pointerdown", (e) => dragBlock(e, el, id));
     action($("[data-remove]", el), "click", async () => {
       const i = note.blocks.findIndex((b) => b.id === id);
       live?.boundary();
@@ -2108,7 +2241,8 @@ function editBlock(id, caret = null) {
   ta.dataset.liveKey = "block:" + id;
   ta.value = b.markdown;
   const initial = ta.value;
-  ta.style.height = Math.max(44, ta.scrollHeight) + "px";
+  ta.rows = 1;
+  ta.style.height = ta.scrollHeight + "px";
   ta.focus();
   const at = caret ?? ta.value.length;
   ta.setSelectionRange(at, at);
@@ -2518,6 +2652,66 @@ function newBlock(markdown = "", index = note?.blocks.length || 0) {
     y: 40 + Math.floor(index / 3) * 180,
   };
 }
+/** Adds `text` at the end of a block (a new one if needed) and keeps editing it. */
+async function appendToBlock(existingId, text) {
+  let b = note.blocks.find((b) => b.id === existingId);
+  live?.boundary();
+  if (!b) {
+    b = newBlock("");
+    note.blocks.push(b);
+    note.rendered.push("");
+  }
+  b.markdown = `${b.markdown.trimEnd()} ${text} `.trimStart();
+  note.rendered[note.blocks.indexOf(b)] = await renderMarkdown(b.markdown);
+  markDirty();
+  renderBlocks();
+  editBlock(b.id);
+  return b;
+}
+/** `/assigntouser`: `@person@example.com` in the block; they get an email. */
+function assignDialog(existingId) {
+  modal.innerHTML = `<form method="dialog" id="assign-form"><h2>Assign to someone</h2><p>${mailEnabled ? "They get an email with this block and a link to the note, if they can open it." : "This server does not send email, so the person is named in the note but not notified."}</p><label>Email address<input name="email" type="email" required autofocus placeholder="name@example.com" autocomplete="off"></label><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Assign</button></footer></form>`;
+  modal.showModal();
+  const form = $("#assign-form");
+  form.onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    e.preventDefault();
+    const email = form.email.value.trim().toLowerCase();
+    modal.close();
+    await appendToBlock(existingId, `@${email}`);
+    await queueSave();
+  };
+}
+/** `/remindme`: pick a date and time; the block is emailed to you then. */
+function reminderDialog(existingId) {
+  const soon = new Date(Date.now() + 3600e3);
+  soon.setMinutes(0, 0, 0);
+  const local = (d) =>
+    new Date(d.getTime() - d.getTimezoneOffset() * 60e3)
+      .toISOString()
+      .slice(0, 16);
+  modal.innerHTML = `<form method="dialog" id="remind-form"><h2>Remind me</h2><p>At this time you get an email with this block and a link to the note.</p><label>When<input name="at" type="datetime-local" required min="${local(new Date())}" value="${local(soon)}"></label><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Set reminder</button></footer></form>`;
+  modal.showModal();
+  const form = $("#remind-form");
+  form.onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    e.preventDefault();
+    const when = new Date(form.at.value);
+    if (!(when > new Date())) return toast("Choose a time in the future.");
+    modal.close();
+    const b = await appendToBlock(
+      existingId,
+      `⏰${form.at.value.replace("T", " ")}`,
+    );
+    await queueSave();
+    await api("reminders", "POST", {
+      note_id: note.id,
+      block_id: b.id,
+      at: Math.floor(when.getTime() / 1000),
+    });
+    toast(`Reminder set for ${when.toLocaleString()}`);
+  };
+}
 function blockMenu(existingId, capturedSelection = "") {
   if (!editable()) return;
   modal.innerHTML =
@@ -2526,7 +2720,10 @@ function blockMenu(existingId, capturedSelection = "") {
   $("#close-modal").onclick = () => modal.close();
   const input = $("#command-search");
   const targetNote = note.id;
-  let commands = [...blockCommands];
+  // Reminders arrive by email, so they need a server that sends it.
+  let commands = blockCommands.filter(
+    (c) => c[1] !== "@remind" || (mailEnabled && !shareMode),
+  );
   if (!shareMode)
     api("server-plugins/capabilities")
       .then((result) => {
@@ -2592,6 +2789,8 @@ function blockMenu(existingId, capturedSelection = "") {
     }
     if (command[1] === null) return attachmentDialog();
     if (command[1] === "@database") return databaseEmbedDialog(existingId);
+    if (command[1] === "@assign") return assignDialog(existingId);
+    if (command[1] === "@remind") return reminderDialog(existingId);
     let b = note.blocks.find((b) => b.id === existingId);
     if (!b) {
       b = newBlock(command[1]);
@@ -4351,13 +4550,16 @@ async function renderAdmin() {
   action($("#add-user"), "click", () =>
     formDialog(
       "Welcome someone new",
-      "Create an account and share its credentials with your teammate securely.",
-      `<label>Full name<input name="name" required maxlength="200" autocomplete="off"></label><label>Email<input type="email" name="email" required autocomplete="off"></label><label>Temporary password<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><label class="checkbox-label"><input type="checkbox" name="can_create_workspace">Can create workspaces</label>`,
+      mailEnabled
+        ? "They get an email with a link to choose their own password. You can also set a temporary one to share with them yourself."
+        : "Create an account and share its credentials with your teammate securely.",
+      `<label>Full name<input name="name" required maxlength="200" autocomplete="off"></label><label>Email<input type="email" name="email" required autocomplete="off"></label><label>Temporary password${mailEnabled ? " (optional)" : ""}<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" ${mailEnabled ? "" : "required"}></label><label class="checkbox-label"><input type="checkbox" name="can_create_workspace">Can create workspaces</label>`,
       async (v) => {
-        await api("users", "POST", {
+        const created = await api("users", "POST", {
           ...v,
           can_create_workspace: v.can_create_workspace === "on",
         });
+        if (created.invited) toast(`Invitation emailed to ${created.email}`);
         await renderAdmin();
       },
       "Create account",
@@ -5591,9 +5793,11 @@ function sharedUnavailable() {
     return;
   }
   try {
-    localMode = await api("health")
-      .then((h) => h.mode === "local")
-      .catch(() => false);
+    const health = await api("health").catch(() => ({}));
+    localMode = health.mode === "local";
+    mailEnabled = !!health.mail;
+    const resetToken = new URLSearchParams(location.search).get("reset");
+    if (resetToken) return choosePassword(resetToken);
     if (localMode) {
       replicas = await api("local/replicas").catch(() => []);
       setInterval(() => loadReplicas().catch(() => {}), 4000);

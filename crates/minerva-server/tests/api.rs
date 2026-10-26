@@ -61,7 +61,10 @@ async fn permissions_conflicts_history_and_revocation() {
     .await;
     let reader = login(&app, "reader@test.local").await;
     let (_, boot) = request(&app, "GET", "bootstrap", &reader, json!({})).await;
-    assert_eq!(boot["notes"].as_array().unwrap().len(), 0);
+    // Nothing of anyone else's: only the guide in their own workspace.
+    let notes = boot["notes"].as_array().unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0]["title"], "Getting Started");
     // Only their own personal workspace.
     let workspaces = boot["workspaces"].as_array().unwrap();
     assert_eq!(workspaces.len(), 1);
@@ -95,7 +98,7 @@ async fn permissions_conflicts_history_and_revocation() {
         StatusCode::FORBIDDEN
     );
     let (_, hidden_search) =
-        request(&app, "POST", "search", &reader, json!({"query":"Minerva"})).await;
+        request(&app, "POST", "search", &reader, json!({"query":"little space for big ideas"})).await;
     assert_eq!(hidden_search.as_array().unwrap().len(), 0);
     let grant = json!({"folder_id":folder,"user_id":user["id"],"role":"viewer"});
     assert_eq!(

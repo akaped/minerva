@@ -365,7 +365,14 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         visible(&boot, "workspaces").is_empty(),
         "only their own My Workspace"
     );
-    assert!(boot["notes"].as_array().unwrap().is_empty());
+    // Only the guide in their own My Workspace.
+    let titles: Vec<&str> = boot["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["title"].as_str())
+        .collect();
+    assert_eq!(titles, ["Getting Started"]);
     let (status, _) = api(
         &router,
         "POST",
@@ -394,7 +401,15 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         [a.folder.as_str()],
         "the Templates folder is not granted"
     );
-    assert_eq!(ids(&boot["notes"]), [a.note.as_str()]);
+    // The granted note, besides the guide in their own workspace.
+    let notes: Vec<&str> = boot["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n["title"] != "Getting Started")
+        .filter_map(|n| n["id"].as_str())
+        .collect();
+    assert_eq!(notes, [a.note.as_str()]);
     let (status, _) = api(
         &router,
         "GET",

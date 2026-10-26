@@ -1,0 +1,161 @@
+# Builds Minerva for Linux, Windows and macOS, the desktop app and the server,
+# and publishes them as a GitHub release.
+#
+# Prepare a release with scripts/release.sh, which sets the version, dates the
+# changelog and tags; pushing the tag starts this workflow:
+#   scripts/release.sh 0.3.0 && git push origin main v0.3.0
+# The tag must match `version` in Cargo.toml, and CHANGELOG.md must have a
+# section for it, which becomes the release notes. Running the workflow by hand
+# builds the packages as downloadable artifacts without releasing them.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  # Fails fast, before any build, when the tag and the files disagree.
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the version and the changelog
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $version (run scripts/release.sh)"
+            exit 1
+          fi
+
+  linux-windows:
+    needs: check
+    # The oldest supported Ubuntu, so the Linux build runs on as many systems
+    # as possible (programs built on newer systems need newer libraries).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # WebKitGTK and GTK for Linux; MinGW-w64 to cross-compile for Windows.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev gcc-mingw-w64-x86-64 zip
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add x86_64-pc-windows-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-windows
+
+      # The apps embed the web bundle; rebuild it from source.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the web app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package the desktop app
+        run: scripts/package-desktop.sh linux windows
+
+      - name: Package the server
+        run: scripts/package-server.sh linux windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minerva-linux-windows
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    needs: check
+    # Apple Silicon; Intel is cross-compiled, and both join in universal binaries.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the web app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package the desktop app
+        run: scripts/package-desktop.sh macos
+
+      - name: Package the server
+        run: scripts/package-server.sh macos
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minerva-macos
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [linux-windows, macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * >SHA256SUMS.txt
+
+      - name: Release notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # This version's changelog section, without its heading.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            /^## \[/ { on = 0 }
+            on' CHANGELOG.md >release-notes.md
+          printf '\n**Downloads:** `minerva-desktop` is the app for your computer (Linux, Windows, or macOS for Apple Silicon and Intel); `minerva-server` runs your own server, or use the Docker image `ghcr.io/%s/minerva:%s`. Check downloads against `SHA256SUMS.txt`.\n' "${GITHUB_REPOSITORY_OWNER,,}" "$version" >>release-notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "Minerva $GITHUB_REF_NAME" --notes-file release-notes.md
+          fi

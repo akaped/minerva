@@ -1,6 +1,8 @@
 // The overview page as a dashboard of widgets the user arranges: reorder by
 // dragging (or with the arrow buttons), resize, configure, add, and remove.
-// The layout is saved per account on the server.
+// Widgets sit in rows that always fill the page width: a widget's size is a
+// preference, and the widgets of a row grow or shrink to fill it. The layout is
+// saved per account on the server.
 import { intervalLabel, rich } from "./flashcards.js";
 
 export const WIDGETS = {
@@ -50,11 +52,58 @@ const DEFAULT = [
   { type: "journal", size: "s" },
   { type: "flashcards", size: "m" },
 ];
+const COLUMNS = 4;
+const SPAN = { s: 1, m: 2, l: 3, full: 4 };
 const fresh = (w) => ({
   id: crypto.randomUUID().slice(0, 8),
   options: {},
   ...w,
 });
+
+/**
+ * Splits the widgets into rows. A widget with `newRow` starts one; a row holds
+ * at most four widgets, and a fifth moves on to start the next row.
+ */
+export function rows(widgets) {
+  const out = [];
+  for (const w of widgets) {
+    const row = out.at(-1);
+    if (!row || w.newRow || row.length === COLUMNS) out.push([w]);
+    else row.push(w);
+  }
+  return out;
+}
+/**
+ * The columns each widget of a row spans, filling the row exactly: the largest
+ * shrink first when the preferred sizes do not fit, and the extra space goes to
+ * the largest when they leave a gap.
+ */
+export function spans(row) {
+  const out = row.map((w) => SPAN[w.size] || 1);
+  const largest = (pick) =>
+    out.reduce((best, v, i) => (pick(v, out[best]) ? i : best), 0);
+  while (out.reduce((a, b) => a + b, 0) > COLUMNS)
+    out[largest((v, b) => v > b)] -= 1;
+  while (out.reduce((a, b) => a + b, 0) < COLUMNS)
+    out[largest((v, b) => v > b)] += 1;
+  return out;
+}
+/** Marks where rows start, so the layout survives saving as a flat list. */
+function settle(widgets) {
+  rows(widgets).forEach((row) => row.forEach((w, i) => (w.newRow = i === 0)));
+  return widgets;
+}
+/** Older layouts have no rows: pack them by their sizes, as they were drawn. */
+function packed(widgets) {
+  if (widgets.some((w) => "newRow" in w)) return settle(widgets);
+  let used = COLUMNS;
+  for (const w of widgets) {
+    const span = SPAN[w.size] || 1;
+    w.newRow = used + span > COLUMNS;
+    used = w.newRow ? span : used + span;
+  }
+  return settle(widgets);
+}
 
 /**
  * Draws the dashboard into `root`. `app` supplies the app's data and helpers:
@@ -69,37 +118,44 @@ export async function renderDashboard(root, app) {
   } catch {
     widgets = null;
   }
-  widgets = (widgets || DEFAULT).map(fresh);
-  let editing = false,
-    dragged = null;
+  widgets = packed((widgets || DEFAULT).map(fresh));
+  let editing = false;
   const save = () =>
+    settle(widgets) &&
     api("account/dashboard", "PUT", { widgets }).catch(app.error);
 
   function draw() {
     if (!root.isConnected) return;
     root.innerHTML = `<div class="dashboard-bar">${
       editing
-        ? `<button class="btn primary" id="dash-add">${icon("plus")}Add widget</button><button class="btn" id="dash-reset">Restore default layout</button><span class="dash-hint">Drag widgets to reorder them.</span><button class="btn primary" id="dash-done">Done</button>`
+        ? `<button class="btn primary" id="dash-add">${icon("plus")}Add widget</button><button class="btn" id="dash-reset">Restore default layout</button><span class="dash-hint">Drag a widget beside another to share its row, or above or below a row to give it a row of its own.</span><button class="btn primary" id="dash-done">Done</button>`
         : `<button class="btn" id="dash-edit">${icon("grid")}Customize</button>`
     }</div><div class="dashboard ${editing ? "editing" : ""}">${
-      widgets.map(frame).join("") ||
+      rows(widgets)
+        .map((row) => {
+          const width = spans(row);
+          return row
+            .map((w) => frame(w, widgets.indexOf(w), width[row.indexOf(w)]))
+            .join("");
+        })
+        .join("") ||
       '<div class="empty">Your dashboard is empty. Choose Customize to add widgets.</div>'
     }</div>`;
     bind();
     widgets.forEach((w) => fill(w).catch(() => {}));
   }
-  function frame(w, i) {
+  function frame(w, i, span) {
     const spec = WIDGETS[w.type];
     const title = w.type === "chart" ? w.options.title || spec.name : spec.name;
     const tools = editing
-      ? `<div class="widget-tools"><button data-move="${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${esc(title)} earlier" title="Move earlier">←</button><button data-move="${i}:1" ${i === widgets.length - 1 ? "disabled" : ""} aria-label="Move ${esc(title)} later" title="Move later">→</button><select data-size="${i}" aria-label="Size of ${esc(title)}">${SIZES.map(([v, label]) => `<option value="${v}" ${w.size === v ? "selected" : ""}>${label}</option>`).join("")}</select>${w.type === "chart" ? `<button data-configure="${i}" aria-label="Chart settings" title="Chart settings">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="Remove">×</button></div>`
+      ? `<div class="widget-tools"><button data-move="${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${esc(title)} earlier" title="Move earlier">←</button><button data-move="${i}:1" ${i === widgets.length - 1 ? "disabled" : ""} aria-label="Move ${esc(title)} later" title="Move later">→</button><select data-size="${i}" aria-label="Preferred size of ${esc(title)}" title="Preferred size; the row stretches or shrinks it to fill the width">${SIZES.map(([v, label]) => `<option value="${v}" ${w.size === v ? "selected" : ""}>${label}</option>`).join("")}</select>${w.type === "chart" ? `<button data-configure="${i}" aria-label="Chart settings" title="Chart settings">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="Remove">×</button></div>`
       : "";
     // The welcome block can be dismissed for good, without customizing.
     const dismiss =
       !editing && w.type === "welcome"
         ? `<button class="widget-dismiss" data-remove="${i}" aria-label="Hide this welcome for good" title="Hide for good">×</button>`
         : "";
-    return `<section class="widget size-${w.size} widget-${w.type}" data-widget="${w.id}" ${editing ? 'draggable="true"' : ""} aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">Loading…</p></div></section>`;
+    return `<section class="widget widget-${w.type}" style="--span:${span}" data-widget="${w.id}" aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">Loading…</p></div></section>`;
   }
   function bind() {
     const on = (sel, fn, event = "click") =>
@@ -110,13 +166,15 @@ export async function renderDashboard(root, app) {
     on("#dash-done", () => ((editing = false), draw()));
     on("#dash-add", addDialog);
     on("#dash-reset", () => {
-      widgets = DEFAULT.map(fresh);
+      widgets = packed(DEFAULT.map(fresh));
       save();
       draw();
     });
     on("[data-move]", (b) => {
       const [i, d] = b.dataset.move.split(":").map(Number);
+      const [a, b2] = [widgets[i].newRow, widgets[i + d].newRow];
       [widgets[i], widgets[i + d]] = [widgets[i + d], widgets[i]];
+      [widgets[i].newRow, widgets[i + d].newRow] = [a, b2];
       save();
       draw();
       root.querySelector(`[data-move="${i + d}:${d}"]`)?.focus();
@@ -131,7 +189,9 @@ export async function renderDashboard(root, app) {
       "change",
     );
     on("[data-remove]", (b) => {
-      widgets.splice(Number(b.dataset.remove), 1);
+      const i = Number(b.dataset.remove);
+      if (widgets[i].newRow && widgets[i + 1]) widgets[i + 1].newRow = true;
+      widgets.splice(i, 1);
       save();
       draw();
       app.toast("Widget removed · add it back with Customize → Add widget");
@@ -139,45 +199,116 @@ export async function renderDashboard(root, app) {
     on("[data-configure]", (b) =>
       chartDialog(widgets[Number(b.dataset.configure)]),
     );
-    // Drag and drop to reorder, while customizing.
+    // Drag to reorder, while customizing. Pointer events rather than HTML
+    // drag and drop, which embedded webviews (the desktop app) do not deliver.
+    // Where a drop lands: beside the widget (left or right half), or in a new
+    // row above or below its row (the top and bottom edges).
+    const place = (el, e) => {
+      const r = el.getBoundingClientRect(),
+        y = (e.clientY - r.top) / r.height;
+      if (y < 0.2) return "above";
+      if (y > 0.8) return "below";
+      return e.clientX < r.left + r.width / 2 ? "before" : "after";
+    };
+    const clear = () =>
+      root
+        .querySelectorAll("[data-drop]")
+        .forEach((el) => el.removeAttribute("data-drop"));
+    const scroller = () => {
+      for (let el = root.parentElement; el; el = el.parentElement)
+        if (
+          el.scrollHeight > el.clientHeight &&
+          /auto|scroll/.test(getComputedStyle(el).overflowY)
+        )
+          return el;
+      return document.scrollingElement;
+    };
+    const under = (e) =>
+      document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest(".dashboard [data-widget]");
     on(
       "[data-widget]",
-      (el, e) => (
-        (dragged = el.dataset.widget),
-        e.dataTransfer.setData("text/plain", dragged)
-      ),
-      "dragstart",
-    );
-    on(
-      "[data-widget]",
-      (el, e) => {
-        if (!dragged) return;
-        e.preventDefault();
-        el.classList.add("drop-target");
+      (el, down) => {
+        if (
+          !editing ||
+          down.button !== 0 ||
+          down.target.closest("button, select, input, a, textarea")
+        )
+          return;
+        down.preventDefault();
+        let moving = false;
+        const startScroll = scroller().scrollTop;
+        const move = (e) => {
+          // A few pixels first, so a click stays a click.
+          if (
+            !moving &&
+            Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 6
+          )
+            return;
+          if (!moving) {
+            moving = true;
+            el.classList.add("dragging");
+            document.body.classList.add("dragging-widget");
+          }
+          // The widget follows the pointer, also while the page scrolls.
+          const scrolled = scroller().scrollTop - startScroll;
+          el.style.transform = `translate(${e.clientX - down.clientX}px, ${e.clientY - down.clientY + scrolled}px)`;
+          // Near the top or bottom of the window, scroll to reach other rows.
+          const edge =
+            e.clientY < 70 ? -1 : e.clientY > innerHeight - 70 ? 1 : 0;
+          if (edge) scroller().scrollBy(0, edge * 18);
+          clear();
+          const target = under(e);
+          if (target && target !== el) target.dataset.drop = place(target, e);
+        };
+        const up = (e) => {
+          removeEventListener("pointermove", move);
+          removeEventListener("pointerup", up);
+          removeEventListener("pointercancel", up);
+          el.classList.remove("dragging");
+          el.style.transform = "";
+          document.body.classList.remove("dragging-widget");
+          clear();
+          const target = moving && e.type === "pointerup" && under(e);
+          if (target && target !== el)
+            drop(el.dataset.widget, target.dataset.widget, place(target, e));
+        };
+        addEventListener("pointermove", move);
+        addEventListener("pointerup", up);
+        addEventListener("pointercancel", up);
       },
-      "dragover",
+      "pointerdown",
     );
-    on(
-      "[data-widget]",
-      (el) => el.classList.remove("drop-target"),
-      "dragleave",
-    );
-    on(
-      "[data-widget]",
-      (el, e) => {
-        e.preventDefault();
-        const from = widgets.findIndex((w) => w.id === dragged);
-        const to = widgets.findIndex((w) => w.id === el.dataset.widget);
-        dragged = null;
-        if (from < 0 || to < 0 || from === to) return draw();
-        const [moved] = widgets.splice(from, 1);
-        widgets.splice(to, 0, moved);
-        save();
-        draw();
-      },
-      "drop",
-    );
-    on("[data-widget]", () => (dragged = null), "dragend");
+  }
+  /** Moves widget `id` beside widget `targetId`, or into a row next to its row. */
+  function drop(id, targetId, where) {
+    const from = widgets.findIndex((w) => w.id === id);
+    if (from < 0 || id === targetId) return;
+    // Take the widget out; its row keeps its start.
+    const [moved] = widgets.splice(from, 1);
+    if (moved.newRow && widgets[from]) widgets[from].newRow = true;
+    const target = widgets.find((w) => w.id === targetId);
+    const row = rows(widgets).find((r) => r.includes(target));
+    let at;
+    if (where === "before") {
+      at = widgets.indexOf(target);
+      moved.newRow = target.newRow;
+      target.newRow = false;
+    } else if (where === "after") {
+      at = widgets.indexOf(target) + 1;
+      moved.newRow = false;
+    } else {
+      at =
+        where === "above"
+          ? widgets.indexOf(row[0])
+          : widgets.indexOf(row.at(-1)) + 1;
+      moved.newRow = true;
+      if (widgets[at]) widgets[at].newRow = true;
+    }
+    widgets.splice(at, 0, moved);
+    save();
+    draw();
   }
   function addDialog() {
     const modal = document.querySelector("#modal");
@@ -198,6 +329,7 @@ export async function renderDashboard(root, app) {
           type: b.dataset.add,
           size: WIDGETS[b.dataset.add].size,
         });
+        w.newRow = true;
         widgets.push(w);
         save();
         modal.close();

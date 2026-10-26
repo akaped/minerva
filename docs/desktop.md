@@ -1,6 +1,6 @@
-# Desktop client (Windows and Linux)
+# Desktop client (Windows, macOS and Linux)
 
-`crates/minerva-desktop` builds a native Minerva application for Windows and Linux. A native window hosts the system webview (WebView2 on Windows, WebKitGTK 4.1 on Linux).
+`crates/minerva-desktop` builds a native Minerva application for Windows, macOS and Linux. A native window hosts the system webview (WebView2 on Windows, WKWebView on macOS, WebKitGTK 4.1 on Linux).
 
 The app runs its own Minerva server in-process, so it works without any server or network. It holds personal notes and **offline copies** of workspaces from other servers, which sync in the background and merge edits made offline. See [sync.md](sync.md). Each registered server's own web interface is also available online through a Rust gateway (`crates/minerva-client`). That interface always matches the server's API version, while sign-in tokens stay in the operating system's credential store.
 
@@ -16,13 +16,15 @@ scripts/package-desktop.sh linux                # or one platform only
 
 The Windows package is cross-compiled from Linux with the `x86_64-pc-windows-gnu` target and MinGW-w64 (`rustup target add x86_64-pc-windows-gnu`, plus `mingw64-gcc` or `gcc-mingw-w64-x86-64`). The zip contains `Minerva.exe` and `WebView2Loader.dll`, which must stay in the same folder. Windows 10 and 11 include the required Microsoft Edge WebView2 Runtime. The executable embeds its icon and version information.
 
+The macOS package is built on a Mac with the Xcode command-line tools: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`, then `scripts/package-desktop.sh macos`. It produces `Minerva.app` as a universal binary for Apple Silicon and Intel, for macOS 11 or later, with its icon and menu bar. The app has an ad-hoc signature and is not notarized. The first time, people open it with right-click → **Open**, or remove the quarantine flag with `xattr -dr com.apple.quarantine /Applications/Minerva.app`. Release builds run on GitHub's macOS runners.
+
 The Linux archive contains the binary, a `.desktop` entry, a 256 px icon, and `install.sh` (installs into `~/.local`, or `PREFIX`). Application and web icons are generated from `favicon.png` into `crates/minerva-desktop/assets/` and `web/icons/`.
 
 The desktop crate is not one of the workspace's default members, so `cargo build` and `cargo run -p minerva-server` work without GUI libraries. `cargo test --workspace` includes it.
 
 ## Using it
 
-The app opens **This computer**: personal notes and offline copies. Nothing needs to be configured. The launcher (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) lists servers. **Add a server** with its address: HTTPS is assumed, and `localhost`/`127.x` may use HTTP. The client calls `/api/v1/health`, requires API version 1, and records the server's persistent UUID. **Open** loads the server's normal web interface; sign in there as usual. Use **Minerva → Servers…** or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> to return to the launcher. The launcher also offers **Offline…** (choose workspaces to keep on this computer; sign in first), **Sign out** (revokes the session on the server, and pauses syncing), **Rename**, and **Remove**.
+The app opens **This computer**: personal notes and offline copies. Nothing needs to be configured. The launcher (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) lists servers. **Add a server** with its address: HTTPS is assumed, and `localhost`/`127.x` may use HTTP. The client calls `/api/v1/health`, requires API version 1, and records the server's persistent UUID. **Open** loads the server's normal web interface; sign in there as usual. Use **Minerva → Servers…** or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> on macOS) to return to the launcher. The launcher also offers **Offline…** (choose workspaces to keep on this computer; sign in first), **Sign out** (revokes the session on the server, and pauses syncing), **Rename**, and **Remove**.
 
 The workspace menu (top of the sidebar) lists every place your notes live: **This computer**, then each server you added with its workspaces. Choose a workspace to open it: one with an offline copy opens right here, any other opens that server's page. The button beside a server workspace keeps or removes its offline copy. **Add server** adds one without leaving the app; signing in still happens on the server's page. On a server's page, the menu offers **This computer** and **All servers…** to come back. The server list is given only to this computer's page, never to a server's page.
 
@@ -30,12 +32,12 @@ Offline copies appear in This computer's workspace menu. Their top-bar badge sho
 
 Attachments download to the Downloads folder. Existing files are never overwritten; a numbered name is chosen instead. Links to other sites open in the system browser.
 
-| Data | Linux | Windows |
-| --- | --- | --- |
-| Server registry (no secrets) | `~/.config/minerva/connections.json` | `%APPDATA%\minerva\connections.json` |
-| Personal notes, offline copies, unsent changes | `~/.local/share/minerva/local.db` | `%LOCALAPPDATA%\minerva\local.db` |
-| Session tokens | Secret Service, service `minerva-desktop` | Credential Manager, `connection:<id>.minerva-desktop` |
-| Webview storage (theme, layout) | `~/.local/share/minerva/webview` | `%LOCALAPPDATA%\minerva\webview` |
+| Data                                           | Linux                                     | Windows                                               | macOS                                                    |
+| ---------------------------------------------- | ----------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| Server registry (no secrets)                   | `~/.config/minerva/connections.json`      | `%APPDATA%\minerva\connections.json`                  | `~/Library/Application Support/minerva/connections.json` |
+| Personal notes, offline copies, unsent changes | `~/.local/share/minerva/local.db`         | `%LOCALAPPDATA%\minerva\local.db`                     | `~/Library/Application Support/minerva/local.db`         |
+| Session tokens                                 | Secret Service, service `minerva-desktop` | Credential Manager, `connection:<id>.minerva-desktop` | Keychain, service `minerva-desktop`                      |
+| Webview storage (theme, layout)                | `~/.local/share/minerva/webview`          | `%LOCALAPPDATA%\minerva\webview`                      | `~/Library/Application Support/minerva/webview`          |
 
 Set `MINERVA_CREDENTIAL_STORE=memory` to keep sign-ins only until the application exits. This is for kiosks, automated tests, or systems without a credential service.
 

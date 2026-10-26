@@ -470,23 +470,73 @@ fn tag_spans(text: &str) -> Vec<(usize, usize)> {
     }
     spans
 }
+/// Assignments (`@person@example.com`) and reminders (`⏰2026-10-27 09:00`).
+fn chip_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = vec![];
+    for (i, c) in text.char_indices() {
+        let after_space = text[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|p| p.is_whitespace() || p == '(');
+        if c == '@' && after_space {
+            let len = crate::mail::mention_len(&text[i + 1..]);
+            if len > 0 {
+                spans.push((i, i + 1 + len));
+            }
+        }
+        if c == '⏰' {
+            let start = i + c.len_utf8();
+            let stamp = text[start..].get(..16).unwrap_or("");
+            let shape = stamp.bytes().enumerate().all(|(j, b)| match j {
+                4 | 7 => b == b'-',
+                10 => b == b' ' || b == b'T',
+                13 => b == b':',
+                _ => b.is_ascii_digit(),
+            });
+            if stamp.len() == 16 && shape {
+                spans.push((i, start + 16));
+            }
+        }
+    }
+    spans
+}
 fn tags_into(text: &str, events: &mut Vec<pulldown_cmark::Event<'_>>) {
     use pulldown_cmark::Event;
+    let mut spans: Vec<(usize, usize, bool)> = tag_spans(text)
+        .into_iter()
+        .map(|(a, b)| (a, b, true))
+        .chain(chip_spans(text).into_iter().map(|(a, b)| (a, b, false)))
+        .collect();
+    spans.sort();
     let mut last = 0;
-    for (start, end) in tag_spans(text) {
+    for (start, end, tag) in spans {
+        if start < last {
+            continue;
+        }
         if start > last {
             events.push(Event::Text(text[last..start].to_string().into()));
         }
-        // `data-tag` lets stylesheets style particular tags, such as severities.
-        let tag = &text[start..end];
-        events.push(Event::InlineHtml(
+        let piece = &text[start..end];
+        let html = if tag {
+            // `data-tag` lets stylesheets style particular tags, such as severities.
             format!(
                 "<span class=\"tag\" data-tag=\"{}\">{}</span>",
-                escape(&tag.trim_start_matches('#').to_lowercase()),
-                escape(tag)
+                escape(&piece.trim_start_matches('#').to_lowercase()),
+                escape(piece)
             )
-            .into(),
-        ));
+        } else if let Some(email) = piece.strip_prefix('@') {
+            format!(
+                "<span class=\"mention\" title=\"Assigned to {0}\">@{0}</span>",
+                escape(email)
+            )
+        } else {
+            let stamp = piece.trim_start_matches('⏰').replace('T', " ");
+            format!(
+                "<span class=\"reminder\" title=\"Reminder by email\">⏰ {}</span>",
+                escape(&stamp)
+            )
+        };
+        events.push(Event::InlineHtml(html.into()));
         last = end;
     }
     if last < text.len() {
@@ -715,7 +765,7 @@ fn clean(html: &str) -> String {
         .get_or_init(|| {
             let mut builder = ammonia::Builder::default();
             builder
-                .add_tag_attributes("span", &["class", "data-tag"])
+                .add_tag_attributes("span", &["class", "data-tag", "title"])
                 .add_tag_attributes("code", &["class"])
                 .add_tag_attributes("p", &["class"])
                 .add_tag_attributes("blockquote", &["class"])
@@ -741,6 +791,8 @@ fn clean(html: &str) -> String {
                                 *c,
                                 "code-diagnostic"
                                     | "tag"
+                                    | "mention"
+                                    | "reminder"
                                     | "math-error"
                                     | "journal-tasks"
                                     | "task-marker"
@@ -931,5 +983,25 @@ mod tests {
         assert!(public.contains("href=\"https://example.com/a\""));
         assert!(render_for("- [x] done\n- [ ] open", Links::Public("p")).contains("☑ done"));
         assert!(!render("- [x] done").contains('☑'));
+    }
+}
+#[cfg(test)]
+mod chip_tests {
+    #[test]
+    fn renders_mentions_and_reminders() {
+        let html = super::render("Call @ana@test.it ⏰2026-10-27 09:00 #work");
+        assert!(
+            html.contains(
+                r#"<span class="mention" title="Assigned to ana@test.it">@ana@test.it</span>"#
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(
+                r#"<span class="reminder" title="Reminder by email">⏰ 2026-10-27 09:00</span>"#
+            ),
+            "{html}"
+        );
+        assert!(html.contains(r#"class="tag""#), "{html}");
     }
 }

@@ -3,7 +3,7 @@ name = "minerva-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Minerva desktop client for Windows and Linux"
+description = "Minerva desktop client for Windows, macOS and Linux"
 [[bin]]
 name = "minerva"
 path = "src/main.rs"
@@ -22,7 +22,7 @@ open = "5"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 webkit2gtk = "2.0"
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 muda = { version = "0.19", default-features = false }
 [build-dependencies]
 embed-resource = "3"

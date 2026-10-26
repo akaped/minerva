@@ -6,6 +6,7 @@ mod databases;
 mod export;
 mod flashcards;
 mod journal;
+mod mail;
 mod mcp;
 mod plugins;
 mod removal;
@@ -128,6 +129,14 @@ struct Data {
     sync_status: HashMap<String, Value>,
     #[serde(default)]
     sync_conflicts: Vec<Value>,
+    /// Email waiting to be sent, `/remindme` reminders, and password-reset links
+    /// by token hash (see `mail.rs`).
+    #[serde(default)]
+    mail_outbox: Vec<mail::Outgoing>,
+    #[serde(default)]
+    reminders: Vec<mail::Reminder>,
+    #[serde(default)]
+    password_resets: HashMap<String, mail::Reset>,
 }
 pub struct Store {
     db: Connection,
@@ -278,18 +287,46 @@ fn create_personal(d: &mut Data, user_id: &str) -> String {
         owner_id: user_id.into(),
         personal: true,
     };
-    d.folders.push(Folder {
+    let folder = Folder {
         id: id(),
         workspace_id: w.id.clone(),
         name: "General".into(),
         parent_id: None,
-    });
+    };
+    d.notes.push(getting_started(&folder.id));
+    d.folders.push(folder);
     if let Some(a) = d.users.iter_mut().find(|a| a.user.id == user_id) {
         a.default_workspace = Some(w.id.clone());
     }
     let wid = w.id.clone();
     d.workspaces.push(w);
     wid
+}
+/// The manual every personal workspace starts with: one block per paragraph of
+/// `getting-started.md` (its code, tables and lists have no blank lines).
+fn getting_started(folder_id: &str) -> Note {
+    Note {
+        id: id(),
+        folder_id: folder_id.into(),
+        title: "Getting Started".into(),
+        icon: "🧭".into(),
+        blocks: include_str!("getting-started.md")
+            .split("\n\n")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .enumerate()
+            .map(|(i, s)| Block::new(s, i))
+            .collect(),
+        revision: 1,
+        updated_at: now(),
+        favorite: true,
+        trashed: false,
+        cover: "gradient:3".into(),
+        tags: vec!["guide".into()],
+        journal: None,
+        metadata: Default::default(),
+        print_template: String::new(),
+    }
 }
 /// Every account has one personal workspace. Older data adopts an unshared
 /// workspace the account owns that is evidently personal; otherwise one is
@@ -778,6 +815,7 @@ async fn editor_pane() -> Response {
 }
 
 pub fn app(store: Shared) -> Router {
+    mail::spawn(store.clone());
     Router::new()
         .route("/", get(|| async { axum::response::Html(include_str!("../../../web/index.html")) }))
         .route("/pane", get(editor_pane))
@@ -870,6 +908,8 @@ async fn api(
         s.data.login_challenges = d.login_challenges.clone();
         let (result, cookie) = outcome?;
         if write {
+            let actor = authenticate(&d, &headers).ok();
+            mail::assignments(&s.data, &mut d, actor.as_ref());
             persist(&mut s, d)?;
         }
         let mut response = axum::Json(result).into_response();
@@ -933,7 +973,7 @@ fn dispatch(
     };
     if path == "health" && method == "GET" {
         return Ok((
-            json!({"status":"ok","api_version":1,"server_id":d.server_id,"sync_protocol":1,"mode":if d.local {"local"} else {"server"}}),
+            json!({"status":"ok","api_version":1,"server_id":d.server_id,"sync_protocol":1,"mode":if d.local {"local"} else {"server"},"mail":mail::enabled()}),
             None,
         ));
     }
@@ -982,8 +1022,17 @@ fn dispatch(
         let user = twofactor::complete(d, &v)?;
         return Ok(start_session(d, user, secure));
     }
+    if path.starts_with("password-reset") && method == "POST" {
+        attempts.check(&format!("reset:{}", v["email"].as_str().unwrap_or("token")))?;
+        if let Some(result) = mail::reset_route(d, path, &v)? {
+            return Ok((result, None));
+        }
+    }
     let u = authenticate(d, headers)?;
     let parts: Vec<&str> = path.split('/').collect();
+    if parts.first() == Some(&"reminders") {
+        return Ok((mail::reminders_route(d, &u, method, &parts, &v)?, None));
+    }
     if parts.first() == Some(&"databases") {
         return Ok((databases::route(d, &u, method, &parts, v)?, None));
     }
@@ -1394,7 +1443,14 @@ fn dispatch(
             if d.users.iter().any(|a| a.user.email == email) {
                 return Err(bad("Email already exists"));
             }
-            let hash = password_hash(v["password"].as_str().unwrap_or(""))?;
+            // With email, the password may be left out: the invitation lets the
+            // person choose their own.
+            let password = match v["password"].as_str().filter(|p| !p.is_empty()) {
+                Some(p) => p.to_string(),
+                None if mail::enabled() => format!("{}{}", id(), id()),
+                None => String::new(),
+            };
+            let hash = password_hash(&password)?;
             let user = User {
                 id: id(),
                 name: field(&v, "name")?,
@@ -1412,7 +1468,10 @@ fn dispatch(
                 dashboard: None,
             });
             create_personal(d, &user.id);
-            json!(user)
+            let invited = mail::invite(d, &u, &user);
+            let mut out = json!(user);
+            out["invited"] = json!(invited);
+            out
         }
         ("PATCH", ["users", uid]) => {
             admin(&u)?;
@@ -1575,6 +1634,24 @@ fn dispatch(
                 Some("none") => None,
                 _ => return Err(bad("Invalid role")),
             };
+            let had = d.workspace_grants.iter().any(|g| {
+                g.workspace_id == wid && g.user_id == uid && Some(&g.role) == role.as_ref()
+            });
+            if let (false, Some(r)) = (had, &role) {
+                let name = d
+                    .workspaces
+                    .iter()
+                    .find(|w| w.id == wid)
+                    .map(|w| w.name.clone())
+                    .unwrap_or_default();
+                mail::access(
+                    d,
+                    &u,
+                    &uid,
+                    &format!("the workspace “{name}”"),
+                    *r == Role::Editor,
+                );
+            }
             d.workspace_grants
                 .retain(|g| g.workspace_id != wid || g.user_id != uid);
             if let Some(role) = role {
@@ -1612,6 +1689,31 @@ fn dispatch(
                 Some("none") => None,
                 _ => return Err(bad("Invalid role")),
             };
+            let had = d
+                .grants
+                .iter()
+                .any(|g| g.folder_id == fid && g.user_id == uid && Some(&g.role) == role.as_ref());
+            if let (false, Some(r)) = (had, &role) {
+                let folder = d
+                    .folders
+                    .iter()
+                    .find(|f| f.id == fid)
+                    .map(|f| f.name.clone())
+                    .unwrap_or_default();
+                let space = d
+                    .workspaces
+                    .iter()
+                    .find(|w| w.id == workspace)
+                    .map(|w| w.name.clone())
+                    .unwrap_or_default();
+                mail::access(
+                    d,
+                    &u,
+                    &uid,
+                    &format!("the folder “{folder}” in “{space}”"),
+                    *r == Role::Editor,
+                );
+            }
             d.grants.retain(|g| g.folder_id != fid || g.user_id != uid);
             if let Some(role) = role {
                 d.grants.push(Grant {

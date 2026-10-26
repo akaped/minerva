@@ -55,7 +55,7 @@ The optional **Superhuman Learning** plugin goes further:
 | A YouTube video             | Import its captions with timestamps and jump back to the moment. |
 | An audio recording          | Transcribe it with a transcription service you choose.           |
 
-You stay in charge: preview the result, edit it, and keep only what’s useful. [Learning plugin setup →](plugins/server/superhuman-learning/README.md)
+You stay in charge: preview the result, edit it, and keep only what’s useful. [How to install it →](#add-the-learning-plugin)
 
 ### Remember what you learn
 
@@ -63,7 +63,7 @@ Create personal flashcard decks and test yourself with spaced-repetition reviews
 
 ### Think together
 
-Edit the same note at the same time and see who else is there. Decide who can view or edit each workspace, folder, or note. Share a link when someone needs a quick way in, and switch it off when you’re done.
+Edit the same note at the same time and see who else is there. Decide who can view or edit each workspace, folder, or note. Share a link when someone needs a quick way in, and switch it off when you’re done. Assign a task to a teammate with `/assigntouser` and they get an email; set a reminder with `/remindme` and the block lands in your inbox when it’s due. [Email setup →](docs/setup.md#email)
 
 ### Share your work with the world
 
@@ -71,7 +71,7 @@ Publish notes as clean public pages, a blog, or a wiki, with videos and images i
 
 ### Works offline
 
-The Windows and Linux desktop app keeps your personal notes on your computer and works without a connection. It can also keep offline copies of your team’s workspaces: edit them on a plane, and Minerva merges your changes with everyone else’s when you’re back online.
+The desktop app for Windows, macOS and Linux keeps your personal notes on your computer and works without a connection. It can also keep offline copies of your team’s workspaces: edit them on a plane, and Minerva merges your changes with everyone else’s when you’re back online.
 
 ### Make it yours
 
@@ -127,12 +127,53 @@ The first start builds Minerva and takes a few minutes; to skip that, set `MINER
 
 To update later: `git pull`, then `docker compose up -d --build`. Back up the `minerva_minerva-data` Docker volume regularly; [here’s how](docs/setup.md#docker).
 
+### Add the learning plugin
+
+The **Superhuman Learning** plugin (`/summary`, `/wisdom`, `/youtube`, `/transcribe`) is a folder of Python scripts. The standard image stays minimal, so it contains neither Python nor the plugin; on a Docker server you add both:
+
+**1. Copy the plugin** from this repository next to your `compose.yaml`, so the server has `plugins/server/superhuman-learning/`:
+
+```sh
+scp -r plugins/server/superhuman-learning you@server:minerva/plugins/server/
+```
+
+**2. Add Python** with a `Dockerfile` next to `compose.yaml` (leave out the `yt-dlp` line if you don’t need `/youtube`):
+
+```dockerfile
+FROM ghcr.io/akaped/minerva:latest
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv \
+ && python3 -m venv /opt/minerva-media \
+ && /opt/minerva-media/bin/pip install --no-cache-dir yt-dlp \
+ && rm -rf /var/lib/apt/lists/*
+ENV MINERVA_PLUGIN_PYTHON=/opt/minerva-media/bin/python
+USER minerva
+```
+
+**3. Use it in `compose.yaml`:** build that image and mount the plugins folder in the `minerva` service:
+
+```yaml
+services:
+  minerva:
+    build: .
+    image: minerva-learning:latest
+    volumes:
+      - minerva-data:/data
+      - ./plugins:/plugins:ro
+```
+
+**4. Start it** with `docker compose build --pull && docker compose up -d`, and run the same command to update later. Then type `/` in an empty block of a note: the four commands appear.
+
+Text commands use the AI provider you set up under _AI providers_. For `/transcribe`, also add `MINERVA_ASR_PROVIDER` (the provider profile’s ID) and `MINERVA_ASR_MODEL` (a model that returns timestamped segments) to `.env`. Without Docker, install Python 3 (and `yt-dlp`) on the server and put the folder in Minerva’s plugins directory. [Every option and limit →](plugins/server/superhuman-learning/README.md)
+
 ### The desktop app
 
 Download it from the [Releases page](https://github.com/akaped/minerva/releases):
 
 - **Windows:** unzip `minerva-desktop-…-windows-x86_64.zip` and run `Minerva.exe`. Windows 10 and 11 include everything it needs.
 - **Linux:** unpack `minerva-desktop-…-linux-x86_64.tar.gz` and run `./install.sh`, which adds Minerva to your applications. It needs WebKitGTK 4.1, already installed on most desktops.
+- **macOS** (11 or later, Apple Silicon and Intel): unzip `minerva-desktop-…-macos-universal.zip` and drag `Minerva.app` to Applications. It isn't notarized by Apple yet, so the first time, right-click it and choose **Open**.
 
 Or build it from its source code:
 

@@ -863,9 +863,6 @@ p {
   overflow-wrap: anywhere;
   padding: 2px 7px;
 }
-.block:hover {
-  background: #fafbfe;
-}
 .block p {
   margin: 0 0 5px;
 }
@@ -934,23 +931,78 @@ p {
   font-size: 13px;
   padding: 7px;
 }
+/* The block being edited looks like the text around it: no box, only the cursor
+   and a faint line on its left. */
+#blocks .block textarea,
+#blocks .block textarea:focus {
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent);
+  resize: none;
+  min-height: 0;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+  padding: 2px 7px;
+}
+/* Blocks read as one page: the handle shows only on hover, never while text is
+   selected, and is never part of a selection. */
 .block-controls {
   position: absolute;
   right: 100%;
   top: 5px;
-  display: none;
-  padding-right: 6px;
-  background: white;
-  border-radius: 5px;
+  display: flex;
+  padding-right: 4px;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.12s;
 }
 .block:hover .block-controls,
-.block:focus-within .block-controls {
-  display: flex;
+.block-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.selecting-text .block-controls,
+body.dragging-block .block-controls {
+  opacity: 0;
+  pointer-events: none;
 }
 .block-controls button {
-  padding: 3px;
-  color: #9da6b6;
+  padding: 2px 3px;
+  color: #b1b8c3;
   font-size: 13px;
+  border-radius: 4px;
+  background: transparent;
+}
+.block-controls button:hover {
+  color: #5b6475;
+}
+.block-handle {
+  cursor: grab;
+  touch-action: none;
+}
+body.dragging-block,
+body.dragging-block * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.block.dragging {
+  opacity: 0.4;
+}
+.block-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent, #5b63d3);
+  border-radius: 1px;
+  pointer-events: none;
+}
+#blocks {
+  position: relative;
 }
 .block-placeholder {
   color: #b1b8c3;
@@ -1666,8 +1718,7 @@ body {
 [data-theme="dark"] dialog,
 [data-theme="dark"] input,
 [data-theme="dark"] select,
-[data-theme="dark"] textarea,
-[data-theme="dark"] .block-controls {
+[data-theme="dark"] textarea {
   background: #1d2432;
   border-color: #343e53;
   color: var(--ink);
@@ -1678,7 +1729,6 @@ body {
   border: 0;
 }
 [data-theme="dark"] button:hover,
-[data-theme="dark"] .block:hover,
 [data-theme="dark"] .record-card:hover {
   background: #293247;
 }
@@ -2368,6 +2418,33 @@ mark {
   font-size: 0.9em;
   font-weight: 500;
   cursor: pointer;
+}
+/* `@person@example.com` assignments and `⏰` email reminders in notes. */
+.mention,
+.reminder {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 99px;
+  font-size: 0.9em;
+  font-weight: 500;
+  background: #e8f3ec;
+  color: #2a6a49;
+}
+.reminder {
+  background: #fdf2e3;
+  color: #8a5312;
+}
+[data-theme="dark"] .mention {
+  background: #1f3a2d;
+  color: #9fd6b4;
+}
+[data-theme="dark"] .reminder {
+  background: #3d2f1b;
+  color: #f0c98c;
+}
+.login-form .forgot {
+  margin: 4px 0 0;
+  text-align: center;
 }
 blockquote[class^="markdown-alert-"] {
   margin: 4px 0;
@@ -4365,7 +4442,6 @@ dialog:has(#metadata-form) {
 :root:not([data-theme="dark"]):not([data-variant]) .workspace-button:hover,
 :root:not([data-theme="dark"]):not([data-variant])
   .workspace-button[aria-expanded="true"],
-:root:not([data-theme="dark"]):not([data-variant]) .block:hover,
 :root:not([data-theme="dark"]):not([data-variant]) .record-card:hover {
   background: #edf0e7;
 }
@@ -4731,7 +4807,7 @@ dialog:has(#metadata-form) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Overview dashboard: widgets on a four-column grid. */
+/* Overview dashboard: rows of widgets on a four-column grid, each row filled. */
 .dashboard-bar {
   display: flex;
   flex-wrap: wrap;
@@ -4759,32 +4835,14 @@ dialog:has(#metadata-form) {
   border-radius: 14px;
   background: var(--surface, #fff);
 }
-.widget.size-s {
-  grid-column: span 1;
+.widget {
+  grid-column: span var(--span, 4);
 }
-.widget.size-m {
-  grid-column: span 2;
-}
-.widget.size-l {
-  grid-column: span 3;
-}
-.widget.size-full {
-  grid-column: 1 / -1;
-}
-@media (max-width: 1100px) {
-  .dashboard {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .widget.size-l {
-    grid-column: 1 / -1;
-  }
-}
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .dashboard {
     grid-template-columns: minmax(0, 1fr);
   }
-  .widget.size-s,
-  .widget.size-m {
+  .widget {
     grid-column: 1 / -1;
   }
 }
@@ -4846,11 +4904,54 @@ dialog:has(#metadata-form) {
 }
 .dashboard.editing .widget {
   cursor: grab;
+  user-select: none;
+  touch-action: none;
   outline: 1px dashed var(--line);
   outline-offset: 3px;
 }
-.dashboard.editing .widget.drop-target {
-  outline: 2px solid var(--accent);
+/* Lifted while dragged; the pointer sees the widgets underneath. */
+.dashboard .widget.dragging {
+  position: relative;
+  z-index: 20;
+  opacity: 0.85;
+  pointer-events: none;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.18);
+}
+body.dragging-widget,
+body.dragging-widget * {
+  cursor: grabbing !important;
+}
+/* Where a dragged widget will land: a bar beside it, or above or below its row. */
+.dashboard.editing .widget[data-drop]::after {
+  content: "";
+  position: absolute;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.widget[data-drop="before"]::after,
+.widget[data-drop="after"]::after {
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+.widget[data-drop="before"]::after {
+  left: -11px;
+}
+.widget[data-drop="after"]::after {
+  right: -11px;
+}
+.widget[data-drop="above"]::after,
+.widget[data-drop="below"]::after {
+  left: 0;
+  right: 0;
+  height: 4px;
+}
+.widget[data-drop="above"]::after {
+  top: -11px;
+}
+.widget[data-drop="below"]::after {
+  bottom: -11px;
 }
 .widget-loading,
 .widget-empty {

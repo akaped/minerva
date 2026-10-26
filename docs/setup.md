@@ -147,12 +147,30 @@ Import preserves each Markdown source line as a block. Multiline structures such
 | `MINERVA_PUBLIC_URL`     | HTTP listen address   | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com`     |
 | `MINERVA_SITE_NAME`      | `Published notes`     | Title of the published pages index and feed                                                                   |
 | `MINERVA_TOTP_ISSUER`    | `Minerva`             | Name shown in authenticator apps                                                                              |
+| `MINERVA_SMTP_HOST`      | none                  | SMTP server; with `MINERVA_MAIL_FROM`, turns email on (see [Email](#email))                                   |
+| `MINERVA_SMTP_PORT`      | by security           | 587 for `starttls`, 465 for `tls`, 25 for `none`                                                              |
+| `MINERVA_SMTP_SECURITY`  | `starttls`            | `starttls`, `tls`, or `none` (only for a relay on a private network)                                          |
+| `MINERVA_SMTP_USERNAME`  | none                  | SMTP sign-in; empty sends without authentication                                                              |
+| `MINERVA_SMTP_PASSWORD`  | none                  | SMTP password or app password                                                                                 |
+| `MINERVA_MAIL_FROM`      | none                  | Sender, e.g. `Minerva <notes@example.com>`                                                                    |
 | `MINERVA_PLUGINS`        | `plugins`             | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
 | `MINERVA_PUBLIC_THEME`   | none                  | Public theme for pages under `/p/`, e.g. `paper`                                                              |
 
 Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
 
-For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/p/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Email invitations, password self-service, audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/p/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+
+### Email
+
+With `MINERVA_SMTP_HOST` and `MINERVA_MAIL_FROM` set, the server sends email. Links in emails use `MINERVA_PUBLIC_URL`, so set it too. The server sends:
+
+- **Invitations.** A new account gets a link to choose its password, valid for 7 days. With email on, the administrator may leave the temporary password empty.
+- **Password resets.** "Forgot your password?" on the sign-in page sends a link valid for one hour. The answer is the same whether or not the address has an account. Using the link signs the account out everywhere.
+- **Access.** When someone is given access to a workspace or a folder, or their role changes.
+- **Assignments.** `/assigntouser` writes `@person@example.com` in a block. When a block gains an assignment, that person gets the block and a link to the note, if they can open it. Assigning yourself sends nothing.
+- **Reminders.** `/remindme` picks a date and time, writes `⏰2026-10-27 09:00` in the block, and emails you the block at that time. Remove the `⏰` from the block to cancel it.
+
+Messages wait in an outbox stored with the data, so a restart does not lose them. Failed sends are retried with backoff for about a day. Errors are written to the server log. Without email, `@` assignments still show in notes, and `/remindme` is not offered.
 
 To back up: stop the server and copy the database, or use SQLite's online backup API while it runs. Do not copy only the main file from a running WAL-mode database. Restore with the server stopped. Database file access exposes private notes and password hashes, so protect the file and its backups.
 
@@ -172,5 +190,14 @@ To back up: stop the server and copy the database, or use SQLite's online backup
 - `docs/sharing.md`: member shares, share links, published pages, and the cross-server sharing design.
 - `TODO.md`: requested follow-up features, including images/files, contextual LLM chat, editor improvements, and public/member sharing.
 - `THIRD_PARTY_NOTICES.md`: licenses for bundled browser dependencies.
+- `CHANGELOG.md`: what changed in each version. Add your changes under **Unreleased**.
+
+### Releasing
+
+1. Commit your work, with its changes listed under **Unreleased** in `CHANGELOG.md`.
+2. Run `scripts/release.sh 0.3.0`. It sets the version in `Cargo.toml` and `Cargo.lock`, turns **Unreleased** into `## [0.3.0] - <date>`, commits, and tags `v0.3.0`.
+3. Push both with `git push origin main v0.3.0`.
+
+The tag starts two workflows. **Release** builds the desktop app and the server for Linux (`.tar.gz`), Windows (`.zip`) and macOS (universal: a `.zip` with `Minerva.app`, and a `.tar.gz` server). It publishes them on GitHub Releases with a `SHA256SUMS.txt` file, using the version's changelog section as the release notes. **Docker image** publishes `ghcr.io/<owner>/minerva:0.3.0`. Run `scripts/package-server.sh` or `scripts/package-desktop.sh` to build the same packages locally in `dist/`.
 
 This is independently authored code. No AFFiNE implementation code or artwork was copied.

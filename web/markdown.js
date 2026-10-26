@@ -68,6 +68,12 @@ export const blockCommands = [
   ["Highlight", "==highlighted text==", "marker mark color"],
   ["Link to note", "[[", "wiki backlink mention reference recall"],
   [
+    "Assign to someone",
+    "@assign",
+    "/assigntouser assign user person mention email notify",
+  ],
+  ["Remind me", "@remind", "/remindme reminder date time alarm email notify"],
+  [
     "Unfinished journal tasks",
     "[[uncompleted_journal_tasks]]",
     "todo carry over open tasks journal daily",
