@@ -10,6 +10,7 @@ import {
   paneMessage,
 } from "./note-tabs.js";
 import { renderAIChat, renderAISettings, stopAI } from "./ai.js";
+import { renderDashboard } from "./dashboard.js";
 import { splitMarkdown, blockCommands } from "./markdown.js";
 import { Collaboration } from "./collaboration.js";
 import {
@@ -561,7 +562,7 @@ async function refresh() {
  */
 function firstSignIn() {
   if (!data?.must_change_password || localMode) return;
-  const workspace = !data.owns_workspace;
+  const workspace = false;
   modal.innerHTML = `<form id="first-sign-in"><h2>Welcome to Minerva, ${esc(data.user.name)}</h2><p>Before you start, replace the temporary password your administrator gave you${workspace ? ", and name your personal workspace: a private place for your own notes" : ""}.</p><label>Temporary password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>Repeat new password<input name="repeat" type="password" autocomplete="new-password" required></label>${workspace ? '<label>Personal workspace<input name="workspace_name" value="Personal" maxlength="200" required></label>' : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="first-sign-out">Sign out</button><button class="btn primary" type="submit">Get started</button></footer></form>`;
   const keep = (e) => e.preventDefault();
   modal.addEventListener("cancel", keep);
@@ -782,7 +783,7 @@ function shell() {
   videos.stop();
   const w = currentWorkspace();
   $("#app").innerHTML =
-    `<a class="skip-link" href="#content">Skip to content</a><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || "No workspace")}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="Workspaces" hidden>${data.workspaces.map((x) => `<button role="menuitemradio" aria-checked="${x.id === workspaceId}" data-workspace="${x.id}" tabindex="-1"><span class="square">${esc(x.name.slice(0, 1))}</span><span class="workspace-name">${esc(x.name)}</span>${x.id === workspaceId ? icon("check") : ""}</button>`).join("")}${data.user.can_create_workspace || data.user.admin ? `<div class="menu-separator" role="separator"></div><button role="menuitem" data-workspace="new" tabindex="-1"><span class="square new">${icon("plus")}</span><span class="workspace-name">New workspace</span></button>` : ""}${w?.can_delete ? `<div class="menu-separator" role="separator"></div><button role="menuitem" class="danger-item" data-workspace="delete" tabindex="-1"><span class="square danger">${icon("trash")}</span><span class="workspace-name">Delete this workspace…</span></button>` : ""}</div></div><div class="search-row"><button id="search">${icon("search")}Search <span class="shortcut">Ctrl K</span></button><button id="quick-note" aria-label="New note" title="New note">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="Main navigation">${[
+    `<a class="skip-link" href="#content">Skip to content</a><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || "No workspace")}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="Workspaces" hidden>${workspaceMenuItems()}</div></div><div class="search-row"><button id="search">${icon("search")}Search <span class="shortcut">Ctrl K</span></button><button id="quick-note" aria-label="New note" title="New note">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="Main navigation">${[
       ["home", "home", "Overview"],
       ["all", "note", "All notes"],
       ["journal", "calendar", "Journal"],
@@ -976,7 +977,33 @@ async function navigate(v, f = null) {
   await refresh();
   shell();
 }
+/** The overview: a dashboard of widgets the user arranges (see dashboard.js). */
+function dashboard() {
+  $("#breadcrumb").textContent = "Overview";
+  $("#content").innerHTML =
+    `<section class="page"><div class="eyebrow">YOUR WORKSPACE, AT A GLANCE</div><div class="page-heading"><div><h1>A place for your ideas</h1><p class="subtitle">Collect your thoughts. Connect the dots. Make something great.</p></div><button class="btn primary" id="new-note">${icon("plus")}New note</button></div><div id="dashboard-root"></div></section>`;
+  action($("#new-note"), "click", createNote);
+  renderDashboard($("#dashboard-root"), {
+    api,
+    esc,
+    icon,
+    data,
+    notes: () => workspaceNotes().filter((n) => !n.trashed),
+    folderCards: () => folderChildren(treeFolders(), null).map(folderCard).join(""),
+    art,
+    today: localDate,
+    calendar: (month) =>
+      calendarParts(month, new Map(journalNotes().map((n) => [n.journal, n]))),
+    openNote,
+    openJournal,
+    createNote,
+    navigate,
+    error,
+    toast,
+  }).catch(error);
+}
 function overview() {
+  if (view === "home") return dashboard();
   let notes = workspaceNotes().filter((n) =>
     view === "trash" ? n.trashed : !n.trashed,
   );
@@ -3061,12 +3088,12 @@ async function undoRedo(redo) {
   renderBlocks();
   announce(redo ? "Redone" : "Undone");
 }
-let journalMonth = null;
-function renderJournal() {
-  const today = localDate();
-  journalMonth ??= today.slice(0, 7);
-  const entries = new Map(journalNotes().map((n) => [n.journal, n]));
-  const [year, month] = journalMonth.split("-").map(Number);
+/**
+ * A month for a calendar: weekday names (weeks start on Monday) and day
+ * buttons; days with a journal entry are marked, and today is outlined.
+ */
+function calendarParts(monthIso, entries, today = localDate()) {
+  const [year, month] = monthIso.split("-").map(Number);
   const first = new Date(year, month - 1, 1);
   // Weeks start on Monday.
   const offset = (first.getDay() + 6) % 7;
@@ -3082,11 +3109,21 @@ function renderJournal() {
       () => '<span class="day blank" aria-hidden="true"></span>',
     ),
     ...Array.from({ length }, (_, i) => {
-      const iso = `${journalMonth}-${String(i + 1).padStart(2, "0")}`;
+      const iso = `${monthIso}-${String(i + 1).padStart(2, "0")}`;
       const entry = entries.get(iso);
       return `<button class="day ${entry ? "has-entry" : ""} ${iso === today ? "today" : ""}" data-journal-date="${iso}" aria-label="${esc(longDate(iso))}${entry ? ", has an entry" : ""}">${i + 1}</button>`;
     }),
   ].join("");
+  return { weekdays, cells };
+}
+let journalMonth = null;
+function renderJournal() {
+  const today = localDate();
+  journalMonth ??= today.slice(0, 7);
+  const entries = new Map(journalNotes().map((n) => [n.journal, n]));
+  const { weekdays, cells } = calendarParts(journalMonth, entries, today);
+  const [year, month] = journalMonth.split("-").map(Number);
+  const first = new Date(year, month - 1, 1);
   const recent = [...entries.values()]
     .sort((a, b) => b.journal.localeCompare(a.journal))
     .slice(0, 12);
@@ -4031,10 +4068,96 @@ function bindSidebar() {
 }
 
 // The sidebar workspace switcher: a button that opens a menu styled to match it.
+// The desktop app's servers, for the workspace menu of this computer's page;
+// loaded when the menu opens.
+let desktopServers = null;
+// On a server's page inside the desktop app (the app tells it its origin).
+const desktopRemote =
+  !!document.querySelector('meta[name="minerva-server-origin"]') &&
+  /\.localhost$/.test(location.hostname);
+/**
+ * The workspace menu, grouped like the places notes live: this computer, then
+ * each server the desktop app knows with its workspaces; then adding a server,
+ * creating, and importing.
+ */
+function workspaceMenuItems() {
+  const w = currentWorkspace();
+  const square = (name, extra = "") =>
+    `<span class="square ${extra}">${esc(name.slice(0, 1))}</span>`;
+  const row = (x) =>
+    `<button role="menuitemradio" aria-checked="${x.id === workspaceId}" data-workspace="${x.id}" tabindex="-1">${square(x.name)}<span class="workspace-name">${esc(x.name)}</span>${x.id === workspaceId ? icon("check") : ""}</button>`;
+  const heading = (title, detail = "") =>
+    `<div class="menu-heading" role="presentation"><strong>${esc(title)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</div>`;
+  const offline = new Set(replicas.map((r) => r.workspace_id));
+  let html = "";
+  if (localMode) {
+    html += heading("This computer", "Stored on this device");
+    html += data.workspaces
+      .filter((x) => !offline.has(x.id))
+      .map(row)
+      .join("");
+    if (desktopServers === null)
+      html += `<div class="menu-heading" role="presentation"><small>Loading servers…</small></div>`;
+    for (const server of desktopServers || []) {
+      html += `<div class="menu-separator" role="separator"></div>${heading(server.label, server.account || (server.signed_in ? "" : "Not signed in"))}`;
+      if (server.workspaces)
+        html += server.workspaces
+          .map(
+            (x) =>
+              `<div class="menu-row" role="presentation"><button role="menuitemradio" aria-checked="${x.id === workspaceId}" data-remote="${esc(server.id)}|${esc(x.id)}" tabindex="-1">${square(x.name)}<span class="workspace-name">${esc(x.name)}</span>${x.id === workspaceId ? icon("check") : ""}</button><button class="menu-icon" data-offline="${esc(server.id)}|${esc(x.id)}|${x.offline ? "off" : "on"}" tabindex="-1" title="${x.offline ? "Remove the offline copy" : "Keep an offline copy on this computer"}" aria-label="${x.offline ? "Remove offline copy of" : "Keep offline copy of"} ${esc(x.name)}">${icon(x.offline ? "check" : "download")}</button></div>`,
+          )
+          .join("");
+      else
+        html += `<button role="menuitem" data-remote="${esc(server.id)}|" tabindex="-1"><span class="square new">${icon("arrow")}</span><span class="workspace-name">${server.state === "signed_out" ? "Sign in to see its workspaces" : "Can’t reach this server · open it"}</span></button>`;
+    }
+    html += `<div class="menu-separator" role="separator"></div><button role="menuitem" data-workspace="add-server" tabindex="-1"><span class="square new">${icon("plus")}</span><span class="workspace-name">Add server</span></button>`;
+  } else {
+    html += heading(desktopRemote ? "This server" : location.host);
+    html += data.workspaces.map(row).join("");
+    if (desktopRemote)
+      html += `<div class="menu-separator" role="separator"></div><button role="menuitem" data-workspace="this-computer" tabindex="-1"><span class="square new">${icon("home")}</span><span class="workspace-name">This computer</span></button><button role="menuitem" data-workspace="all-servers" tabindex="-1"><span class="square new">${icon("list")}</span><span class="workspace-name">All servers…</span></button>`;
+  }
+  html += `<div class="menu-separator" role="separator"></div>`;
+  if (data.user.can_create_workspace || data.user.admin || localMode)
+    html += `<button role="menuitem" data-workspace="new" tabindex="-1"><span class="square new">${icon("plus")}</span><span class="workspace-name">Create workspace</span></button>`;
+  html += `<button role="menuitem" data-workspace="import" tabindex="-1"><span class="square new">${icon("upload")}</span><span class="workspace-name">Import Markdown</span></button>`;
+  if (w?.can_delete)
+    html += `<div class="menu-separator" role="separator"></div><button role="menuitem" class="danger-item" data-workspace="delete" tabindex="-1"><span class="square danger">${icon("trash")}</span><span class="workspace-name">Delete this workspace…</span></button>`;
+  return html;
+}
+/** Calls the desktop app (this computer's page only). */
+async function desktop(path, method = "GET", body) {
+  const r = await fetch("/desktop/" + path, {
+    method,
+    headers: { "Content-Type": "application/json", "X-Minerva-Client": "1" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const v = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(v.error || "The desktop app could not do that");
+  return v;
+}
+function addServer() {
+  formDialog(
+    "Add a server",
+    "The address of a Minerva server. Sign in on its page; then its workspaces appear in this menu.",
+    '<label>Address<input name="url" required placeholder="https://notes.example.com" inputmode="url" spellcheck="false"></label><label>Name <small class="hint">(optional)</small><input name="label" maxlength="80" placeholder="Team notes"></label><label class="checkbox-label"><input type="checkbox" name="allow_insecure_http">Allow unencrypted HTTP on this address (trusted networks only)</label>',
+    async (v) => {
+      const server = await desktop("servers", "POST", {
+        url: v.url,
+        label: v.label,
+        allow_insecure_http: v.allow_insecure_http === "on",
+      });
+      desktopServers = null;
+      toast(`Added ${server.label}`);
+    },
+    "Add server",
+  );
+}
 function workspaceMenu() {
   const button = $("#workspace"),
     menu = $("#workspace-menu");
-  const items = () => $$("[data-workspace]", menu);
+  const items = () =>
+    $$("[data-workspace], [data-remote], [data-offline]", menu);
   const close = (refocus = false) => {
     menu.hidden = true;
     button.setAttribute("aria-expanded", "false");
@@ -4044,8 +4167,25 @@ function workspaceMenu() {
   const outside = (e) => {
     if (!menu.contains(e.target) && !button.contains(e.target)) close();
   };
+  const redraw = () => {
+    const focused = document.activeElement?.dataset?.workspace;
+    menu.innerHTML = workspaceMenuItems();
+    bind();
+    if (focused)
+      menu.querySelector(`[data-workspace="${CSS.escape(focused)}"]`)?.focus();
+  };
   const open = (focus = true, focusLast = false) => {
     menu.hidden = false;
+    if (localMode)
+      desktop("servers")
+        .then((list) => {
+          desktopServers = list;
+          if (!menu.hidden) redraw();
+        })
+        .catch(() => {
+          desktopServers = [];
+          if (!menu.hidden) redraw();
+        });
     button.setAttribute("aria-expanded", "true");
     document.addEventListener("mousedown", outside);
     // Pointer users keep focus on the button; keyboard users move into the menu.
@@ -4082,26 +4222,81 @@ function workspaceMenu() {
       close(true);
     } else if (e.key === "Tab") close();
   });
-  items().forEach((b) =>
-    action(b, "click", async () => {
-      close();
-      await flush();
-      if (b.dataset.workspace === "new") return createWorkspace();
-      if (b.dataset.workspace === "delete")
-        return deleteWorkspace(currentWorkspace());
-      if (b.dataset.workspace === workspaceId) return button.focus();
-      stopLive();
-      clearInterval(dbTimer);
-      activeDatabase = null;
-      noteTabs?.hide();
-      workspaceId = b.dataset.workspace;
-      note = null;
-      folderId = null;
-      view = "home";
-      shell();
-      $("#workspace")?.focus();
-    }),
-  );
+  const bind = () => {
+    $$("[data-offline]", menu).forEach((b) =>
+      action(b, "click", async () => {
+        const [server, workspace, mode] = b.dataset.offline.split("|");
+        await desktop("offline", "POST", {
+          id: server,
+          workspace_id: workspace,
+          enabled: mode === "on",
+        });
+        toast(
+          mode === "on"
+            ? "Copying to this computer… It appears here in a moment."
+            : "Offline copy removed",
+        );
+        replicas = await api("local/replicas").catch(() => replicas);
+        desktopServers = await desktop("servers").catch(() => desktopServers);
+        redraw();
+      }),
+    );
+    $$("[data-remote]", menu).forEach((b) =>
+      action(b, "click", async () => {
+        const [server, workspace] = b.dataset.remote.split("|");
+        close();
+        // An offline copy opens here; otherwise the server's own page.
+        if (
+          workspace &&
+          replicas.some((r) => r.workspace_id === workspace) &&
+          data.workspaces.some((x) => x.id === workspace)
+        ) {
+          await flush();
+          stopLive();
+          workspaceId = workspace;
+          note = null;
+          folderId = null;
+          view = "home";
+          shell();
+          return;
+        }
+        const target = (desktopServers || []).find((x) => x.id === server);
+        if (!target) return;
+        await flush();
+        location.href =
+          target.open +
+          (workspace ? `?workspace=${encodeURIComponent(workspace)}` : "");
+      }),
+    );
+    $$("[data-workspace]", menu).forEach((b) =>
+      action(b, "click", async () => {
+        close();
+        await flush();
+        if (b.dataset.workspace === "add-server") return addServer();
+        if (b.dataset.workspace === "import") return importMarkdown();
+        if (b.dataset.workspace === "this-computer")
+          // Built from the host: custom schemes may report a "null" origin.
+          return (location.href = `${location.protocol}//${location.host.replace(/s[a-z0-9]+\.localhost$/, "local.localhost")}/`);
+        if (b.dataset.workspace === "all-servers")
+          return window.ipc?.postMessage('{"cmd":"show_servers"}');
+        if (b.dataset.workspace === "new") return createWorkspace();
+        if (b.dataset.workspace === "delete")
+          return deleteWorkspace(currentWorkspace());
+        if (b.dataset.workspace === workspaceId) return button.focus();
+        stopLive();
+        clearInterval(dbTimer);
+        activeDatabase = null;
+        noteTabs?.hide();
+        workspaceId = b.dataset.workspace;
+        note = null;
+        folderId = null;
+        view = "home";
+        shell();
+        $("#workspace")?.focus();
+      }),
+    );
+  };
+  bind();
 }
 function search() {
   if (!data) return;
@@ -4265,6 +4460,37 @@ async function renderAdmin() {
     await renderAdmin();
     toast("Workspace access saved");
   });
+  action($("#add-workspace"), "click", () =>
+    formDialog(
+      "Add a workspace",
+      "A place to share with others. Add people to it in Workspace access.",
+      '<label>Name<input name="name" required maxlength="200" placeholder="e.g. Research team"></label>',
+      async (v) => {
+        await api("workspaces", "POST", { name: v.name });
+        await refresh();
+        await renderAdmin();
+        toast("Workspace added");
+      },
+      "Add workspace",
+    ),
+  );
+  $$("[data-rename-workspace]").forEach((b) =>
+    action(b, "click", () => {
+      const w = data.workspaces.find((x) => x.id === b.dataset.renameWorkspace);
+      formDialog(
+        "Rename workspace",
+        "Everyone with access sees the new name.",
+        `<label>Name<input name="name" required maxlength="200" value="${esc(w.name)}"></label>`,
+        async (v) => {
+          await api("workspaces/" + w.id, "PATCH", { name: v.name });
+          await refresh();
+          await renderAdmin();
+          toast("Workspace renamed");
+        },
+        "Rename",
+      );
+    }),
+  );
   $$("[data-delete-workspace]").forEach((b) =>
     action(b, "click", () =>
       deleteWorkspace(
@@ -4317,10 +4543,10 @@ function workspacesPanel(info) {
       const notes = data.notes.filter((n) =>
         folderIds.includes(n.folder_id),
       ).length;
-      return `<tr><td>${esc(w.name)}</td><td>${name(w.owner_id)}</td><td>${members.size ? `${members.size} member${members.size === 1 ? "" : "s"}` : "Personal"}</td><td>${folderIds.length} folder${folderIds.length === 1 ? "" : "s"} · ${notes} note${notes === 1 ? "" : "s"}</td><td><button class="btn danger" data-delete-workspace="${w.id}">Delete</button></td></tr>`;
+      return `<tr><td>${esc(w.name)}</td><td>${name(w.owner_id)}</td><td>${w.personal ? '<span class="pill">Personal · private</span>' : members.size ? `${members.size} member${members.size === 1 ? "" : "s"}` : "Not shared yet"}</td><td>${folderIds.length} folder${folderIds.length === 1 ? "" : "s"} · ${notes} note${notes === 1 ? "" : "s"}</td><td class="user-actions">${w.personal ? "" : `<button class="btn" data-rename-workspace="${w.id}">Rename</button><button class="btn danger" data-delete-workspace="${w.id}">Delete</button>`}</td></tr>`;
     })
     .join("");
-  return `<section class="panel"><div class="panel-heading"><div><h2>Workspaces</h2><p>Workspaces you own. Other people’s workspaces, including personal ones, stay private to them and whoever they share with.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>WORKSPACE</th><th>OWNER</th><th>SHARED WITH</th><th>CONTENTS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No workspaces yet.</td></tr>'}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="panel-heading"><div><h2>Workspaces</h2><p>Workspaces you own. Share them in Workspace access. Your My Workspace is personal and cannot be shared; other people’s workspaces stay private to them.</p></div><button class="btn primary" id="add-workspace">${icon("plus")}Add workspace</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>WORKSPACE</th><th>OWNER</th><th>SHARED WITH</th><th>CONTENTS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No workspaces yet.</td></tr>'}</tbody></table></div></section>`;
 }
 // Workspace access for members, plus any older folder-level grants.
 function accessPanel(info) {
@@ -4333,7 +4559,9 @@ function accessPanel(info) {
   // Everyone else, administrators included: nobody sees a workspace unasked.
   const members = info.users.filter((u) => u.id !== data.user.id);
   // Administrators manage only the workspaces they own.
-  const mine = data.workspaces.filter((w) => w.owner_id === data.user.id);
+  const mine = data.workspaces.filter(
+    (w) => w.owner_id === data.user.id && !w.personal,
+  );
   const rows = mine
     .flatMap((w) => [
       ...(info.users.some((u) => u.id === w.owner_id && !u.admin)
@@ -5371,6 +5599,10 @@ function sharedUnavailable() {
       setInterval(() => loadReplicas().catch(() => {}), 4000);
     }
     await refresh();
+    // Opened from another place's workspace menu: that workspace first.
+    const asked = new URLSearchParams(location.search).get("workspace");
+    if (asked && data.workspaces.some((x) => x.id === asked))
+      workspaceId = asked;
     if (chatPane) {
       const [kind, id] = initialChat.split(":");
       aiScope = { kind, id };

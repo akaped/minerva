@@ -299,6 +299,29 @@ async fn assert_sealed(router: &Router, token: &str, t: &Tenant, own_note: &str)
     .await;
     forbidden("upload", status);
 }
+/// IDs of the workspaces or folders a bootstrap shows, leaving out the user's
+/// own personal workspace, which everyone has.
+fn visible<'a>(boot: &'a Value, key: &str) -> Vec<&'a str> {
+    let personal: Vec<&str> = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| w["personal"] == true)
+        .filter_map(|w| w["id"].as_str())
+        .collect();
+    boot[key]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|x| x["personal"] != true)
+        .filter(|x| {
+            !x["workspace_id"]
+                .as_str()
+                .is_some_and(|w| personal.contains(&w))
+        })
+        .filter_map(|x| x["id"].as_str())
+        .collect()
+}
 fn ids(v: &Value) -> Vec<&str> {
     v.as_array()
         .unwrap()
@@ -320,8 +343,8 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     // Without grants or shares, each user sees only their own workspace.
     for (token, own, other, word) in [(&bob, &b, &a, "zebra"), (&alice, &a, &b, "walrus")] {
         let (_, boot) = api(&router, "GET", "bootstrap", token, json!({})).await;
-        assert_eq!(ids(&boot["workspaces"]), [own.workspace.as_str()]);
-        assert_eq!(ids(&boot["folders"]).len(), 2, "General and Templates");
+        assert_eq!(visible(&boot, "workspaces"), [own.workspace.as_str()]);
+        assert_eq!(visible(&boot, "folders").len(), 2, "General and Templates");
         assert!(!ids(&boot["notes"]).contains(&other.note.as_str()));
         assert_eq!(ids(&boot["databases"]), [own.database.as_str()]);
         assert!(boot["shared_notes"].as_array().unwrap().is_empty());
@@ -338,7 +361,10 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     }
     // A user without a workspace sees nothing and cannot create one.
     let (_, boot) = api(&router, "GET", "bootstrap", &carol, json!({})).await;
-    assert!(boot["workspaces"].as_array().unwrap().is_empty());
+    assert!(
+        visible(&boot, "workspaces").is_empty(),
+        "only their own My Workspace"
+    );
     assert!(boot["notes"].as_array().unwrap().is_empty());
     let (status, _) = api(
         &router,
@@ -362,9 +388,9 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let (_, boot) = api(&router, "GET", "bootstrap", &carol, json!({})).await;
-    assert_eq!(ids(&boot["workspaces"]), [a.workspace.as_str()]);
+    assert_eq!(visible(&boot, "workspaces"), [a.workspace.as_str()]);
     assert_eq!(
-        ids(&boot["folders"]),
+        visible(&boot, "folders"),
         [a.folder.as_str()],
         "the Templates folder is not granted"
     );
@@ -431,7 +457,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let (_, boot) = api(&router, "GET", "bootstrap", &bob, json!({})).await;
-    assert_eq!(ids(&boot["workspaces"]), [b.workspace.as_str()]);
+    assert_eq!(visible(&boot, "workspaces"), [b.workspace.as_str()]);
     assert_eq!(ids(&boot["shared_notes"]), [a.note.as_str()]);
     assert!(!boot.to_string().contains("zebra second"));
     let (_, found) = api(&router, "POST", "search", &bob, json!({"query":"zebra"})).await;
@@ -532,7 +558,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
-    assert!(!ids(&boot["workspaces"]).contains(&a.workspace.as_str()));
+    assert!(!visible(&boot, "workspaces").contains(&a.workspace.as_str()));
     for path in [
         format!("notes/{}", a.note),
         format!("notes/{}/history", a.note),
@@ -563,7 +589,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     .await;
     let later = later["id"].as_str().unwrap();
     let (_, boot) = api(&router, "GET", "bootstrap", &carol, json!({})).await;
-    let folders = ids(&boot["folders"]);
+    let folders = visible(&boot, "folders");
     assert!(folders.contains(&a.folder.as_str()) && folders.contains(&later));
     assert_eq!(folders.len(), 3, "General, Templates, and Later");
     assert!(boot["roles"]

@@ -62,7 +62,16 @@ async fn permissions_conflicts_history_and_revocation() {
     let reader = login(&app, "reader@test.local").await;
     let (_, boot) = request(&app, "GET", "bootstrap", &reader, json!({})).await;
     assert_eq!(boot["notes"].as_array().unwrap().len(), 0);
-    assert_eq!(boot["workspaces"].as_array().unwrap().len(), 0);
+    // Only their own personal workspace.
+    let workspaces = boot["workspaces"].as_array().unwrap();
+    assert_eq!(workspaces.len(), 1);
+    assert_eq!(
+        (
+            workspaces[0]["name"].as_str(),
+            workspaces[0]["personal"].as_bool()
+        ),
+        (Some("My Workspace"), Some(true))
+    );
     assert_eq!(
         request(&app, "GET", &format!("notes/{nid}"), &reader, json!({}))
             .await

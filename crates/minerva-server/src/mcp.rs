@@ -313,11 +313,13 @@ mod tests {
             two_factor: Default::default(),
             must_change_password: false,
             default_workspace: None,
+            dashboard: None,
         });
         d.workspaces.push(Workspace {
             id: "w".into(),
             name: "Workspace".into(),
             owner_id: user.id.clone(),
+            personal: false,
         });
         d.mcp_credentials.push(Credential {
             id: "c".into(),

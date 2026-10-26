@@ -6,6 +6,7 @@
 //! registered server's own web interface is also available online through the
 //! `minerva-client` gateway, while sign-in tokens stay in the OS credential store.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+mod bridge;
 mod chrome;
 mod downloads;
 mod ipc;
@@ -96,8 +97,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_asynchronous_custom_protocol(origin::SCHEME.into(), {
             let gateway = gateway.clone();
             let local = local.clone();
+            let worker = worker.clone();
             let runtime = runtime.clone();
-            move |_, request, responder| serve(&gateway, &local, &runtime, request, responder)
+            move |_, request, responder| {
+                serve(&gateway, &local, &worker, &runtime, request, responder)
+            }
         })
         .with_ipc_handler({
             let gateway = gateway.clone();
@@ -206,6 +210,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn serve(
     gateway: &Arc<Gateway>,
     local: &Arc<LocalServer>,
+    worker: &Arc<SyncWorker>,
     runtime: &tokio::runtime::Runtime,
     request: Request<Vec<u8>>,
     responder: RequestAsyncResponder,
@@ -213,6 +218,14 @@ fn serve(
     let host = request.uri().host().unwrap_or_default().to_string();
     if host == origin::LAUNCHER {
         return responder.respond(launcher_asset(request.uri().path()));
+    }
+    // This computer's page asks the app itself about servers.
+    if host == origin::LOCAL && request.uri().path().starts_with(bridge::PREFIX) {
+        let (gateway, worker) = (gateway.clone(), worker.clone());
+        runtime.spawn(async move {
+            responder.respond(bridge::handle(gateway, worker, request).await);
+        });
+        return;
     }
     if host == origin::LOCAL {
         let local = local.clone();

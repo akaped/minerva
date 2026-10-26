@@ -634,6 +634,7 @@ fn apply(d: &mut Data, u: &User, ws: &str, op: &Value, upstream: bool) -> Result
                         id: id.into(),
                         name: text(&fields, "name")?,
                         owner_id: u.id.clone(),
+                        personal: false,
                     });
                     set_special(d, id, &fields);
                     settle(d, kind, id, &fields, &clocks);

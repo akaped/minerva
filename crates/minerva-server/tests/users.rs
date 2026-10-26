@@ -210,7 +210,7 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
             deleted["workspaces_transferred"].as_u64(),
             deleted["workspaces_deleted"].as_u64()
         ),
-        (StatusCode::OK, Some(0), Some(1)),
+        (StatusCode::OK, Some(0), Some(2)),
         "{deleted}"
     );
     assert_eq!(
@@ -253,7 +253,7 @@ async fn administrators_edit_and_delete_accounts_and_people_change_passwords() {
 }
 
 #[tokio::test]
-async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
+async fn new_members_choose_a_password_and_have_a_private_my_workspace() {
     let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
     let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
     let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
@@ -261,8 +261,15 @@ async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
         boot["must_change_password"], false,
         "the first administrator chose their password"
     );
+    let names: Vec<_> = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| (w["name"].as_str().unwrap(), w["personal"] == true))
+        .collect();
+    assert_eq!(names, [("Team", false), ("My Workspace", true)]);
 
-    // A member who may not create workspaces still gets a personal one.
+    // Each account has its own My Workspace from the start, opened by default.
     let (_, user) = call(
         &r,
         "POST",
@@ -273,37 +280,18 @@ async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
     .await;
     let (_, cleo) = login(&r, "cleo@test.local", "temporary-pass-1234").await;
     let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
+    assert_eq!(boot["must_change_password"], true);
+    let mine = &boot["workspaces"][0];
     assert_eq!(
         (
-            boot["must_change_password"].as_bool(),
-            boot["owns_workspace"].as_bool()
+            mine["name"].as_str(),
+            mine["personal"].as_bool(),
+            mine["owner_id"].as_str()
         ),
-        (Some(true), Some(false))
+        (Some("My Workspace"), Some(true), user["id"].as_str())
     );
-    assert_eq!(boot["default_workspace"], Value::Null);
-    assert_eq!(
-        call(&r, "POST", "workspaces", &cleo, json!({"name":"Mine"}))
-            .await
-            .0,
-        StatusCode::FORBIDDEN
-    );
-
-    let (status, done) = call(&r, "POST", "account/password", &cleo, json!({"current_password":"temporary-pass-1234","new_password":"cleos-own-password","workspace_name":"Personal"})).await;
-    assert_eq!(status, StatusCode::OK, "{done}");
-    let personal = done["workspace_id"].as_str().unwrap().to_string();
-    let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
-    assert_eq!(boot["must_change_password"], false);
+    let personal = mine["id"].as_str().unwrap().to_string();
     assert_eq!(boot["default_workspace"], personal.as_str());
-    let w = boot["workspaces"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|w| w["id"] == personal.as_str())
-        .unwrap();
-    assert_eq!(
-        (w["name"].as_str(), w["owner_id"].as_str()),
-        (Some("Personal"), user["id"].as_str())
-    );
     assert!(
         boot["folders"]
             .as_array()
@@ -312,10 +300,103 @@ async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
             .any(|f| f["workspace_id"] == personal.as_str()),
         "with a first folder"
     );
+    let (status, _) = call(
+        &r,
+        "POST",
+        "account/password",
+        &cleo,
+        json!({"current_password":"temporary-pass-1234","new_password":"cleos-own-password"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
+    assert_eq!(boot["must_change_password"], false);
 
-    // Changing the password again creates nothing more.
-    let (_, again) = call(&r, "POST", "account/password", &cleo, json!({"current_password":"cleos-own-password","new_password":"cleos-next-password","workspace_name":"Second"})).await;
-    assert_eq!(again["workspace_id"], Value::Null);
+    // It cannot be shared, renamed, or deleted, by its owner or anyone else.
+    let (_, other) = call(
+        &r,
+        "POST",
+        "users",
+        &admin,
+        json!({"name":"Dan","email":"dan@test.local","password":"dan-password-1234"}),
+    )
+    .await;
+    let (status, error) = call(
+        &r,
+        "PUT",
+        "workspace-access",
+        &cleo,
+        json!({"workspace_id":personal,"user_id":other["id"],"role":"viewer"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(error["error"].as_str().unwrap().contains("personal"));
+    let folder = boot["folders"][0]["id"].clone();
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "permissions",
+        &cleo,
+        json!({"folder_id":folder,"user_id":other["id"],"role":"viewer"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(
+        &r,
+        "PATCH",
+        &format!("workspaces/{personal}"),
+        &cleo,
+        json!({"name":"Renamed"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(boot["workspaces"][0]["can_delete"], false);
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("workspaces/{personal}"),
+        &cleo,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Other workspaces are renamed by their owner only.
+    let team = boot_team(&r, &admin).await;
+    let (status, renamed) = call(
+        &r,
+        "PATCH",
+        &format!("workspaces/{team}"),
+        &admin,
+        json!({"name":"Research"}),
+    )
+    .await;
+    assert_eq!(
+        (status, renamed["name"].as_str()),
+        (StatusCode::OK, Some("Research"))
+    );
+    let (status, _) = call(
+        &r,
+        "PATCH",
+        &format!("workspaces/{team}"),
+        &cleo,
+        json!({"name":"Mine"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(
+        &r,
+        "PATCH",
+        &format!("workspaces/{personal}"),
+        &admin,
+        json!({"name":"Peek"}),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "administrators do not rename other people's workspaces"
+    );
 
     // A password set by an administrator must be replaced again.
     call(
@@ -328,13 +409,19 @@ async fn new_members_choose_a_password_and_get_a_default_personal_workspace() {
     .await;
     let (_, cleo) = login(&r, "cleo@test.local", "reset-by-admin-123").await;
     let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
-    assert_eq!(
-        (
-            boot["must_change_password"].as_bool(),
-            boot["owns_workspace"].as_bool()
-        ),
-        (Some(true), Some(true))
-    );
+    assert_eq!(boot["must_change_password"], true);
+}
+async fn boot_team(r: &Router, token: &str) -> String {
+    let (_, boot) = call(r, "GET", "bootstrap", token, json!({})).await;
+    boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "Team")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .into()
 }
 
 #[tokio::test]
@@ -389,7 +476,7 @@ async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
             deleted["workspaces_transferred"].as_u64(),
             deleted["workspaces_deleted"].as_u64()
         ),
-        (Some(1), Some(1))
+        (Some(1), Some(2))
     );
     let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
     let ids: Vec<_> = boot["workspaces"]
@@ -408,5 +495,87 @@ async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
             .iter()
             .any(|w| w["id"] == team["id"]),
         "its members keep it"
+    );
+}
+
+#[tokio::test]
+async fn each_account_keeps_its_own_dashboard_layout() {
+    let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
+    let (_, empty) = call(&r, "GET", "account/dashboard", &admin, json!({})).await;
+    assert_eq!(
+        empty["widgets"],
+        Value::Null,
+        "the default layout until changed"
+    );
+    let layout = json!([
+        {"id":"a1","type":"recent","size":"l","options":{}},
+        {"id":"b2","type":"chart","size":"m","options":{"database":"x","column":"y","kind":"pie"}}
+    ]);
+    let (status, saved) = call(
+        &r,
+        "PUT",
+        "account/dashboard",
+        &admin,
+        json!({"widgets":layout}),
+    )
+    .await;
+    assert_eq!((status, &saved["widgets"]), (StatusCode::OK, &layout));
+    assert_eq!(
+        call(&r, "GET", "account/dashboard", &admin, json!({}))
+            .await
+            .1["widgets"],
+        layout
+    );
+    for bad in [
+        json!([{"id":"x","type":"rocket","size":"s"}]),
+        json!([{"id":"x","type":"recent","size":"huge"}]),
+        json!([{"id":"","type":"recent","size":"s"}]),
+        json!((0..41)
+            .map(|i| json!({"id":i.to_string(),"type":"recent","size":"s"}))
+            .collect::<Vec<_>>()),
+    ] {
+        assert_eq!(
+            call(
+                &r,
+                "PUT",
+                "account/dashboard",
+                &admin,
+                json!({"widgets":bad})
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    // Another account has its own; null restores the default.
+    call(
+        &r,
+        "POST",
+        "users",
+        &admin,
+        json!({"name":"Gil","email":"gil@test.local","password":"gil-password-1234"}),
+    )
+    .await;
+    let (_, gil) = login(&r, "gil@test.local", "gil-password-1234").await;
+    assert_eq!(
+        call(&r, "GET", "account/dashboard", &gil, json!({}))
+            .await
+            .1["widgets"],
+        Value::Null
+    );
+    call(
+        &r,
+        "PUT",
+        "account/dashboard",
+        &admin,
+        json!({"widgets":null}),
+    )
+    .await;
+    assert_eq!(
+        call(&r, "GET", "account/dashboard", &admin, json!({}))
+            .await
+            .1["widgets"],
+        Value::Null
     );
 }

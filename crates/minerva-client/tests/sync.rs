@@ -117,7 +117,7 @@ async fn replicas_work_offline_and_converge() {
         .call(Method::GET, "bootstrap", Value::Null)
         .await
         .unwrap();
-    assert_eq!(personal["workspaces"][0]["name"], "Personal");
+    assert_eq!(personal["workspaces"][0]["name"], "My Workspace");
     let health = local
         .call(Method::GET, "health", Value::Null)
         .await
@@ -295,8 +295,9 @@ async fn replicas_work_offline_and_converge() {
         .await
         .unwrap();
     assert_eq!(after["workspaces"].as_array().unwrap().len(), 1);
+    // Team (the one that was copied) and the administrator's own My Workspace.
     let server_boot = remote_call(&url, &token, Method::GET, "bootstrap", Value::Null).await;
-    assert_eq!(server_boot["workspaces"].as_array().unwrap().len(), 1);
+    assert_eq!(server_boot["workspaces"].as_array().unwrap().len(), 2);
 
     drop(remote.stop());
     std::fs::remove_dir_all(dir).unwrap();

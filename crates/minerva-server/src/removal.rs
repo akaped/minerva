@@ -51,7 +51,7 @@ pub(super) fn shared(d: &Data, w: &Workspace) -> bool {
 }
 /// Owners delete their workspaces; nobody else can, administrators included.
 pub(super) fn can_delete_workspace(_d: &Data, u: &User, w: &Workspace) -> bool {
-    w.owner_id == u.id
+    w.owner_id == u.id && !w.personal
 }
 
 /// Removes a workspace with everything in it.

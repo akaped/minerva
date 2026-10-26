@@ -15,6 +15,9 @@ pub struct Workspace {
     pub id: String,
     pub name: String,
     pub owner_id: String,
+    /// Each account's own "My Workspace": never shared, renamed, or deleted.
+    #[serde(default)]
+    pub personal: bool,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Folder {

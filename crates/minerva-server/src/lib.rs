@@ -52,6 +52,10 @@ struct Account {
     /// The workspace the app opens first.
     #[serde(default)]
     default_workspace: Option<String>,
+    /// The overview page's widgets, in order (see `web/dashboard.js`); `None`
+    /// shows the default layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dashboard: Option<Value>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Session {
@@ -209,6 +213,7 @@ impl Store {
             Some(raw) => serde_json::from_str(&raw)?,
             None => initial().map_err(|e| e.1)?,
         };
+        ensure_personal(&mut data);
         // Databases from before replication get a change-log row and field clocks
         // for every entity, so a replica's first pull receives everything.
         if replication::is_empty(&db)? {
@@ -228,6 +233,111 @@ impl Store {
         })))
     }
 }
+/// A dashboard layout: up to 40 widgets of known types and sizes, with small
+/// option objects; `null` restores the default layout.
+fn valid_dashboard(v: &Value) -> Result<Option<Value>, ApiError> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    let widgets = v.as_array().ok_or_else(|| bad("Widgets must be a list"))?;
+    if widgets.len() > 40 || v.to_string().len() > 32 * 1024 {
+        return Err(bad("A dashboard holds up to 40 widgets"));
+    }
+    const TYPES: [&str; 7] = [
+        "welcome",
+        "folders",
+        "recent",
+        "favorites",
+        "journal",
+        "flashcards",
+        "chart",
+    ];
+    for w in widgets {
+        let ok = w["id"]
+            .as_str()
+            .is_some_and(|i| !i.is_empty() && i.len() <= 40)
+            && w["type"].as_str().is_some_and(|t| TYPES.contains(&t))
+            && w["size"]
+                .as_str()
+                .is_some_and(|s| matches!(s, "s" | "m" | "l" | "full"))
+            && (w.get("options").is_none() || w["options"].is_object());
+        if !ok {
+            return Err(bad("Invalid widget"));
+        }
+    }
+    Ok(Some(v.clone()))
+}
+/// The name of every account's personal workspace.
+const PERSONAL: &str = "My Workspace";
+/// Creates an account's personal workspace, with a first folder, and makes it
+/// the workspace the app opens.
+fn create_personal(d: &mut Data, user_id: &str) -> String {
+    let w = Workspace {
+        id: id(),
+        name: PERSONAL.into(),
+        owner_id: user_id.into(),
+        personal: true,
+    };
+    d.folders.push(Folder {
+        id: id(),
+        workspace_id: w.id.clone(),
+        name: "General".into(),
+        parent_id: None,
+    });
+    if let Some(a) = d.users.iter_mut().find(|a| a.user.id == user_id) {
+        a.default_workspace = Some(w.id.clone());
+    }
+    let wid = w.id.clone();
+    d.workspaces.push(w);
+    wid
+}
+/// Every account has one personal workspace. Older data adopts an unshared
+/// workspace the account owns that is evidently personal; otherwise one is
+/// created.
+fn ensure_personal(d: &mut Data) {
+    let users: Vec<String> = d.users.iter().map(|a| a.user.id.clone()).collect();
+    for uid in users {
+        if d.workspaces.iter().any(|w| w.owner_id == uid && w.personal) {
+            continue;
+        }
+        let adopt = d
+            .workspaces
+            .iter()
+            .filter(|w| w.owner_id == uid && replication::replica(d, &w.id).is_none())
+            .filter(|w| {
+                matches!(
+                    w.name.as_str(),
+                    "My workspace" | "My Workspace" | "Personal"
+                )
+            })
+            .find(|w| !removal::shared(d, w))
+            .map(|w| w.id.clone());
+        match adopt {
+            Some(wid) => {
+                let w = d.workspaces.iter_mut().find(|w| w.id == wid).unwrap();
+                w.personal = true;
+                w.name = PERSONAL.into();
+                if let Some(a) = d.users.iter_mut().find(|a| a.user.id == uid) {
+                    a.default_workspace.get_or_insert(wid);
+                }
+            }
+            None => {
+                let had_default = d
+                    .users
+                    .iter()
+                    .find(|a| a.user.id == uid)
+                    .and_then(|a| a.default_workspace.clone());
+                create_personal(d, &uid);
+                // Someone who already works elsewhere keeps opening there.
+                if let Some(default) = had_default {
+                    if let Some(a) = d.users.iter_mut().find(|a| a.user.id == uid) {
+                        a.default_workspace = Some(default);
+                    }
+                }
+            }
+        }
+    }
+}
 /// A new server's data: its first account, a workspace, and a welcome note.
 fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
     let user = User {
@@ -238,10 +348,14 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         can_create_workspace: true,
         disabled: false,
     };
+    // A server starts with a team workspace to share (the administrator's own
+    // "My Workspace" is added when the server opens); the desktop app's own
+    // server has only the personal one.
     let workspace = Workspace {
         id: id(),
-        name: if local { "Personal" } else { "My workspace" }.into(),
+        name: if local { PERSONAL } else { "Team" }.into(),
         owner_id: user.id.clone(),
+        personal: local,
     };
     let folder = Folder {
         id: id(),
@@ -278,6 +392,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
             two_factor: Default::default(),
             must_change_password: false,
             default_workspace: None,
+            dashboard: None,
         }],
         workspaces: vec![workspace],
         folders: vec![folder],
@@ -993,6 +1108,7 @@ fn dispatch(
                 id: id(),
                 name: field(&v, "name")?,
                 owner_id: u.id.clone(),
+                personal: false,
             };
             d.folders.push(Folder {
                 id: id(),
@@ -1001,6 +1117,23 @@ fn dispatch(
                 parent_id: None,
             });
             d.workspaces.push(w.clone());
+            json!(w)
+        }
+        // Renames a workspace you own; personal workspaces keep their name.
+        ("PATCH", ["workspaces", wid]) => {
+            if !owns(d, &u, wid) {
+                return Err(forbidden());
+            }
+            let name = field(&v, "name")?;
+            let w = d
+                .workspaces
+                .iter_mut()
+                .find(|w| w.id == *wid)
+                .ok_or_else(missing)?;
+            if w.personal {
+                return Err(bad("A personal workspace keeps its name"));
+            }
+            w.name = name;
             json!(w)
         }
         ("POST", ["folders"]) => {
@@ -1276,7 +1409,9 @@ fn dispatch(
                 two_factor: Default::default(),
                 must_change_password: true,
                 default_workspace: None,
+                dashboard: None,
             });
+            create_personal(d, &user.id);
             json!(user)
         }
         ("PATCH", ["users", uid]) => {
@@ -1370,6 +1505,25 @@ fn dispatch(
             twofactor::forget(d, uid);
             json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
         }
+        // Your overview page's widgets.
+        ("GET", ["account", "dashboard"]) => {
+            let a = d
+                .users
+                .iter()
+                .find(|a| a.user.id == u.id)
+                .ok_or_else(missing)?;
+            json!({ "widgets": a.dashboard })
+        }
+        ("PUT", ["account", "dashboard"]) => {
+            let widgets = valid_dashboard(&v["widgets"])?;
+            let a = d
+                .users
+                .iter_mut()
+                .find(|a| a.user.id == u.id)
+                .ok_or_else(missing)?;
+            a.dashboard = widgets;
+            json!({ "widgets": a.dashboard })
+        }
         // Changes your own password; other sessions end, this one stays.
         ("POST", ["account", "password"]) => {
             attempts.check(&format!("password:{}", u.id))?;
@@ -1393,30 +1547,7 @@ fn dispatch(
             }
             a.password_hash = password_hash(v["new_password"].as_str().unwrap_or(""))?;
             a.must_change_password = false;
-            // First sign-in: a personal workspace of their own, opened by default.
-            let personal = v["workspace_name"]
-                .as_str()
-                .filter(|s| !s.trim().is_empty());
-            let mut created = None;
-            if let Some(name) = personal {
-                if !d.workspaces.iter().any(|w| w.owner_id == u.id) {
-                    let w = Workspace {
-                        id: id(),
-                        name: field(&json!({ "name": name }), "name")?,
-                        owner_id: u.id.clone(),
-                    };
-                    d.folders.push(Folder {
-                        id: id(),
-                        workspace_id: w.id.clone(),
-                        name: "General".into(),
-                        parent_id: None,
-                    });
-                    let a = d.users.iter_mut().find(|a| a.user.id == u.id).unwrap();
-                    a.default_workspace = Some(w.id.clone());
-                    created = Some(w.id.clone());
-                    d.workspaces.push(w);
-                }
-            }
+            let created: Option<String> = None;
             let keep = session_token(headers).map(hash_token);
             d.sessions
                 .retain(|key, s| s.user_id != u.id || keep.as_ref() == Some(key));
@@ -1431,6 +1562,9 @@ fn dispatch(
             // Refused before anything else, so nothing is revealed.
             if !owns(d, &u, &wid) {
                 return Err(forbidden());
+            }
+            if d.workspaces.iter().any(|w| w.id == wid && w.personal) {
+                return Err(bad("A personal workspace cannot be shared"));
             }
             if !d.users.iter().any(|a| a.user.id == uid) {
                 return Err(missing());
@@ -1465,6 +1599,9 @@ fn dispatch(
                 .unwrap_or_default();
             if !owns(d, &u, &workspace) {
                 return Err(forbidden());
+            }
+            if d.workspaces.iter().any(|w| w.id == workspace && w.personal) {
+                return Err(bad("A personal workspace cannot be shared"));
             }
             if !d.users.iter().any(|a| a.user.id == uid) {
                 return Err(missing());

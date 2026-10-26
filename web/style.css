@@ -158,7 +158,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 320px;
+  max-height: min(560px, 75vh);
   overflow-y: auto;
   padding: 6px;
   box-shadow: 0 12px 28px #1b23381f;
@@ -4681,4 +4681,418 @@ dialog:has(#metadata-form) {
 }
 .user-actions .btn + .btn {
   margin-left: 6px;
+}
+
+/* Workspace menu: places (this computer, each server) and their workspaces. */
+.workspace-menu .menu-heading {
+  display: grid;
+  gap: 1px;
+  padding: 8px 6px 4px;
+}
+.workspace-menu .menu-heading strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+.workspace-menu .menu-heading small,
+.workspace-menu .menu-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.workspace-menu .menu-hint {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.workspace-menu .menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.workspace-menu .menu-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-menu .menu-icon {
+  width: auto;
+  flex: none;
+  padding: 6px;
+  color: var(--muted);
+}
+.workspace-menu .menu-icon:hover {
+  color: var(--accent);
+}
+.workspace-menu .menu-hint svg {
+  width: 13px;
+  height: 13px;
+}
+.workspace-menu .workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Overview dashboard: widgets on a four-column grid. */
+.dashboard-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: -8px 0 16px;
+}
+.dashboard-bar .dash-hint {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.widget {
+  position: relative;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+}
+.widget.size-s {
+  grid-column: span 1;
+}
+.widget.size-m {
+  grid-column: span 2;
+}
+.widget.size-l {
+  grid-column: span 3;
+}
+.widget.size-full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1100px) {
+  .dashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .widget.size-l {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 700px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .widget.size-s,
+  .widget.size-m {
+    grid-column: 1 / -1;
+  }
+}
+.widget-welcome {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.widget-welcome .welcome-banner {
+  margin: 0;
+}
+.widget-dismiss {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.widget-dismiss:hover {
+  background: var(--soft);
+  color: inherit;
+}
+.widget-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.widget-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.widget-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.widget-welcome .widget-tools {
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.widget-tools button,
+.widget-tools select {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  font-size: 12px;
+}
+.dashboard.editing .widget {
+  cursor: grab;
+  outline: 1px dashed var(--line);
+  outline-offset: 3px;
+}
+.dashboard.editing .widget.drop-target {
+  outline: 2px solid var(--accent);
+}
+.widget-loading,
+.widget-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.widget-action {
+  margin-top: 12px;
+}
+.widget-notes {
+  display: grid;
+  gap: 2px;
+}
+.widget-note {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+.widget-note:hover {
+  background: var(--soft);
+}
+.widget-note strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 13px;
+}
+.widget-note small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.calendar.compact .calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.calendar.compact .calendar-grid .day {
+  font-size: 12px;
+  border-radius: 6px;
+}
+.widget-due {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.widget-due strong {
+  color: var(--ink, inherit);
+  font-size: 18px;
+}
+.widget-card {
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.widget-card-face {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.widget-card .fc-ratings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.widget-card .fc-ratings small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+.widget-picker .widget-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.widget-choice {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+}
+.widget-choice:hover {
+  border-color: var(--accent);
+}
+.widget-choice small {
+  color: var(--muted);
+}
+/* Charts: one hue for bars; the reference categorical order for pie slices,
+   stepped separately for the dark theme. */
+.widget-chart {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --chart-track: #eef0f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .widget-chart {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --chart-track: #252b38;
+  }
+}
+:root[data-theme="dark"] .widget-chart {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --chart-track: #252b38;
+}
+.chart-bars {
+  display: grid;
+  gap: 8px;
+}
+.chart-bar {
+  display: grid;
+  grid-template-columns: minmax(60px, 30%) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.chart-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-track {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.chart-fill {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--series-1);
+}
+.chart-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.chart-caption {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.chart-pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
+.chart-pie svg {
+  width: 140px;
+  height: 140px;
+  flex: none;
+}
+.chart-pie .slice {
+  stroke: var(--surface, #fff);
+  stroke-width: 1.5;
+}
+.chart-legend {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.chart-legend li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.chart-legend small {
+  color: var(--muted);
+}
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.slice.s1,
+.swatch.s1 {
+  fill: var(--series-1);
+  background: var(--series-1);
+}
+.slice.s2,
+.swatch.s2 {
+  fill: var(--series-2);
+  background: var(--series-2);
+}
+.slice.s3,
+.swatch.s3 {
+  fill: var(--series-3);
+  background: var(--series-3);
+}
+.slice.s4,
+.swatch.s4 {
+  fill: var(--series-4);
+  background: var(--series-4);
+}
+.slice.s5,
+.swatch.s5 {
+  fill: var(--series-5);
+  background: var(--series-5);
+}
+.slice.s6,
+.swatch.s6 {
+  fill: var(--series-6);
+  background: var(--series-6);
+}
+.slice.s7,
+.swatch.s7 {
+  fill: var(--series-7);
+  background: var(--series-7);
+}
+.calendar.compact .calendar-head strong {
+  font-size: 13px;
+  white-space: nowrap;
 }
