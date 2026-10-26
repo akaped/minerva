@@ -5261,3 +5261,316 @@ body.dragging-widget * {
   padding: 15px 0;
   border-top: 1px solid var(--line);
 }
+
+/* Sharing: one row per workspace, note, or site, with who can see it. */
+.sharing-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin: 0 0 22px;
+}
+.sharing-stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+.sharing-stat svg {
+  grid-row: span 2;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+.sharing-stat strong {
+  font-size: 24px;
+  line-height: 1.1;
+}
+.sharing-stat span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.sharing-section {
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.sharing-section .panel-heading {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 0 0 14px;
+}
+.sharing-section .panel-heading h2 {
+  margin: 0 0 4px;
+}
+.sharing-group {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sharing-rows {
+  display: grid;
+}
+.sharing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.sharing-what {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sharing-what > div {
+  display: grid;
+  min-width: 0;
+}
+.sharing-what strong,
+.sharing-what .text-link {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-weight: 600;
+}
+.sharing-what small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sharing-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--line);
+}
+.sharing-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.sharing-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 99px;
+  background: var(--line);
+  font-size: 13px;
+}
+.person-chip small {
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--surface, #fff);
+  color: var(--muted);
+  font-size: 11px;
+}
+.sharing-who .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sharing-who .pill svg {
+  width: 13px;
+  height: 13px;
+}
+.pill-public {
+  color: var(--accent);
+  text-decoration: none;
+}
+.sharing-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.sharing-actions svg {
+  width: 15px;
+  height: 15px;
+}
+.sharing-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.segmented {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.segmented button {
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.segmented button.active {
+  background: var(--line);
+  color: var(--ink);
+}
+@media (max-width: 800px) {
+  .sharing-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .sharing-actions {
+    justify-content: flex-start;
+  }
+  .sharing-section .panel-heading {
+    flex-direction: column;
+  }
+}
+
+/* The `@` picker: who can open the note. */
+.link-picker small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mention-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #e8f3ec;
+  color: #2a6a49;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* Sharing a workspace: invite row, then the people with access. */
+dialog:has(.share-workspace) {
+  width: min(560px, 92vw);
+}
+.share-workspace select {
+  min-width: 0;
+}
+.share-invite select[name="role"] {
+  width: auto;
+}
+.share-workspace header h2 {
+  margin: 0 0 6px;
+}
+.share-workspace header p,
+.share-hint {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.share-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.share-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.share-subtitle span {
+  padding: 0 7px;
+  border-radius: 99px;
+  background: var(--line);
+  font-size: 11px;
+}
+.share-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.share-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.share-person:first-child {
+  border-top: 0;
+}
+.share-person select {
+  width: auto;
+  padding: 5px 28px 5px 10px;
+  font-size: 13px;
+}
+.share-person .pill {
+  grid-column: span 2;
+  justify-self: end;
+}
+.share-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--line);
+  font-weight: 600;
+}
+.share-person-name {
+  display: grid;
+  min-width: 0;
+}
+.share-person-name strong,
+.share-person-name > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-person-name strong small {
+  font-weight: 400;
+  color: var(--muted);
+}
+.share-person-name > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.share-remove {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 18px;
+}
+.share-remove:hover {
+  color: #c4623e;
+}
+.share-workspace footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+@media (max-width: 560px) {
+  .share-invite {
+    grid-template-columns: 1fr;
+  }
+}

@@ -96,7 +96,7 @@ Paste a YouTube link alone in a block and it becomes a player that keeps playing
 
 - **Share** gives other members of this server access to a note, or creates a link for anyone. Workspaces and folders are shared from their **⋯** menu.
 - Everyone editing a note at the same time sees each other's changes live.
-- **/assigntouser** names someone in a block, like `@ana@example.com`. They get an email with the block and a link to the note.
+- Type **@** and a name to mention someone who can open the note: pick them from the list and their name appears in the block. They get an email with the block and a link to the note, and find it in the **Mentions** widget of their Overview.
 - **/remindme** asks for a date and time and adds it to the block, like `⏰2026-11-02 09:00`. At that time you get the block by email. Remove the `⏰` to cancel.
 
 My Workspace is private and cannot be shared: create a new workspace from the workspace menu for team work.

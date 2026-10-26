@@ -713,3 +713,95 @@ async fn administrators_manage_and_members_share_workspaces() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// The `@` picker offers the people who can open a note, and a mention shows
+/// up in the mentioned person's list.
+#[tokio::test]
+async fn mentions_offer_people_who_can_open_the_note() {
+    let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
+    for (name, email) in [
+        ("Gil", "gil@test.local"),
+        ("Hana", "hana@test.local"),
+        ("Ivo", "ivo@test.local"),
+    ] {
+        call(
+            &r,
+            "POST",
+            "users",
+            &admin,
+            json!({"name":name,"email":email,"password":"member-password-1"}),
+        )
+        .await;
+    }
+    let (_, gil) = login(&r, "gil@test.local", "member-password-1").await;
+    let (_, hana) = login(&r, "hana@test.local", "member-password-1").await;
+    let (_, ivo) = login(&r, "ivo@test.local", "member-password-1").await;
+    let (_, project) = call(&r, "POST", "workspaces", &gil, json!({"name":"Project"})).await;
+    let wid = project["id"].as_str().unwrap();
+    let (_, members) = call(
+        &r,
+        "GET",
+        &format!("workspaces/{wid}/members"),
+        &gil,
+        json!({}),
+    )
+    .await;
+    let hana_id = members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "Hana")
+        .unwrap()["id"]
+        .clone();
+    call(
+        &r,
+        "PUT",
+        "workspace-access",
+        &gil,
+        json!({"workspace_id":wid,"user_id":hana_id,"role":"editor"}),
+    )
+    .await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &gil, json!({})).await;
+    let folder = boot["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["workspace_id"] == wid)
+        .unwrap()["id"]
+        .clone();
+    let (_, note) = call(
+        &r,
+        "POST",
+        "notes",
+        &gil,
+        json!({"folder_id":folder,"title":"Plan"}),
+    )
+    .await;
+    let nid = note["id"].as_str().unwrap();
+
+    // Gil and Hana can open it; Ivo and the administrator cannot.
+    let (status, people) = call(&r, "GET", &format!("notes/{nid}/people"), &gil, json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<_> = people
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Gil", "Hana"]);
+    let (status, _) = call(&r, "GET", &format!("notes/{nid}/people"), &ivo, json!({})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (_, mut full) = call(&r, "GET", &format!("notes/{nid}"), &gil, json!({})).await;
+    full["blocks"] = json!([{"id":"b1","markdown":"Review this @hana@test.local","x":0,"y":0}]);
+    call(&r, "PUT", &format!("notes/{nid}"), &gil, full).await;
+    let (_, mentions) = call(&r, "GET", "mentions", &hana, json!({})).await;
+    assert_eq!(mentions[0]["title"], "Plan");
+    assert!(mentions[0]["excerpt"]
+        .as_str()
+        .unwrap()
+        .contains("Review this"));
+    let (_, none) = call(&r, "GET", "mentions", &gil, json!({})).await;
+    assert!(none.as_array().unwrap().is_empty());
+}

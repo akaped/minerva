@@ -5,6 +5,7 @@ import {
   linkSelection,
   noteLink,
   linkQuery,
+  mentionQuery,
   findMatches,
   replaceAll,
   countWords,
@@ -118,4 +119,14 @@ test("pasted HTML becomes Markdown, including Google Docs styling", () => {
   assert.ok(
     !htmlToMarkdown("<p>ok</p><script>alert(1)</script>").includes("alert"),
   );
+});
+
+test("@ opens the mention picker after a space or at the start", () => {
+  assert.deepEqual(mentionQuery("@", 1), { start: 0, query: "" });
+  assert.deepEqual(mentionQuery("Ask @ha", 7), { start: 4, query: "ha" });
+  assert.deepEqual(mentionQuery("(cc @gil", 8), { start: 4, query: "gil" });
+  // Not inside an address, after the mention is complete, or after a space.
+  assert.equal(mentionQuery("mail ana@test.it", 16), null);
+  assert.equal(mentionQuery("Ask @hana@demo.local", 20), null);
+  assert.equal(mentionQuery("Ask @ha now", 11), null);
 });

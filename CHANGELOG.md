@@ -14,6 +14,7 @@ turns that section into the next version.
 
 ### Added
 
+- Mentions: type `@` in a note to pick someone who can open it; the mention shows their name, emails them the block, and appears in their new **Mentions** dashboard widget. `/assigntouser` opens the same picker. Published pages and exports show only the name part of a mentioned address.
 - Images: pasting a link to an image shows it, and images or files dropped onto a note are added to it (#2).
 - Audio: links to audio files (MP3, WAV, OGG, FLAC, M4A, playlists) and uploaded audio files play in the page, and **/ → Record audio** records from the microphone into the note (#1).
 
@@ -22,6 +23,8 @@ turns that section into the next version.
 - The server administrator only runs the server: accounts, AI providers, account security, and a server overview with accounts, workspaces, notes and storage per member. It has no workspaces, notes or folders, and cannot open members' content. Workspaces the administrator owned before are kept and can be transferred to a member from the overview.
 - Every member creates workspaces and shares them with other members, as Read only or Edit, from the workspace's badge in the top bar. Members who can edit a workspace manage it like its owner: folders, notes, journal, sharing and public sites. My Workspace stays private.
 - Deleting an account that owns shared workspaces asks which member takes them over.
+- The workspace share dialog lists the people with access, each with their own Edit or Read only menu and a button to remove them, and invites new people at the top; changes apply at once.
+- The Sharing page covers all your workspaces: shared workspaces (yours, with who has access, and those shared with you), notes you share grouped by workspace with names, links and public addresses and a filter, notes shared with you, and the public sites of every workspace. It moved to **Others** in the sidebar.
 - New app icon: the blue Minerva asterisk.
 
 ### Fixed

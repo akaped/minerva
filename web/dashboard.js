@@ -32,6 +32,11 @@ export const WIDGETS = {
     size: "m",
     about: "Cards due for review; answer them right here.",
   },
+  mentions: {
+    name: "Mentions",
+    size: "m",
+    about: "Notes where someone mentioned you with @.",
+  },
   chart: {
     name: "Chart",
     size: "m",
@@ -391,6 +396,11 @@ export async function renderDashboard(root, app) {
           .sort((a, b) => b.updated_at - a.updated_at)
           .slice(0, 8),
         "Nothing written yet.",
+      ),
+    mentions: async () =>
+      noteList(
+        await app.api("mentions"),
+        "Nobody has mentioned you yet. Type @ in a note to mention someone.",
       ),
     favorites: () =>
       noteList(

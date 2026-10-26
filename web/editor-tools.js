@@ -81,6 +81,16 @@ export function linkQuery(value, caret) {
   return match ? { start: caret - match[0].length, query: match[1] } : null;
 }
 
+/**
+ * An `@` mention being typed before `caret`: the `@` starts the text or
+ * follows a space or `(`, and is followed by up to 40 characters without
+ * spaces or another `@`.
+ */
+export function mentionQuery(value, caret) {
+  const match = value.slice(0, caret).match(/(^|[\s(])@([^\s@()[\]]{0,40})$/);
+  return match ? { start: caret - match[2].length - 1, query: match[2] } : null;
+}
+
 /** Case-(in)sensitive matches of `query` in each block's Markdown. */
 export function findMatches(blocks, query, caseSensitive = false) {
   if (!query) return [];

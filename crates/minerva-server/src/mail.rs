@@ -404,6 +404,45 @@ pub(crate) fn assignments(old: &Data, d: &mut Data, actor: Option<&User>) {
     }
 }
 
+/// `GET notes/{id}/people`: the members who can open a note, for the `@`
+/// picker; `GET mentions`: notes that mention you, newest first.
+pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<Value>, ApiError> {
+    match parts {
+        ["notes", nid, "people"] => {
+            let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
+            note_access(d, u, n, false)?;
+            let mut people: Vec<Value> = d
+                .users
+                .iter()
+                .filter(|a| !a.user.disabled && !a.user.admin)
+                .filter(|a| note_role(d, &a.user, n).is_some())
+                .map(|a| json!({"name": a.user.name, "email": a.user.email, "me": a.user.id == u.id}))
+                .collect();
+            people.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase());
+            Ok(Some(json!(people)))
+        }
+        ["mentions"] => {
+            let email = u.email.to_lowercase();
+            let mut found: Vec<(u64, Value)> = d
+                .notes
+                .iter()
+                .filter(|n| !n.trashed && note_role(d, u, n).is_some())
+                .filter_map(|n| {
+                    let block = n.blocks.iter().find(|b| mentions(&b.markdown).contains(&email))?;
+                    let excerpt: String = block.markdown.chars().take(160).collect();
+                    Some((n.updated_at, json!({"id": n.id, "title": n.title, "icon": n.icon, "updated_at": n.updated_at, "excerpt": excerpt})))
+                })
+                .collect();
+            found.sort_by(|a, b| b.0.cmp(&a.0));
+            Ok(Some(json!(found
+                .into_iter()
+                .take(20)
+                .map(|(_, v)| v)
+                .collect::<Vec<_>>())))
+        }
+        _ => Ok(None),
+    }
+}
 /// `POST reminders {note_id, block_id, at}` schedules one; `GET reminders` lists
 /// yours; `DELETE reminders/{id}` cancels one.
 pub(crate) fn reminders_route(

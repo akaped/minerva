@@ -253,10 +253,11 @@ fn valid_dashboard(v: &Value) -> Result<Option<Value>, ApiError> {
     if widgets.len() > 40 || v.to_string().len() > 32 * 1024 {
         return Err(bad("A dashboard holds up to 40 widgets"));
     }
-    const TYPES: [&str; 7] = [
+    const TYPES: [&str; 8] = [
         "welcome",
         "folders",
         "recent",
+        "mentions",
         "favorites",
         "journal",
         "flashcards",
@@ -1071,6 +1072,11 @@ fn dispatch(
         return Ok((result, None));
     }
 
+    if method == "GET" {
+        if let Some(result) = mail::people_route(d, &u, &parts)? {
+            return Ok((result, None));
+        }
+    }
     if parts.first() == Some(&"reminders") {
         return Ok((mail::reminders_route(d, &u, method, &parts, &v)?, None));
     }

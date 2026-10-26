@@ -94,7 +94,12 @@ pub(crate) fn render_for(markdown: &str, links: Links) -> String {
     if level > 0 {
         html = format!("<div class=\"md-indent md-indent-{level}\">{html}</div>");
     }
-    let html = clean(&html);
+    let mut html = clean(&html);
+    // Outside the app (published pages, share links, exports), a mention
+    // shows the name part only: members' addresses are not published.
+    if !matches!(links, Links::Members) {
+        html = private_mentions(&html);
+    }
     if markdown.len() <= CACHEABLE {
         let mut cache = cache.lock().unwrap();
         let size = key.0.len() + key.1.len() + html.len();
@@ -107,6 +112,27 @@ pub(crate) fn render_for(markdown: &str, links: Links) -> String {
         cache.entries.insert(key, html.clone());
     }
     html
+}
+
+/// Rewrites mention chips to `@name`, the part of the address before the `@`.
+fn private_mentions(html: &str) -> String {
+    const OPEN: &str = "<span class=\"mention\" title=\"Assigned to ";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(OPEN) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + OPEN.len()..];
+        let Some(end) = after.find("</span>") else {
+            out.push_str(&rest[at..]);
+            return out;
+        };
+        let address = after[..end].split('"').next().unwrap_or("");
+        let name = address.split('@').next().unwrap_or("");
+        out.push_str(&format!("<span class=\"mention\">@{name}</span>"));
+        rest = &after[end + "</span>".len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The video ID and start time of a block that holds only a YouTube link,
@@ -1017,6 +1043,20 @@ mod tests {
         assert!(public.contains("href=\"https://example.com/a\""));
         assert!(render_for("- [x] done\n- [ ] open", Links::Public("p")).contains("☑ done"));
         assert!(!render("- [x] done").contains('☑'));
+    }
+}
+#[cfg(test)]
+mod mention_tests {
+    use super::{render_for, Links};
+    #[test]
+    fn public_pages_hide_addresses() {
+        let members = render_for("Ask @ana@test.it today", Links::Members);
+        assert!(members.contains("ana@test.it"), "{members}");
+        let public = render_for("Ask @ana@test.it today", Links::Public("p/x"));
+        assert!(
+            !public.contains("test.it") && public.contains(">@ana</span>"),
+            "{public}"
+        );
     }
 }
 #[cfg(test)]

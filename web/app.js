@@ -19,6 +19,7 @@ import {
   linkSelection,
   noteLink,
   linkQuery,
+  mentionQuery,
   findMatches,
   replaceAll,
   countWords,
@@ -153,6 +154,10 @@ const paths = {
   search: "m21 21-5-5 M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
   folder: "M3 7V5h6l2 2h10v13H3z",
   note: "M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 16h6",
+  globe:
+    "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M3 12h18 M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9 M12 3c-2.5 2.5-3.8 5.5-3.8 9s1.3 6.5 3.8 9",
+  link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+  copy: "M9 9h11v11H9z M5 15H4V4h11v1",
   star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z",
   trash: "M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7",
   users:
@@ -1012,32 +1017,101 @@ function adminShell() {
   else
     renderServerOverview({ api, esc, formDialog, refresh, error }).catch(error);
 }
-async function shareWorkspace() {
-  const wid = workspaceId,
-    info = await api(`workspaces/${wid}/members`);
-  const options = info.members.filter((m) => !m.owner);
-  formDialog(
-    `Share ${currentWorkspace()?.name || "workspace"}`,
-    info.can_edit
-      ? "Workspace editors can manage folders, notes, journals, sites, and membership. Read-only members can browse."
-      : "Your workspace membership is read-only.",
-    `<div class="workspace-members">${info.members
-      .filter((m) => m.role)
+/**
+ * Shares a workspace: invite members of this server, change each person's
+ * access, or remove it. Changes apply at once; read-only members only see
+ * who is in.
+ */
+async function shareWorkspace(wid = workspaceId) {
+  const name = data.workspaces.find((w) => w.id === wid)?.name || "workspace";
+  let info = await api(`workspaces/${wid}/members`);
+  let busy = false;
+  const avatar = (p) =>
+    `<span class="share-avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>`;
+  const roleSelect = (attrs, role) =>
+    `<select ${attrs}><option value="viewer" ${role === "viewer" ? "selected" : ""}>Read only</option><option value="editor" ${role === "editor" ? "selected" : ""}>Edit</option></select>`;
+  const draw = () => {
+    const inside = info.members.filter((m) => m.role);
+    const outside = info.members.filter((m) => !m.role && !m.owner);
+    const rows = inside
+      .sort((a, b) => b.owner - a.owner || a.name.localeCompare(b.name))
       .map(
         (m) =>
-          `<p><strong>${esc(m.name)}</strong> · ${m.owner ? "Owner" : m.role === "editor" ? "Edit" : "Read only"}</p>`,
+          `<li class="share-person">${avatar(m)}<div class="share-person-name"><strong>${esc(m.name)}${m.id === data.user.id ? " <small>(you)</small>" : ""}</strong><small>${esc(m.email)}</small></div>${
+            m.owner
+              ? '<span class="pill">Owner</span>'
+              : info.can_edit
+                ? `${roleSelect(`data-member-role="${m.id}" aria-label="Access for ${esc(m.name)}"`, m.role)}<button type="button" class="share-remove" data-member-remove="${m.id}" aria-label="Remove ${esc(m.name)}" title="Remove access">×</button>`
+                : `<span class="pill">${m.role === "editor" ? "Edit" : "Read only"}</span>`
+          }</li>`,
       )
-      .join(
-        "",
-      )}</div>${info.can_edit ? `<label>Person<select name="user_id" required>${options.map((m) => `<option value="${m.id}">${esc(m.name)} · ${esc(m.email)}${m.role ? " (" + (m.role === "editor" ? "Edit" : "Read only") + ")" : ""}</option>`).join("")}</select></label><label>Permission<select name="role"><option value="viewer">Read only</option><option value="editor">Edit</option><option value="none">Remove workspace access</option></select></label>${!options.length ? "<p>No other member accounts yet. Ask the administrator to add users.</p>" : ""}` : ""}`,
-    async (values) => {
-      if (!info.can_edit || !options.length) return;
-      await api("workspace-access", "PUT", { ...values, workspace_id: wid });
+      .join("");
+    modal.innerHTML = `<div class="share-workspace"><header><h2>Share ${esc(name)}</h2><p>${info.can_edit ? "People with <strong>Edit</strong> manage folders, notes, the journal, sites and sharing, like you. <strong>Read only</strong> lets them read everything." : "You can read this workspace. People who can edit it manage who has access."}</p></header>${
+      info.can_edit
+        ? outside.length
+          ? `<form class="share-invite" id="share-invite"><select name="user_id" aria-label="Person to invite" required>${outside.map((m) => `<option value="${m.id}">${esc(m.name)} · ${esc(m.email)}</option>`).join("")}</select>${roleSelect('name="role" aria-label="Access"', "editor")}<button class="btn primary" ${busy ? "disabled" : ""}>Invite</button></form>`
+          : '<p class="share-hint">Everyone on this server already has access. Ask your administrator to add accounts.</p>'
+        : ""
+    }<h3 class="share-subtitle">People with access <span>${inside.length}</span></h3><ul class="share-people">${rows}</ul><div class="form-error" role="alert"></div><footer><button type="button" class="btn primary" id="share-done">Done</button></footer></div>`;
+    $("#share-done").onclick = () => modal.close();
+    const save = async (user_id, role, message) => {
+      busy = true;
+      try {
+        await api("workspace-access", "PUT", {
+          workspace_id: wid,
+          user_id,
+          role,
+        });
+        info = await api(`workspaces/${wid}/members`);
+        toast(message);
+      } catch (err) {
+        $(".form-error", modal).textContent = err.message;
+      } finally {
+        busy = false;
+      }
+      draw();
+    };
+    const form = $("#share-invite");
+    if (form)
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const who = info.members.find((m) => m.id === form.user_id.value);
+        save(
+          form.user_id.value,
+          form.role.value,
+          `${who?.name || "They"} can now open ${name}`,
+        );
+      };
+    $$("[data-member-role]", modal).forEach(
+      (select) =>
+        (select.onchange = () =>
+          save(select.dataset.memberRole, select.value, "Access updated")),
+    );
+    $$("[data-member-remove]", modal).forEach(
+      (button) =>
+        (button.onclick = () => {
+          const who = info.members.find(
+            (m) => m.id === button.dataset.memberRemove,
+          );
+          save(
+            button.dataset.memberRemove,
+            "none",
+            `${who?.name || "They"} no longer has access`,
+          );
+        }),
+    );
+  };
+  draw();
+  modal.showModal();
+  // Badges and the Sharing page reflect the new members afterwards.
+  modal.addEventListener(
+    "close",
+    async () => {
       await refresh();
-      shell();
-      toast("Workspace access updated");
+      if (view === "sharing") await renderSharing();
+      else shell();
     },
-    info.can_edit && options.length ? "Save access" : "Close",
+    { once: true },
   );
 }
 
@@ -1056,7 +1130,6 @@ function shell() {
       ["all", "note", "All notes"],
       ["journal", "calendar", "Journal"],
       ["templates", "template", "Templates"],
-      ...(localMode ? [] : [["sharing", "users", "Sharing"]]),
       ["databases", "grid", "Databases"],
       ["flashcards", "template", "Flashcards"],
       ["chat", "brain", "AI chat"],
@@ -1093,7 +1166,7 @@ function shell() {
     $(".sidebar").classList.toggle("open"),
   );
   action($("#sync-state"), "click", syncDialog);
-  action($("#share-workspace"), "click", shareWorkspace);
+  action($("#share-workspace"), "click", () => shareWorkspace());
   bindThemeSelect();
   if (note) renderEditor();
   else if (view === "admin") renderAdmin().catch(error);
@@ -1656,6 +1729,8 @@ async function flush() {
     );
 }
 function renderEditor() {
+  // Names for mention chips, and the people the `@` picker offers.
+  loadPeople().catch(() => {});
   const can = editable();
   $("#breadcrumb").textContent = note.title;
   const sharing = note.sharing || {};
@@ -2446,11 +2521,77 @@ function updateFormatBar(ta) {
   block.append(bar);
 }
 let linkPicker = null;
+// The people who can open each note, and names by email, for `@` mentions.
+const notePeople = new Map();
+const peopleNames = new Map();
+async function loadPeople(id = note?.id) {
+  if (!id || shareMode) return [];
+  if (!notePeople.has(id))
+    notePeople.set(
+      id,
+      api(`notes/${id}/people`).then((people) => {
+        for (const p of people) peopleNames.set(p.email, p.name);
+        nameMentions(document);
+        return people;
+      }),
+    );
+  return notePeople.get(id).catch(() => (notePeople.delete(id), []));
+}
+/** Mention chips show the person's name; the address stays in the tooltip. */
+function nameMentions(root) {
+  $$('.mention[title^="Assigned to "]', root).forEach((chip) => {
+    const email = chip.title.slice("Assigned to ".length);
+    const name = peopleNames.get(email);
+    if (name && chip.textContent !== "@" + name) {
+      chip.textContent = "@" + name;
+      chip.title = email;
+      chip.dataset.email = email;
+    }
+  });
+}
+if (typeof MutationObserver !== "undefined")
+  new MutationObserver((changes) => {
+    if (!peopleNames.size) return;
+    for (const change of changes)
+      for (const node of change.addedNodes)
+        if (node.nodeType === 1) nameMentions(node.parentNode || node);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+/** `@` autocomplete: pick someone who can open the note and mention them. */
+async function updateMentionPicker(ta, query) {
+  const people = await loadPeople();
+  if (mentionQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
+  const needle = query.query.toLowerCase();
+  const items = people
+    .filter((p) => !p.me)
+    .filter(
+      (p) =>
+        !needle ||
+        p.name.toLowerCase().includes(needle) ||
+        p.email.includes(needle),
+    )
+    .slice(0, 8)
+    .map((p) => ({ ...p, icon: "@", title: p.name }));
+  showPicker(ta, query, items, "Mention someone");
+}
+function showPicker(ta, query, items, label) {
+  const block = ta.closest(".block");
+  let list = $(".link-picker", block);
+  if (!list) {
+    list = document.createElement("div");
+    list.className = "link-picker";
+    list.setAttribute("role", "listbox");
+    block.append(list);
+  }
+  list.setAttribute("aria-label", label);
+  linkPicker = { ta, query, items, selected: 0, list };
+  drawLinkPicker();
+}
 /** `[[` autocomplete: pick a note and insert a link that survives renames. */
 async function updateLinkPicker(ta) {
+  const mention = !shareMode && mentionQuery(ta.value, ta.selectionStart);
+  if (mention) return updateMentionPicker(ta, mention);
   const query = linkQuery(ta.value, ta.selectionStart);
   if (!query || shareMode) return closeLinkPicker();
-  const version = (linkPicker?.version || 0) + 1;
   const results = query.query.trim()
     ? await api("search", "POST", { query: query.query.trim() })
     : [...workspaceNotes(), ...(data.shared_notes || [])]
@@ -2467,17 +2608,7 @@ async function updateLinkPicker(ta) {
       icon: "☑",
       title: "Unfinished journal tasks (live list)",
     });
-  const block = ta.closest(".block");
-  let list = $(".link-picker", block);
-  if (!list) {
-    list = document.createElement("div");
-    list.className = "link-picker";
-    list.setAttribute("role", "listbox");
-    list.setAttribute("aria-label", "Link to a note");
-    block.append(list);
-  }
-  linkPicker = { ta, query, items, selected: 0, list, version };
-  drawLinkPicker();
+  showPicker(ta, query, items, "Link to a note");
 }
 function drawLinkPicker() {
   const { list, items, selected } = linkPicker;
@@ -2485,9 +2616,10 @@ function drawLinkPicker() {
     items
       .map(
         (n, i) =>
-          `<button role="option" aria-selected="${i === selected}" class="${i === selected ? "selected" : ""}" data-pick="${i}">${esc(n.icon)} ${esc(n.title)}</button>`,
+          `<button role="option" aria-selected="${i === selected}" class="${i === selected ? "selected" : ""}" data-pick="${i}">${n.email ? `<span class="mention-avatar">${esc(n.name.slice(0, 1).toUpperCase())}</span>${esc(n.name)} <small>${esc(n.email)}</small>` : `${esc(n.icon)} ${esc(n.title)}`}</button>`,
       )
-      .join("") || '<p class="muted">No matching notes</p>';
+      .join("") ||
+    `<p class="muted">${linkPicker.list.getAttribute("aria-label") === "Mention someone" ? "Nobody else can open this note yet. Share it, or its workspace, first." : "No matching notes"}</p>`;
   $$("[data-pick]", list).forEach((b) => {
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", () => pickLink(Number(b.dataset.pick)));
@@ -2497,7 +2629,9 @@ function pickLink(index) {
   const { ta, query, items } = linkPicker;
   const target = items[index];
   if (!target) return;
-  const text = target.special || noteLink(target.title, target.id);
+  const text = target.email
+    ? `@${target.email} `
+    : target.special || noteLink(target.title, target.id);
   replaceRange(ta, {
     from: query.start,
     to: ta.selectionStart,
@@ -2506,7 +2640,9 @@ function pickLink(index) {
     selEnd: query.start + text.length,
   });
   closeLinkPicker();
-  announce(`Linked to ${target.title}`);
+  announce(
+    target.email ? `Mentioned ${target.name}` : `Linked to ${target.title}`,
+  );
 }
 function closeLinkPicker() {
   linkPicker?.list.remove();
@@ -3048,18 +3184,14 @@ async function recordDialog(afterId) {
   };
 }
 /** `/assigntouser`: `@person@example.com` in the block; they get an email. */
-function assignDialog(existingId) {
-  modal.innerHTML = `<form method="dialog" id="assign-form"><h2>Assign to someone</h2><p>${mailEnabled ? "They get an email with this block and a link to the note, if they can open it." : "This server does not send email, so the person is named in the note but not notified."}</p><label>Email address<input name="email" type="email" required autofocus placeholder="name@example.com" autocomplete="off"></label><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Assign</button></footer></form>`;
-  modal.showModal();
-  const form = $("#assign-form");
-  form.onsubmit = async (e) => {
-    if (e.submitter?.value !== "ok") return;
-    e.preventDefault();
-    const email = form.email.value.trim().toLowerCase();
-    modal.close();
-    await appendToBlock(existingId, `@${email}`);
-    await queueSave();
-  };
+async function assignDialog(existingId) {
+  await appendToBlock(existingId, "@");
+  const ta = $(".block textarea");
+  if (!ta) return;
+  ta.value = ta.value.replace(/ $/, "");
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+  await updateLinkPicker(ta);
 }
 /** `/remindme`: pick a date and time; the block is emailed to you then. */
 function reminderDialog(existingId) {
@@ -3976,16 +4108,123 @@ function showRecoveryCodes(codes, justEnabled = false) {
     renderAccount().catch(error);
   };
 }
+let sharingFilter = "all";
+/** Who can see what, across every workspace you belong to. */
 async function renderSharing() {
   const info = await api("sharing");
+  if (view !== "sharing") return;
   $("#breadcrumb").textContent = "Sharing";
   const origin = serverOrigin();
-  const row = (n) =>
-    `<tr><td><button class="text-link" data-open-note="${n.id}">${esc(n.icon)} ${esc(n.title)}</button>${n.trashed ? " <small>(in trash)</small>" : ""}</td><td>${n.sharing.members || "—"}</td><td>${n.sharing.links || "—"}</td><td>${n.sharing.published ? `<a href="${esc(origin)}/${esc(n.sharing.published)}" target="_blank" rel="noopener">/${esc(n.sharing.published)}</a>` : "—"}</td></tr>`;
+  const role = (r) => (r === "editor" ? "Edit" : "Read only");
+  const people = (list) =>
+    list
+      .map(
+        (p) =>
+          `<span class="person-chip" title="${esc(role(p.role))}">${esc(p.name)}<small>${p.role === "editor" ? "Edit" : "View"}</small></span>`,
+      )
+      .join("");
+  const published = info.managed.filter((n) => n.sharing.published);
+  const links = info.managed.reduce((n, x) => n + x.sharing.links, 0);
+  const stats = [
+    [
+      "users",
+      info.workspaces_shared.length + info.workspaces_received.length,
+      "Shared workspaces",
+    ],
+    [
+      "note",
+      info.managed.filter((n) => n.sharing.members).length,
+      "Notes shared with people",
+    ],
+    ["link", links, "Active links"],
+    ["globe", published.length, "Public pages"],
+  ];
+  const statsHTML = `<div class="sharing-stats">${stats.map(([i, n, label]) => `<div class="sharing-stat">${icon(i)}<strong>${n}</strong><span>${label}</span></div>`).join("")}</div>`;
+
+  // Workspaces.
+  const workspacesHTML = `<section class="panel sharing-section"><div class="panel-heading"><div><h2>Shared workspaces</h2><p>Everyone in a workspace sees all of its folders and notes. Share one from its badge at the top of the page, or here.</p></div></div>${
+    info.workspaces_shared.length || info.workspaces_received.length
+      ? `<div class="sharing-rows">${info.workspaces_shared
+          .map(
+            (w) =>
+              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>Yours · shared with ${w.members.length} ${w.members.length === 1 ? "person" : "people"}</small></div></div><div class="sharing-who">${people(w.members)}</div><div class="sharing-actions"><button class="btn" data-manage-workspace="${w.id}">Manage</button><button class="btn" data-open-workspace="${w.id}">Open</button></div></div>`,
+          )
+          .join("")}${info.workspaces_received
+          .map(
+            (w) =>
+              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>Shared with you by ${esc(w.owner)}</small></div></div><div class="sharing-who"><span class="pill">${role(w.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-workspace="${w.id}">Open</button></div></div>`,
+          )
+          .join("")}</div>`
+      : '<p class="sharing-empty">No shared workspaces yet. Open a workspace and use the badge at the top right to invite people.</p>'
+  }</section>`;
+
+  // Notes you share or publish, by workspace.
+  const filters = [
+    ["all", "All", () => true],
+    ["people", "With people", (n) => n.sharing.members],
+    ["links", "With a link", (n) => n.sharing.links],
+    ["published", "Published", (n) => n.sharing.published],
+  ];
+  const keep = filters.find(([id]) => id === sharingFilter)[2];
+  const notes = info.managed.filter(keep);
+  const groups = new Map();
+  for (const n of notes) {
+    const key = n.workspace || "Other";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  }
+  const noteRow = (n) =>
+    `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button>${n.trashed ? "<small>In the trash</small>" : `<small>Updated ${date(n.updated_at)}</small>`}</div></div><div class="sharing-who">${people(n.people)}${n.sharing.links ? `<span class="pill">${icon("link")}${n.sharing.links} link${n.sharing.links === 1 ? "" : "s"}</span>` : ""}${n.sharing.published ? `<a class="pill pill-public" href="${esc(origin)}/${esc(n.sharing.published)}" target="_blank" rel="noopener">${icon("globe")}/${esc(n.sharing.published)}</a>` : ""}</div><div class="sharing-actions">${n.sharing.published ? `<button class="btn" data-copy-url="${esc(origin)}/${esc(n.sharing.published)}" title="Copy the public address">${icon("copy")}Copy</button>` : ""}<button class="btn" data-open-note="${n.id}">Open</button></div></div>`;
+  const notesHTML = `<section class="panel sharing-section"><div class="panel-heading"><div><h2>Notes you share</h2><p>Notes in folders you edit that are shared with people, by link, or published. Open a note and use Share to change or revoke access.</p></div><div class="segmented" role="tablist" aria-label="Show">${filters.map(([id, label]) => `<button role="tab" data-sharing-filter="${id}" aria-selected="${id === sharingFilter}" class="${id === sharingFilter ? "active" : ""}">${label}</button>`).join("")}</div></div>${
+    notes.length
+      ? [...groups]
+          .map(
+            ([name, list]) =>
+              `<h3 class="sharing-group">${esc(name)}</h3><div class="sharing-rows">${list.map(noteRow).join("")}</div>`,
+          )
+          .join("")
+      : `<p class="sharing-empty">${info.managed.length ? "Nothing matches this filter." : "You are not sharing any notes yet. Open a note and choose Share."}</p>`
+  }</section>`;
+
+  // Notes shared with you.
+  const receivedHTML = `<section class="panel sharing-section"><div class="panel-heading"><div><h2>Notes shared with you</h2><p>Single notes other members shared with you, outside the workspaces you belong to.</p></div></div>${
+    info.shared_with_me.length
+      ? `<div class="sharing-rows">${info.shared_with_me
+          .map(
+            (n) =>
+              `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button><small>${esc(n.workspace || "")} · updated ${date(n.updated_at)}</small></div></div><div class="sharing-who"><span class="pill">${role(n.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-note="${n.id}">Open</button></div></div>`,
+          )
+          .join("")}</div>`
+      : '<p class="sharing-empty">Nothing has been shared with you yet.</p>'
+  }</section>`;
+
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">WHO CAN SEE WHAT</div><div class="page-heading"><div><h1>Sharing</h1><p class="subtitle">Notes you share, publish, or have received. Pages without a site are listed at <a href="${esc(origin)}/p/" target="_blank" rel="noopener">${esc(origin)}/p/</a>.</p></div></div>${sitesPanel(origin)}<section class="panel"><div class="panel-heading"><div><h2>Shared and published by your folders</h2><p>Open a note and use Share to change access or revoke links.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NOTE</th><th>MEMBERS</th><th>LINKS</th><th>PUBLIC PAGE</th></tr></thead><tbody>${info.managed.map(row).join("") || '<tr><td colspan="4">Nothing is shared yet.</td></tr>'}</tbody></table></div></section><section class="panel"><div class="panel-heading"><div><h2>Shared with you</h2><p>Notes other members shared directly with you.</p></div></div><div class="note-list">${info.shared_with_me.map((n) => `<button class="note-card" data-open-note="${n.id}"><div class="note-info"><strong>${esc(n.icon)} ${esc(n.title)}</strong><div class="note-meta"><span>${roleLabel(n.role)}</span><span>· ${date(n.updated_at)}</span></div></div></button>`).join("") || '<div class="empty">Nothing has been shared with you yet.</div>'}</div></section></section>`;
+    `<section class="page sharing-page"><div class="eyebrow">WHO CAN SEE WHAT</div><div class="page-heading"><div><h1>Sharing</h1><p class="subtitle">Across all your workspaces. Public pages without a site are listed at <a href="${esc(origin)}/p/" target="_blank" rel="noopener">${esc(origin)}/p/</a>.</p></div></div>${statsHTML}${workspacesHTML}${notesHTML}${receivedHTML}${sitesPanel(origin)}</section>`;
   $$("[data-open-note]").forEach((b) =>
     action(b, "click", () => openNote(b.dataset.openNote)),
+  );
+  $$("[data-sharing-filter]").forEach((b) =>
+    action(b, "click", () => {
+      sharingFilter = b.dataset.sharingFilter;
+      return renderSharing();
+    }),
+  );
+  $$("[data-manage-workspace]").forEach((b) =>
+    action(b, "click", () => shareWorkspace(b.dataset.manageWorkspace)),
+  );
+  $$("[data-open-workspace]").forEach((b) =>
+    action(b, "click", () => {
+      workspaceId = b.dataset.openWorkspace;
+      view = "home";
+      folderId = null;
+      shell();
+    }),
+  );
+  $$("[data-copy-url]").forEach((b) =>
+    action(b, "click", async () => {
+      await navigator.clipboard.writeText(b.dataset.copyUrl);
+      toast("Address copied");
+    }),
   );
   action($("#new-site"), "click", () => siteDialog());
   $$("[data-edit-site]").forEach((b) =>
@@ -4010,25 +4249,47 @@ async function renderSharing() {
 function workspaceSites(wid = workspaceId) {
   return (data.sites || []).filter((s) => s.workspace_id === wid);
 }
-// Sites of the current workspace: public paths such as /blog or /wiki.
+/** Workspaces whose sites and folders you manage: yours, or ones you edit. */
+function editableWorkspaces() {
+  return data.workspaces.filter(
+    (w) => w.owner_id === data.user.id || w.can_edit,
+  );
+}
+// Public sites of all your workspaces: paths such as /blog or /wiki.
 function sitesPanel(origin) {
-  const manage = editsWorkspace();
-  const rows = workspaceSites()
+  const editable = new Set(editableWorkspaces().map((w) => w.id));
+  const sites = data.sites || [];
+  const workspaceName = (id) =>
+    data.workspaces.find((w) => w.id === id)?.name || "";
+  const rows = sites
     .map(
       (s) =>
-        `<tr><td><a href="${esc(origin)}/${esc(s.path)}/" target="_blank" rel="noopener">/${esc(s.path)}/</a></td><td>${esc(s.title)}</td><td>${s.layout === "wiki" ? "Wiki · A–Z" : "Blog · newest first"}${s.theme ? ` · ${esc(publicThemes.find((t) => t.id === s.theme)?.name || s.theme)}` : ""}</td><td>${s.pages}</td><td>${manage ? `<button class="btn" data-edit-site="${s.id}">Edit</button> <button class="btn danger" data-delete-site="${s.id}" ${s.pages ? 'disabled title="Move or unpublish its pages first"' : ""}>Delete</button>` : ""}</td></tr>`,
+        `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${icon("globe")}</span><div><a href="${esc(origin)}/${esc(s.path)}/" target="_blank" rel="noopener"><strong>${esc(s.title || s.path)}</strong></a><small>/${esc(s.path)}/ · ${s.layout === "wiki" ? "Wiki" : "Blog"}${s.theme ? ` · ${esc(publicThemes.find((t) => t.id === s.theme)?.name || s.theme)}` : ""} · ${esc(workspaceName(s.workspace_id))}</small></div></div><div class="sharing-who"><span class="pill">${s.pages} page${s.pages === 1 ? "" : "s"}</span></div><div class="sharing-actions">${editable.has(s.workspace_id) ? `<button class="btn" data-edit-site="${s.id}">Edit</button><button class="btn danger" data-delete-site="${s.id}" ${s.pages ? 'disabled title="Move or unpublish its pages first"' : ""}>Delete</button>` : ""}</div></div>`,
     )
     .join("");
-  return `<section class="panel"><div class="panel-heading"><div><h2>Sites in ${esc(currentWorkspace()?.name || "this workspace")}</h2><p>Give published pages their own address, like /blog/my-post or /wiki/how-to. Folder editors choose a site when publishing.</p></div>${manage ? `<button class="btn primary" id="new-site">${icon("plus")}New site</button>` : ""}</div><div class="table-wrap"><table class="admin-table"><thead><tr><th>ADDRESS</th><th>TITLE</th><th>LAYOUT</th><th>PAGES</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="5">No sites yet.${manage ? " Create one to publish under its own path." : ""}</td></tr>`}</tbody></table></div></section>`;
+  return `<section class="panel sharing-section"><div class="panel-heading"><div><h2>Public sites</h2><p>Give published pages their own address, like /blog/my-post or /wiki/how-to. People who edit a workspace choose its site when publishing.</p></div>${editable.size ? `<button class="btn primary" id="new-site">${icon("plus")}New site</button>` : ""}</div>${rows ? `<div class="sharing-rows">${rows}</div>` : `<p class="sharing-empty">No sites yet.${editable.size ? " Create one to publish pages under their own path." : ""}</p>`}</section>`;
 }
 function siteDialog(site = null) {
   formDialog(
     site ? "Edit site" : "New site",
     "Pages published to this site live at /path/page-address. Blogs list pages newest first with a feed; wikis list them alphabetically.",
-    `<label>Path<span class="slug-field">${esc(serverOrigin())}/<input name="path" required maxlength="40" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="Lowercase letters, digits and inner hyphens" value="${esc(site?.path || "")}" placeholder="blog" autofocus></span></label><label>Title<input name="title" maxlength="100" value="${esc(site?.title || "")}" placeholder="My blog"></label><label>Layout<select name="layout"><option value="blog" ${site?.layout !== "wiki" ? "selected" : ""}>Blog: newest first, with a feed</option><option value="wiki" ${site?.layout === "wiki" ? "selected" : ""}>Wiki: alphabetical pages</option></select></label><label>Look<select name="theme"><option value="">Default</option>${publicThemes.map((t) => `<option value="${esc(t.id)}" ${site?.theme === t.id ? "selected" : ""}>${esc(t.name)}${t.description ? ` · ${esc(t.description)}` : ""}</option>`).join("")}${site?.theme && !publicThemes.some((t) => t.id === site.theme) ? `<option value="${esc(site.theme)}" selected>${esc(site.theme)} (not installed)</option>` : ""}</select></label><label>Description <small>(optional, shown on the index)</small><input name="description" maxlength="300" value="${esc(site?.description || "")}"></label>${site?.pages ? '<p class="hint">Changing the path changes the address of every page in this site.</p>' : ""}`,
+    `${
+      site
+        ? ""
+        : `<label>Workspace<select name="workspace_id">${editableWorkspaces()
+            .map(
+              (w) =>
+                `<option value="${w.id}" ${w.id === workspaceId ? "selected" : ""}>${esc(w.name)}</option>`,
+            )
+            .join("")}</select></label>`
+    }<label>Path<span class="slug-field">${esc(serverOrigin())}/<input name="path" required maxlength="40" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="Lowercase letters, digits and inner hyphens" value="${esc(site?.path || "")}" placeholder="blog" autofocus></span></label><label>Title<input name="title" maxlength="100" value="${esc(site?.title || "")}" placeholder="My blog"></label><label>Layout<select name="layout"><option value="blog" ${site?.layout !== "wiki" ? "selected" : ""}>Blog: newest first, with a feed</option><option value="wiki" ${site?.layout === "wiki" ? "selected" : ""}>Wiki: alphabetical pages</option></select></label><label>Look<select name="theme"><option value="">Default</option>${publicThemes.map((t) => `<option value="${esc(t.id)}" ${site?.theme === t.id ? "selected" : ""}>${esc(t.name)}${t.description ? ` · ${esc(t.description)}` : ""}</option>`).join("")}${site?.theme && !publicThemes.some((t) => t.id === site.theme) ? `<option value="${esc(site.theme)}" selected>${esc(site.theme)} (not installed)</option>` : ""}</select></label><label>Description <small>(optional, shown on the index)</small><input name="description" maxlength="300" value="${esc(site?.description || "")}"></label>${site?.pages ? '<p class="hint">Changing the path changes the address of every page in this site.</p>' : ""}`,
     async (v) => {
       if (site) await api(`sites/${site.id}`, "PATCH", v);
-      else await api("sites", "POST", { ...v, workspace_id: workspaceId });
+      else
+        await api("sites", "POST", {
+          ...v,
+          workspace_id: v.workspace_id || workspaceId,
+        });
       await refresh();
       await renderSharing();
       toast(site ? "Site updated" : "Site created");
@@ -4205,6 +4466,8 @@ function sidebarSections() {
   const shared = (data.shared_notes || []).filter((n) => !n.trashed);
   const tags = allTags().slice(0, 30);
   const others = [
+    // Sharing spans every workspace, so it is not with this workspace's views.
+    ...(localMode ? [] : [["sharing", "users", "Sharing"]]),
     ["trash", "trash", "Trash"],
     ["providers", "users", "AI providers"],
     // A desktop app's own server has no other accounts and no network clients.

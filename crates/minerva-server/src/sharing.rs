@@ -307,15 +307,72 @@ pub(super) fn route(
     Ok(Some(result))
 }
 
+/// The Sharing page: notes `u` shares or publishes (with who and where), the
+/// workspaces `u` shares and those shared with `u`.
 fn overview(d: &Data, u: &User) -> Value {
+    let workspace_of = |folder: &str| {
+        d.folders
+            .iter()
+            .find(|f| f.id == folder)
+            .and_then(|f| d.workspaces.iter().find(|w| w.id == f.workspace_id))
+    };
+    let name = |uid: &str| {
+        d.users
+            .iter()
+            .find(|a| a.user.id == uid)
+            .map_or_else(|| "Removed account".to_string(), |a| a.user.name.clone())
+    };
     let managed: Vec<Value> = d
         .notes
         .iter()
         .filter(|n| role(d, u, &n.folder_id) == Some(Role::Editor))
         .filter(|n| d.shares.iter().any(|s| s.note_id == n.id) || d.publications.iter().any(|p| p.note_id == n.id))
-        .map(|n| json!({"id":n.id,"title":n.title,"icon":n.icon,"trashed":n.trashed,"sharing":summary(d,&n.id)}))
+        .map(|n| {
+            let people: Vec<Value> = d
+                .shares
+                .iter()
+                .filter(|s| s.note_id == n.id && s.kind == "member")
+                .filter_map(|s| s.user_id.as_ref().map(|uid| json!({"name":name(uid),"role":s.role})))
+                .collect();
+            let w = workspace_of(&n.folder_id);
+            json!({"id":n.id,"title":n.title,"icon":n.icon,"trashed":n.trashed,"updated_at":n.updated_at,
+                "workspace_id":w.map(|w| &w.id),"workspace":w.map(|w| &w.name),
+                "people":people,"sharing":summary(d,&n.id)})
+        })
         .collect();
-    json!({"managed":managed,"shared_with_me":shared_with(d, u)})
+    let shared_with_me: Vec<Value> = shared_with(d, u)
+        .into_iter()
+        .map(|mut n| {
+            let w = workspace_of(n["folder_id"].as_str().unwrap_or(""));
+            n["workspace"] = json!(w.map(|w| &w.name));
+            n
+        })
+        .collect();
+    // Workspaces you own that have members, and those others share with you.
+    let mut workspaces_shared = vec![];
+    let mut workspaces_received = vec![];
+    for w in d.workspaces.iter().filter(|w| !w.personal) {
+        let members: Vec<Value> = d
+            .workspace_grants
+            .iter()
+            .filter(|g| g.workspace_id == w.id)
+            .map(|g| json!({"name":name(&g.user_id),"role":g.role}))
+            .collect();
+        if w.owner_id == u.id && !d.local {
+            if !members.is_empty() {
+                workspaces_shared.push(json!({"id":w.id,"name":w.name,"members":members}));
+            }
+        } else if let Some(g) = d
+            .workspace_grants
+            .iter()
+            .find(|g| g.workspace_id == w.id && g.user_id == u.id)
+        {
+            workspaces_received
+                .push(json!({"id":w.id,"name":w.name,"owner":name(&w.owner_id),"role":g.role}));
+        }
+    }
+    json!({"managed":managed,"shared_with_me":shared_with_me,
+        "workspaces_shared":workspaces_shared,"workspaces_received":workspaces_received})
 }
 /// Notes shared directly with `u` that their folder access would not already show.
 pub(super) fn shared_with(d: &Data, u: &User) -> Vec<Value> {
