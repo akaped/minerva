@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-26
+
 ### Added
 
 - Email, configured in `.env`: invitations for new accounts, “Forgot your password?” links, notices of new access to workspaces and folders, `/assigntouser` assignments, and `/remindme` reminders that send the block at the chosen time.
