@@ -6,6 +6,6 @@ Comment=Collaborative notes and structured knowledge on your own Minerva servers
 Exec=minerva
 Icon=minerva
 Terminal=false
-Categories=Office;Utility;
+Categories=Office;
 Keywords=notes;wiki;knowledge;markdown;
 StartupWMClass=minerva

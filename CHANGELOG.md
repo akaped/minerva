@@ -10,6 +10,17 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Changed
+
+- New app icon: the blue Minerva asterisk.
+
+### Fixed
+
+- The sidebar updates as soon as notes are created, renamed, starred, moved, trashed or deleted, also from a note's tab.
+- A note's tab closes when the note is moved to the trash or deleted.
+- Linux: the window moves by dragging its title bar, and a double-click maximizes it.
+- Linux: the application launcher starts Minerva even when `~/.local/bin` is not in the desktop session's path, and Minerva appears once in the applications menu.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added

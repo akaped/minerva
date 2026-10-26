@@ -36,7 +36,10 @@ set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 prefix="${PREFIX:-$HOME/.local}"
 install -Dm755 "$here/minerva" "$prefix/bin/minerva"
-install -Dm644 "$here/minerva.desktop" "$prefix/share/applications/minerva.desktop"
+# The full path: desktop sessions often leave ~/.local/bin out of PATH.
+mkdir -p "$prefix/share/applications"
+sed "s|^Exec=.*|Exec=$prefix/bin/minerva|" "$here/minerva.desktop" >"$prefix/share/applications/minerva.desktop"
+chmod 644 "$prefix/share/applications/minerva.desktop"
 install -Dm644 "$here/minerva.png" "$prefix/share/icons/hicolor/256x256/apps/minerva.png"
 command -v update-desktop-database >/dev/null && update-desktop-database "$prefix/share/applications" || true
 echo "Installed to $prefix/bin/minerva"

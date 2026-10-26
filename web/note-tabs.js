@@ -41,7 +41,7 @@ export function paneMessage(type, payload = {}) {
     );
 }
 
-export function createNoteTabs({ esc, error, onBrowse }) {
+export function createNoteTabs({ esc, error, onBrowse, onChange }) {
   let tabs = [],
     active = null,
     secondary = null,
@@ -389,6 +389,9 @@ export function createNoteTabs({ esc, error, onBrowse }) {
       tab.frame.title = tab.title;
       draw();
     }
+    // Notes or folders changed in a tab: the sidebar and other tabs catch up.
+    if (message.type === "changed" && tab.origin === location.origin)
+      onChange?.();
     if (
       message.type === "open-note" &&
       /^[a-f0-9-]{36}$/i.test(message.id || "")
@@ -438,6 +441,28 @@ export function createNoteTabs({ esc, error, onBrowse }) {
     },
     async flush() {
       await Promise.all(tabs.map(flushTab));
+    },
+    /**
+     * Closes this server's note tabs whose note is gone or in the trash; `kept`
+     * holds the IDs of the notes that remain. Their changes are already saved
+     * or no longer matter, so nothing is flushed.
+     */
+    prune(kept, origin = location.origin) {
+      const gone = tabs.filter(
+        (t) => t.origin === origin && t.id && !t.chat && !kept.has(t.id),
+      );
+      if (!gone.length) return;
+      for (const tab of gone) {
+        clearTimeout(tab.timer);
+        tab.frame.remove();
+        if (secondary === tab.key) secondary = null;
+      }
+      tabs = tabs.filter((t) => !gone.includes(t));
+      if (!tabs.some((t) => t.key === active))
+        active = secondary || tabs.at(-1)?.key;
+      if (active === secondary) secondary = null;
+      if (!tabs.length) shown = false;
+      draw();
     },
     async clear() {
       await Promise.all(tabs.map(flushTab));

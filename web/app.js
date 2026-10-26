@@ -202,7 +202,12 @@ let aiScope = null,
   shareMode = false;
 const noteTabs =
   !isPane && location.pathname !== "/share"
-    ? createNoteTabs({ esc, error, onBrowse: () => navigate("all") })
+    ? createNoteTabs({
+        esc,
+        error,
+        onBrowse: () => navigate("all"),
+        onChange: () => changedElsewhere(),
+      })
     : null;
 const videos = createYouTubeEmbeds({
   getNote: () => note,
@@ -212,7 +217,32 @@ const videos = createYouTubeEmbeds({
   error,
 });
 if (isPane) document.documentElement.classList.add("editor-pane");
+let paneShape = null,
+  paneChanged = false;
 function paneState() {
+  // Live saves do not show what changed: compare what the sidebar shows, and
+  // tell the window once the change is saved, so it reloads the new version.
+  if (note) {
+    const shape = JSON.stringify([
+      note.id,
+      note.title,
+      note.icon,
+      note.favorite,
+      note.trashed,
+      note.tags,
+    ]);
+    if (
+      paneShape &&
+      paneShape !== shape &&
+      JSON.parse(paneShape)[0] === note.id
+    )
+      paneChanged = true;
+    paneShape = shape;
+  }
+  if (paneChanged && !dirty) {
+    paneChanged = false;
+    paneMessage("changed");
+  }
   paneMessage("state", {
     noteId: note?.id,
     title: chatPane ? `AI · ${chatTitle()}` : note?.title || "Browse notes",
@@ -497,6 +527,8 @@ async function api(path, method = "GET", body) {
     e.status = r.status;
     throw e;
   }
+  // A note tab tells the window around it, which redraws its sidebar.
+  if (isPane && changesSidebar(path, method, body, v)) paneMessage("changed");
   return v;
 }
 function toast(s) {
@@ -555,6 +587,75 @@ async function refresh() {
     workspaceId = data.workspaces.some((w) => w.id === data.default_workspace)
       ? data.default_workspace
       : data.workspaces[0]?.id;
+  if (noteTabs) {
+    // Tabs of deleted or trashed notes close.
+    noteTabs.prune(
+      new Set(
+        [...data.notes, ...(data.shared_notes || [])]
+          .filter((n) => !n.trashed)
+          .map((n) => n.id),
+      ),
+    );
+    redrawSidebar();
+  }
+}
+/** Redraws the sidebar's folders, favorites and tags from `data`, in place. */
+function redrawSidebar() {
+  const scroll = $(".sidebar-scroll"),
+    nav = $(".sidebar-scroll > .nav");
+  if (!scroll || !nav) return;
+  const top = scroll.scrollTop;
+  while (nav.nextSibling) nav.nextSibling.remove();
+  nav.insertAdjacentHTML("afterend", sidebarSections());
+  $$("[data-folder]", scroll).forEach((b) =>
+    action(b, "click", () => navigate("folder", b.dataset.folder)),
+  );
+  $$("[data-open-tag]", scroll).forEach((b) =>
+    action(b, "click", () => openTag(b.dataset.openTag)),
+  );
+  bindSidebar();
+  scroll.scrollTop = top;
+}
+let changeTimer;
+/** A note tab changed notes or folders: catch up shortly after. */
+function changedElsewhere() {
+  clearTimeout(changeTimer);
+  changeTimer = setTimeout(() => refresh().catch(() => {}), 400);
+}
+// What a note looked like in the sidebar when last saved from this tab.
+const sidebarShape = new Map();
+/**
+ * Writes that change what the sidebar shows: creating, moving, renaming or
+ * deleting notes, folders, workspaces and databases. Ordinary note saves only
+ * count when their title, icon, favorite, tags, folder or trash state change.
+ */
+function changesSidebar(path, method, body, result) {
+  const [kind, id, sub] = path.split("/");
+  const shape = (n) =>
+    JSON.stringify([
+      n?.title,
+      n?.icon,
+      n?.favorite,
+      n?.trashed,
+      n?.tags,
+      n?.folder_id,
+    ]);
+  // A note just loaded: later saves are compared with it.
+  if (method === "GET") {
+    if (kind === "notes" && id && !sub) sidebarShape.set(id, shape(result));
+    return false;
+  }
+  if (["journal", "templates"].includes(kind)) return method === "POST";
+  if (!["notes", "folders", "workspaces", "databases"].includes(kind))
+    return false;
+  if (sub && !(kind === "notes" && sub === "template")) return false;
+  if (kind === "notes" && method === "PUT" && id) {
+    const before = sidebarShape.get(id),
+      after = shape({ folder_id: before && JSON.parse(before)[5], ...body });
+    sidebarShape.set(id, after);
+    return before !== after;
+  }
+  return true;
 }
 /**
  * First sign-in of an account an administrator created: choose your own

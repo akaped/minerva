@@ -72,9 +72,34 @@ pub fn install(
     let header = gtk::HeaderBar::new();
     header.set_show_close_button(true);
     header.pack_start(&button);
-    header.show_all();
+    // The header bar has no input window of its own, so its presses go to the
+    // window, where the window library stops them before GTK can move the
+    // window. An event box gives the bar its own input window: drag it to move,
+    // double-click to maximize. The menu and window buttons have their own
+    // input windows and still get their clicks.
+    let bar = gtk::EventBox::new();
+    bar.add(&header);
+    bar.set_above_child(false);
+    let target = gtk_window.clone();
+    bar.connect_button_press_event(move |_, event| {
+        if event.button() != 1 {
+            return gtk::glib::Propagation::Proceed;
+        }
+        if event.event_type() == gtk::gdk::EventType::DoubleButtonPress {
+            if target.is_maximized() {
+                target.unmaximize();
+            } else {
+                target.maximize();
+            }
+        } else if event.event_type() == gtk::gdk::EventType::ButtonPress {
+            let (x, y) = event.root();
+            target.begin_move_drag(1, x as i32, y as i32, event.time());
+        }
+        gtk::glib::Propagation::Stop
+    });
+    bar.show_all();
     // Must happen before the window is first shown.
-    gtk_window.set_titlebar(Some(&header));
+    gtk_window.set_titlebar(Some(&bar));
     window.set_visible(true);
     Ok(Chrome {})
 }
