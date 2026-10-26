@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-26
+
 ### Added
 
 - Images: pasting a link to an image shows it, and images or files dropped onto a note are added to it (#2).
