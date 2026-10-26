@@ -267,7 +267,8 @@ async fn new_members_choose_a_password_and_have_a_private_my_workspace() {
         .iter()
         .map(|w| (w["name"].as_str().unwrap(), w["personal"] == true))
         .collect();
-    assert_eq!(names, [("Team", false), ("My Workspace", true)]);
+    // Administrators manage the server: they have no workspaces of their own.
+    assert!(names.is_empty(), "{names:?}");
 
     // Each account has its own My Workspace from the start, opened by default.
     let (_, user) = call(
@@ -362,12 +363,14 @@ async fn new_members_choose_a_password_and_have_a_private_my_workspace() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     // Other workspaces are renamed by their owner only.
-    let team = boot_team(&r, &admin).await;
+    let (_, dan) = login(&r, "dan@test.local", "dan-password-1234").await;
+    let (_, created) = call(&r, "POST", "workspaces", &dan, json!({"name":"Team"})).await;
+    let team = created["id"].as_str().unwrap().to_string();
     let (status, renamed) = call(
         &r,
         "PATCH",
         &format!("workspaces/{team}"),
-        &admin,
+        &dan,
         json!({"name":"Research"}),
     )
     .await;
@@ -411,21 +414,8 @@ async fn new_members_choose_a_password_and_have_a_private_my_workspace() {
     let (_, boot) = call(&r, "GET", "bootstrap", &cleo, json!({})).await;
     assert_eq!(boot["must_change_password"], true);
 }
-async fn boot_team(r: &Router, token: &str) -> String {
-    let (_, boot) = call(r, "GET", "bootstrap", token, json!({})).await;
-    boot["workspaces"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|w| w["name"] == "Team")
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .into()
-}
-
 #[tokio::test]
-async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
+async fn shared_workspaces_of_a_deleted_account_pass_to_a_successor() {
     let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
     let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
     let (_, eve) = call(&r, "POST", "users", &admin, json!({"name":"Eve","email":"eve@test.local","password":"eve-password-1234","can_create_workspace":true})).await;
@@ -463,12 +453,22 @@ async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (_, deleted) = call(
+    // A member must take over the shared workspace first.
+    let (status, _) = call(
         &r,
         "DELETE",
         &format!("users/{}", eve["id"].as_str().unwrap()),
         &admin,
         json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, deleted) = call(
+        &r,
+        "DELETE",
+        &format!("users/{}", eve["id"].as_str().unwrap()),
+        &admin,
+        json!({"successor_id": finn["id"]}),
     )
     .await;
     assert_eq!(
@@ -478,24 +478,23 @@ async fn shared_workspaces_of_a_deleted_account_pass_to_the_administrator() {
         ),
         (Some(1), Some(2))
     );
+    // The administrator still sees no workspaces; the successor owns Team.
     let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
-    let ids: Vec<_> = boot["workspaces"]
+    assert!(boot["workspaces"].as_array().unwrap().is_empty());
+    let (_, finn_token) = login(&r, "finn@test.local", "finn-password-123").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &finn_token, json!({})).await;
+    let kept = boot["workspaces"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|w| w["id"].clone())
-        .collect();
-    assert!(ids.contains(&team["id"]) && !ids.contains(&private["id"]));
-    let (_, finn_token) = login(&r, "finn@test.local", "finn-password-123").await;
-    let (_, boot) = call(&r, "GET", "bootstrap", &finn_token, json!({})).await;
-    assert!(
-        boot["workspaces"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|w| w["id"] == team["id"]),
-        "its members keep it"
-    );
+        .find(|w| w["id"] == team["id"])
+        .expect("the successor keeps it");
+    assert_eq!(kept["owner_id"], finn["id"]);
+    assert!(!boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|w| w["id"] == private["id"]));
 }
 
 #[tokio::test]
@@ -578,4 +577,139 @@ async fn each_account_keeps_its_own_dashboard_layout() {
             .1["widgets"],
         Value::Null
     );
+}
+
+/// Administrators run the server: accounts, settings and statistics, never
+/// notes. Members create workspaces and share them with each other; editors
+/// of a shared workspace manage it like its owner.
+#[tokio::test]
+async fn administrators_manage_and_members_share_workspaces() {
+    let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let (_, admin) = login(&r, "admin@test.local", "test-password-1234").await;
+    for (name, email) in [("Gil", "gil@test.local"), ("Hana", "hana@test.local")] {
+        call(
+            &r,
+            "POST",
+            "users",
+            &admin,
+            json!({"name":name,"email":email,"password":"member-password-1"}),
+        )
+        .await;
+    }
+
+    // No workspaces, and no way to make one or reach content.
+    let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
+    assert!(boot["workspaces"].as_array().unwrap().is_empty());
+    let (status, error) = call(&r, "POST", "workspaces", &admin, json!({"name":"Mine"})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(
+        error["error"].as_str().unwrap().contains("member account"),
+        "{error}"
+    );
+    // Statistics instead.
+    let (status, stats) = call(&r, "GET", "admin/overview", &admin, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["total_users"], 3);
+    assert_eq!(
+        stats["total_workspaces"], 2,
+        "the members' own My Workspaces"
+    );
+
+    // A member creates a workspace and picks a colleague from the members list.
+    let (_, gil) = login(&r, "gil@test.local", "member-password-1").await;
+    let (_, hana) = login(&r, "hana@test.local", "member-password-1").await;
+    let (status, project) = call(&r, "POST", "workspaces", &gil, json!({"name":"Project"})).await;
+    assert_eq!(status, StatusCode::OK);
+    let wid = project["id"].as_str().unwrap();
+    let (_, members) = call(
+        &r,
+        "GET",
+        &format!("workspaces/{wid}/members"),
+        &gil,
+        json!({}),
+    )
+    .await;
+    let people: Vec<_> = members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["email"].as_str().unwrap())
+        .collect();
+    assert!(
+        people.contains(&"hana@test.local") && !people.contains(&"admin@test.local"),
+        "{people:?}"
+    );
+    let hana_id = members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["email"] == "hana@test.local")
+        .unwrap()["id"]
+        .clone();
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "workspace-access",
+        &gil,
+        json!({"workspace_id":wid,"user_id":hana_id,"role":"editor"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The editor manages folders and the workspace's public sites.
+    let (status, folder) = call(
+        &r,
+        "POST",
+        "folders",
+        &hana,
+        json!({"workspace_id":wid,"name":"Research"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{folder}");
+    let (status, site) = call(
+        &r,
+        "POST",
+        "sites",
+        &hana,
+        json!({"workspace_id":wid,"path":"project","title":"Project"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{site}");
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("sites/{}", site["id"].as_str().unwrap()),
+        &hana,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("folders/{}", folder["id"].as_str().unwrap()),
+        &hana,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // My Workspace stays private.
+    let (_, boot) = call(&r, "GET", "bootstrap", &gil, json!({})).await;
+    let personal = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["personal"] == true)
+        .unwrap()["id"]
+        .clone();
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "workspace-access",
+        &gil,
+        json!({"workspace_id":personal,"user_id":hana_id,"role":"viewer"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

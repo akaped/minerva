@@ -1,4 +1,5 @@
 import "./pane-auth.js";
+import { renderServerOverview } from "./server-overview.js";
 import { renderFlashcards } from "./flashcards.js";
 import { pluginDialog } from "./plugin-commands.js";
 import { createYouTubeEmbeds } from "./youtube.js";
@@ -611,7 +612,7 @@ function editable(n = note) {
   return n && !n.trashed && (n.role || data.roles[n.folder_id]) === "editor";
 }
 function owner() {
-  return data.user.admin || currentWorkspace()?.owner_id === data.user.id;
+  return currentWorkspace()?.owner_id === data.user.id;
 }
 /** The owner, or a member who can edit the whole workspace: adds folders. */
 function editsWorkspace() {
@@ -638,6 +639,7 @@ async function refresh() {
 }
 /** Redraws the sidebar's folders, favorites and tags from `data`, in place. */
 function redrawSidebar() {
+  if (data?.user.admin && !localMode) return;
   const scroll = $(".sidebar-scroll"),
     nav = $(".sidebar-scroll > .nav");
   if (!scroll || !nav) return;
@@ -765,7 +767,13 @@ function workspaceBadge() {
   const r = replicaFor();
   if (r)
     return `<button class="badge sync-badge ${r.conflicts ? "attention" : ""}" id="sync-state" title="Offline copy of a workspace on another server">${esc(syncLabel(r))}</button>`;
-  return `<span class="badge">${localMode ? "ON THIS COMPUTER" : "PRIVATE WORKSPACE"}</span>`;
+  if (localMode) return '<span class="badge">ON THIS COMPUTER</span>';
+  const w = currentWorkspace();
+  if (!w) return "";
+  // My Workspace stays private; other workspaces open their members here.
+  if (w.personal)
+    return '<span class="badge" title="Only you can see My Workspace">PRIVATE WORKSPACE</span>';
+  return `<button class="badge" id="share-workspace" title="Share this workspace">${w.shared ? "SHARED WORKSPACE" : "PRIVATE WORKSPACE"} · Share</button>`;
 }
 async function loadReplicas() {
   if (!localMode) return;
@@ -963,7 +971,81 @@ function secondFactor(challenge) {
     }
   };
 }
+function adminShell() {
+  note = null;
+  noteTabs?.hide();
+  stopAI();
+  videos.stop();
+  stopLive();
+  if (!["admin-overview", "admin", "providers", "account"].includes(view))
+    view = "admin-overview";
+  $("#app").innerHTML =
+    `<div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><p class="section-label">SERVER ADMINISTRATION</p><nav class="nav">${[
+      ["admin-overview", "Server overview"],
+      ["admin", "Users & storage"],
+      ["providers", "AI provider settings"],
+      ["account", "Account security"],
+    ]
+      .map(
+        ([id, label]) =>
+          `<button data-admin-view="${id}" class="${view === id ? "active" : ""}">${esc(label)}</button>`,
+      )
+      .join(
+        "",
+      )}</nav><div class="sidebar-bottom"><div class="profile-name">${esc(data.user.name)}</div><p class="subtitle">Management account</p><button class="btn" id="admin-logout">Sign out</button></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" aria-label="Toggle sidebar">${icon("menu")}</button><strong id="breadcrumb">Server administration</strong>${themeSelect()}</header><div id="content" tabindex="-1"></div></main></div>`;
+  $$("[data-admin-view]").forEach((b) =>
+    action(b, "click", () => navigate(b.dataset.adminView)),
+  );
+  action($(".mobile-menu"), "click", () =>
+    $(".sidebar").classList.toggle("open"),
+  );
+  action($("#admin-logout"), "click", async () => {
+    await noteTabs?.clear();
+    await api("logout", "POST");
+    login();
+  });
+  bindThemeSelect();
+  if (view === "admin") renderAdmin().catch(error);
+  else if (view === "providers")
+    renderAISettings({ api, esc, data, error }).catch(error);
+  else if (view === "account") renderAccount().catch(error);
+  else
+    renderServerOverview({ api, esc, formDialog, refresh, error }).catch(error);
+}
+async function shareWorkspace() {
+  const wid = workspaceId,
+    info = await api(`workspaces/${wid}/members`);
+  const options = info.members.filter((m) => !m.owner);
+  formDialog(
+    `Share ${currentWorkspace()?.name || "workspace"}`,
+    info.can_edit
+      ? "Workspace editors can manage folders, notes, journals, sites, and membership. Read-only members can browse."
+      : "Your workspace membership is read-only.",
+    `<div class="workspace-members">${info.members
+      .filter((m) => m.role)
+      .map(
+        (m) =>
+          `<p><strong>${esc(m.name)}</strong> · ${m.owner ? "Owner" : m.role === "editor" ? "Edit" : "Read only"}</p>`,
+      )
+      .join(
+        "",
+      )}</div>${info.can_edit ? `<label>Person<select name="user_id" required>${options.map((m) => `<option value="${m.id}">${esc(m.name)} · ${esc(m.email)}${m.role ? " (" + (m.role === "editor" ? "Edit" : "Read only") + ")" : ""}</option>`).join("")}</select></label><label>Permission<select name="role"><option value="viewer">Read only</option><option value="editor">Edit</option><option value="none">Remove workspace access</option></select></label>${!options.length ? "<p>No other member accounts yet. Ask the administrator to add users.</p>" : ""}` : ""}`,
+    async (values) => {
+      if (!info.can_edit || !options.length) return;
+      await api("workspace-access", "PUT", { ...values, workspace_id: wid });
+      await refresh();
+      shell();
+      toast("Workspace access updated");
+    },
+    info.can_edit && options.length ? "Save access" : "Close",
+  );
+}
+
 function shell() {
+  if (data.user.admin && !localMode) {
+    adminShell();
+    return;
+  }
   document.documentElement.classList.toggle("pane-browsing", isPane && !note);
   stopAI();
   videos.stop();
@@ -1011,6 +1093,7 @@ function shell() {
     $(".sidebar").classList.toggle("open"),
   );
   action($("#sync-state"), "click", syncDialog);
+  action($("#share-workspace"), "click", shareWorkspace);
   bindThemeSelect();
   if (note) renderEditor();
   else if (view === "admin") renderAdmin().catch(error);
@@ -1231,7 +1314,7 @@ function overview() {
         : view === "folder" && folderChildren(treeFolders(), folderId).length
           ? `<div class="section-title"><h2>Subfolders</h2></div><div class="folder-grid">${folderChildren(treeFolders(), folderId).map(folderCard).join("")}</div>`
           : ""
-    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? "Recently updated" : view === "trash" ? "Deleted notes" : "Your notes"} <span>(${notes.length})</span></button>${view === "folder" && owner() ? '<button id="rename-folder">Rename folder</button>' : ""}${view === "folder" && data.roles[folderId] === "editor" ? '<button id="delete-folder" class="danger-text">Delete folder</button>' : ""}</div><div style="display:flex;gap:12px;align-items:center">${view !== "trash" ? `<button id="import" class="btn" title="Import Markdown">${icon("upload")}Import</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}Empty trash</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="Grid view" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="List view" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? "All clear. No deleted notes." : "A blank page, endless possibilities."}</h3>${view === "trash" ? "Deleted notes will appear here." : "Create a note to give your ideas a home."}</div>` : ""}<div class="page-footer">A little clarity. A little possibility. Your Minerva.</div></section>`;
+    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? "Recently updated" : view === "trash" ? "Deleted notes" : "Your notes"} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? '<button id="rename-folder">Rename folder</button>' : ""}${view === "folder" && data.roles[folderId] === "editor" ? '<button id="delete-folder" class="danger-text">Delete folder</button>' : ""}</div><div style="display:flex;gap:12px;align-items:center">${view !== "trash" ? `<button id="import" class="btn" title="Import Markdown">${icon("upload")}Import</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}Empty trash</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="Grid view" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="List view" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? "All clear. No deleted notes." : "A blank page, endless possibilities."}</h3>${view === "trash" ? "Deleted notes will appear here." : "Create a note to give your ideas a home."}</div>` : ""}<div class="page-footer">A little clarity. A little possibility. Your Minerva.</div></section>`;
   action($("#ask-folder"), "click", () =>
     askAI({ kind: "folder", id: folderId }),
   );
@@ -3653,7 +3736,7 @@ function renderJournal() {
   const configured = data.journal_templates?.[workspaceId] || "";
   $("#breadcrumb").textContent = "Journal";
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">ONE NOTE PER DAY</div><div class="page-heading"><div><h1>Journal</h1><p class="subtitle">Capture the day. Unfinished tasks can follow you with [[uncompleted_journal_tasks]].</p></div><div class="toolbar-group"><input type="date" id="journal-date" value="${today}" aria-label="Journal date"><button class="btn" id="journal-open">Open date</button><button class="btn primary" id="journal-today">${icon("calendar")}Today</button></div></div><div class="journal-layout"><section class="panel calendar" aria-label="Calendar"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="Previous month">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="Next month">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>Recent entries</h2><p>${entries.size} entr${entries.size === 1 ? "y" : "ies"} in this workspace</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || '<div class="empty">No entries yet. Start with today.</div>'}</div>${owner() ? `<form class="journal-settings" id="journal-settings"><label>Template for new days<select name="template_id"><option value="">Blank page</option>${templates.map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label><button class="btn">Save</button></form>` : ""}</section></div></section>`;
+    `<section class="page"><div class="eyebrow">ONE NOTE PER DAY</div><div class="page-heading"><div><h1>Journal</h1><p class="subtitle">Capture the day. Unfinished tasks can follow you with [[uncompleted_journal_tasks]].</p></div><div class="toolbar-group"><input type="date" id="journal-date" value="${today}" aria-label="Journal date"><button class="btn" id="journal-open">Open date</button><button class="btn primary" id="journal-today">${icon("calendar")}Today</button></div></div><div class="journal-layout"><section class="panel calendar" aria-label="Calendar"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="Previous month">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="Next month">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>Recent entries</h2><p>${entries.size} entr${entries.size === 1 ? "y" : "ies"} in this workspace</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || '<div class="empty">No entries yet. Start with today.</div>'}</div>${editsWorkspace() ? `<form class="journal-settings" id="journal-settings"><label>Template for new days<select name="template_id"><option value="">Blank page</option>${templates.map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label><button class="btn">Save</button></form>` : ""}</section></div></section>`;
   action($("#journal-today"), "click", () => openJournal(today));
   action($("#journal-open"), "click", () => {
     const value = $("#journal-date").value;
@@ -3929,7 +4012,7 @@ function workspaceSites(wid = workspaceId) {
 }
 // Sites of the current workspace: public paths such as /blog or /wiki.
 function sitesPanel(origin) {
-  const manage = owner();
+  const manage = editsWorkspace();
   const rows = workspaceSites()
     .map(
       (s) =>
@@ -4111,7 +4194,7 @@ function folderNode(f, list, depth) {
   const empty = !children.length && !notes.length;
   const active = view === "folder" && folderId === f.id && !note;
   const canEdit = data.roles[f.id] === "editor";
-  return `<div class="tree-node" data-node="${f.id}"><div class="tree-row folder-row ${active ? "active" : ""}" style="--depth:${depth}" data-drop-folder="${f.id}" ${owner() ? `draggable="true" data-drag-folder="${f.id}"` : ""}><button class="tree-toggle" data-toggle-folder="${f.id}" aria-expanded="${open}" aria-label="${open ? "Collapse" : "Expand"} ${esc(f.name)}" ${empty ? 'disabled tabindex="-1"' : ""}>${icon("chevron")}</button><button class="tree-label" data-folder="${f.id}" ${active ? 'aria-current="page"' : ""}><span class="tree-icon" aria-hidden="true">${icon(open && !empty ? "folderOpen" : "folder")}</span><span class="tree-name">${esc(f.name)}</span><span class="count">${notes.length || ""}</span></button><span class="tree-actions">${canEdit ? `<button data-row-new="${f.id}" aria-label="New note in ${esc(f.name)}">${icon("plus")}</button>` : ""}<button data-row-menu="folder:${f.id}" aria-label="More actions for ${esc(f.name)}" aria-haspopup="menu">${icon("more")}</button></span></div>${empty ? "" : `<div class="tree-children" role="group" ${open ? "" : "hidden"}>${children.map((c) => folderNode(c, list, depth + 1)).join("")}${notes.map((n) => noteRow(n, depth + 1)).join("")}</div>`}</div>`;
+  return `<div class="tree-node" data-node="${f.id}"><div class="tree-row folder-row ${active ? "active" : ""}" style="--depth:${depth}" data-drop-folder="${f.id}" ${editsWorkspace() ? `draggable="true" data-drag-folder="${f.id}"` : ""}><button class="tree-toggle" data-toggle-folder="${f.id}" aria-expanded="${open}" aria-label="${open ? "Collapse" : "Expand"} ${esc(f.name)}" ${empty ? 'disabled tabindex="-1"' : ""}>${icon("chevron")}</button><button class="tree-label" data-folder="${f.id}" ${active ? 'aria-current="page"' : ""}><span class="tree-icon" aria-hidden="true">${icon(open && !empty ? "folderOpen" : "folder")}</span><span class="tree-name">${esc(f.name)}</span><span class="count">${notes.length || ""}</span></button><span class="tree-actions">${canEdit ? `<button data-row-new="${f.id}" aria-label="New note in ${esc(f.name)}">${icon("plus")}</button>` : ""}<button data-row-menu="folder:${f.id}" aria-label="More actions for ${esc(f.name)}" aria-haspopup="menu">${icon("more")}</button></span></div>${empty ? "" : `<div class="tree-children" role="group" ${open ? "" : "hidden"}>${children.map((c) => folderNode(c, list, depth + 1)).join("")}${notes.map((n) => noteRow(n, depth + 1)).join("")}</div>`}</div>`;
 }
 function sidebarSections() {
   revealInTree();
@@ -4368,7 +4451,7 @@ function folderMenu(anchor, id) {
           },
         ]
       : []),
-    ...(owner()
+    ...(editsWorkspace()
       ? [
           { icon: "edit", label: "Rename", run: () => renameFolder(id) },
           ...(f.parent_id
@@ -4873,18 +4956,18 @@ async function renderAdmin() {
   ]);
   $("#breadcrumb").textContent = "Server administration";
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">YOUR SERVER, YOUR RULES</div><div class="page-heading"><div><h1>People & permissions</h1><p class="subtitle">Give your team the right space to do their best work.</p></div><button class="btn primary" id="add-user">${icon("plus")}Add user</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>Server members</h2><p>${info.users.length} accounts on this server</p></div><span class="pill">Self-hosted</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NAME</th><th>ROLE</th><th>CREATE WORKSPACES</th><th>STATUS</th><th>2FA</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? "Administrator" : "Member"}</td><td><input type="checkbox" aria-label="Allow ${esc(u.name)} to create workspaces" data-create-user="${u.id}" ${u.can_create_workspace ? "checked" : ""} ${u.admin ? "disabled" : ""}></td><td>${u.admin ? '<span class="pill">Active</span>' : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>Active</option><option value="disabled" ${u.disabled ? "selected" : ""}>Disabled</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">On</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">Reset</button>` : ""}` : '<span class="pill">Off</span>'}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">Edit</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">Delete</button>` : "<small>You</small>"}</td></tr>`).join("")}</tbody></table></div></section>${accessPanel(info)}${workspacesPanel(info)}</div>${storagePanel(storage)}</section>`;
+    `<section class="page"><div class="eyebrow">YOUR SERVER, YOUR RULES</div><div class="page-heading"><div><h1>People & permissions</h1><p class="subtitle">Give your team the right space to do their best work.</p></div><button class="btn primary" id="add-user">${icon("plus")}Add user</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>Server members</h2><p>${info.users.length} accounts on this server</p></div><span class="pill">Self-hosted</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NAME</th><th>ROLE</th><th>STATUS</th><th>2FA</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? "Administrator" : "Member"}</td><td>${u.admin ? '<span class="pill">Active</span>' : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>Active</option><option value="disabled" ${u.disabled ? "selected" : ""}>Disabled</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">On</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">Reset</button>` : ""}` : '<span class="pill">Off</span>'}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">Edit</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">Delete</button>` : "<small>You</small>"}</td></tr>`).join("")}</tbody></table></div></section></div>${storagePanel(storage)}</section>`;
   action($("#add-user"), "click", () =>
     formDialog(
       "Welcome someone new",
       mailEnabled
         ? "They get an email with a link to choose their own password. You can also set a temporary one to share with them yourself."
         : "Create an account and share its credentials with your teammate securely.",
-      `<label>Full name<input name="name" required maxlength="200" autocomplete="off"></label><label>Email<input type="email" name="email" required autocomplete="off"></label><label>Temporary password${mailEnabled ? " (optional)" : ""}<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" ${mailEnabled ? "" : "required"}></label><label class="checkbox-label"><input type="checkbox" name="can_create_workspace">Can create workspaces</label>`,
+      `<label>Full name<input name="name" required maxlength="200" autocomplete="off"></label><label>Email<input type="email" name="email" required autocomplete="off"></label><label>Temporary password${mailEnabled ? " (optional)" : ""}<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" ${mailEnabled ? "" : "required"}></label>`,
       async (v) => {
         const created = await api("users", "POST", {
           ...v,
-          can_create_workspace: v.can_create_workspace === "on",
+          can_create_workspace: true,
         });
         if (created.invited) toast(`Invitation emailed to ${created.email}`);
         await renderAdmin();
@@ -4932,13 +5015,19 @@ async function renderAdmin() {
       const u = info.users.find((x) => x.id === el.dataset.deleteUser);
       formDialog(
         `Delete ${u.name}?`,
-        `${u.email} can no longer sign in. Their personal workspaces are deleted with them; workspaces they shared with others become yours, so their members keep them. Their AI conversations, flashcards, and access are deleted too. To keep everything instead, set the account to Disabled. This cannot be undone.`,
-        "",
-        async () => {
-          const result = await api("users/" + u.id, "DELETE");
+        `${u.email} can no longer sign in. Their personal workspaces are deleted with them; shared workspaces pass to the member you select below. Their AI conversations, flashcards, and access are deleted too. To keep everything instead, set the account to Disabled. This cannot be undone.`,
+        `<label>Successor for shared workspaces<select name="successor_id"><option value="">Choose if this user owns shared workspaces</option>${info.users
+          .filter((x) => !x.admin && !x.disabled && x.id !== u.id)
+          .map(
+            (x) =>
+              `<option value="${x.id}">${esc(x.name)} · ${esc(x.email)}</option>`,
+          )
+          .join("")}</select></label>`,
+        async (values) => {
+          const result = await api("users/" + u.id, "DELETE", values);
           toast(
             result.workspaces_transferred
-              ? `Account deleted · ${result.workspaces_transferred} shared workspace${result.workspaces_transferred === 1 ? "" : "s"} now yours`
+              ? `Account deleted · ${result.workspaces_transferred} shared workspace${result.workspaces_transferred === 1 ? "" : "s"} transferred`
               : "Account deleted",
           );
           await refresh();

@@ -9,6 +9,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -333,10 +334,11 @@ fn ids(v: &Value) -> Vec<&str> {
 #[tokio::test]
 async fn workspaces_are_sealed_until_granted_or_shared() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
-    let (_, alice) = user(&router, &admin, "Alice", true).await;
-    let (_, bob) = user(&router, &admin, "Bob", true).await;
-    let (carol_id, carol) = user(&router, &admin, "Carol", false).await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
+    let (_, alice) = user(&router, &root, "Alice", true).await;
+    let (_, bob) = user(&router, &root, "Bob", true).await;
+    let (carol_id, carol) = user(&router, &root, "Carol", false).await;
     let a = tenant(&router, &alice, "Alpha", "zebra").await;
     let b = tenant(&router, &bob, "Beta", "walrus").await;
 
@@ -373,7 +375,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         .filter_map(|n| n["title"].as_str())
         .collect();
     assert_eq!(titles, ["Getting Started"]);
-    let (status, _) = api(
+    let (status, mine) = api(
         &router,
         "POST",
         "workspaces",
@@ -381,7 +383,16 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         json!({"name":"Mine"}),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::OK, "every member creates workspaces");
+    let (status, _) = api(
+        &router,
+        "DELETE",
+        &format!("workspaces/{}", mine["id"].as_str().unwrap()),
+        &carol,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert_sealed(&router, &carol, &a, &b.note).await;
 
     // An administrator grant opens exactly that folder, read-only, and nothing else.
@@ -643,7 +654,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
     .await;
     assert_eq!(status, StatusCode::OK, "workspace editors add folders");
     assert_sealed(&router, &carol, &b, &a.note).await;
-    let (_, admin_view) = api(&router, "GET", "admin", &admin, json!({})).await;
+    let (_, admin_view) = api(&router, "GET", "admin", &root, json!({})).await;
     // Who has access to Alice's workspace is hers to know.
     assert_eq!(admin_view["workspace_grants"], json!([]));
     api(

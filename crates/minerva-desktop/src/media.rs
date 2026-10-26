@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use webkit2gtk::{
-    PermissionRequestExt, SettingsExt, UserMediaPermissionRequest,
-    UserMediaPermissionRequestExt, WebViewExt,
+    PermissionRequestExt, SettingsExt, UserMediaPermissionRequest, UserMediaPermissionRequestExt,
+    WebViewExt,
 };
 use wry::WebViewExtUnix;
 

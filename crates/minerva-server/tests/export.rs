@@ -9,6 +9,7 @@ use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use std::io::Read;
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -72,9 +73,17 @@ async fn exports_markdown_zip_html_and_print_with_permissions() {
         .as_str()
         .unwrap()
         .to_string();
+    let root = admin;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let boot = api(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let workspace = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let workspace = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let note = api(
         &router,
         "POST",
@@ -289,7 +298,7 @@ async fn exports_markdown_zip_html_and_print_with_permissions() {
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Reader","email":"reader@test.local","password":PASSWORD}),
     )
     .await;

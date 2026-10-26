@@ -17,6 +17,9 @@ turns that section into the next version.
 
 ### Changed
 
+- The server administrator only runs the server: accounts, AI providers, account security, and a server overview with accounts, workspaces, notes and storage per member. It has no workspaces, notes or folders, and cannot open members' content. Workspaces the administrator owned before are kept and can be transferred to a member from the overview.
+- Every member creates workspaces and shares them with other members, as Read only or Edit, from the workspace's badge in the top bar. Members who can edit a workspace manage it like its owner: folders, notes, journal, sharing and public sites. My Workspace stays private.
+- Deleting an account that owns shared workspaces asks which member takes them over.
 - New app icon: the blue Minerva asterisk.
 
 ### Fixed
@@ -24,6 +27,7 @@ turns that section into the next version.
 - Members who can edit a shared workspace add folders and subfolders and start its journal and templates, not only its owner (#3).
 - The sidebar updates as soon as notes are created, renamed, starred, moved, trashed or deleted, also from a note's tab.
 - A note's tab closes when the note is moved to the trash or deleted.
+- Desktop app: a note's Share dialog shows your server's public address for published pages and links, instead of the app's internal `minerva://` address.
 - Linux: the window moves by dragging its title bar, and a double-click maximizes it.
 - Linux: the application launcher starts Minerva even when `~/.local/bin` is not in the desktop session's path, and Minerva appears once in the applications menu.
 

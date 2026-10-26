@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -56,20 +57,27 @@ async fn login(router: &Router, email: &str) -> String {
 #[tokio::test]
 async fn databases_records_and_properties_delete_and_embed_live_in_notes() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, carol) = api(
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Carol","email":"carol@test.local","password":PASSWORD}),
     )
     .await;
     let carol_id = carol["id"].as_str().unwrap().to_string();
     let carol = login(&router, "carol@test.local").await;
     let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let wid = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let notes_folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let wid = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let notes_folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (_, private) = api(
         &router,
         "POST",

@@ -9,6 +9,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 async fn call(r: &Router, method: &str, path: &str, token: &str, v: Value) -> (StatusCode, Value) {
     let response = r
         .clone()
@@ -76,14 +77,16 @@ async fn learning_end_to_end_and_failure_boundaries() {
         json!({"email":"admin@test.local","password":"test-password-1234"}),
     )
     .await;
-    let token = login["token"].as_str().unwrap();
+    let admin_token = login["token"].as_str().unwrap().to_string();
+    let owner = common::member(&r, &admin_token, "owner@test.local").await;
+    let token = owner.as_str();
     let (_, boot) = call(&r, "GET", "bootstrap", token, json!({})).await;
     let (_, note) = call(
         &r,
         "POST",
         "notes",
         token,
-        json!({"folder_id":boot["folders"][0]["id"],"title":"Learning"}),
+        json!({"folder_id":common::team_folder(&boot)["id"],"title":"Learning"}),
     )
     .await;
     let note_id = note["id"].as_str().unwrap();
@@ -106,7 +109,7 @@ async fn learning_end_to_end_and_failure_boundaries() {
         ("compatible", "bad"),
         ("compatible", "slow"),
     ] {
-        let (_,p)=call(&r,"POST","ai/providers",token,json!({"name":path,"kind":kind,"endpoint":format!("http://{address}/{path}"),"model":"mock","api_key":"secret"})).await;
+        let (_,p)=call(&r,"POST","ai/providers",&admin_token,json!({"name":path,"kind":kind,"endpoint":format!("http://{address}/{path}"),"model":"mock","api_key":"secret"})).await;
         let input = json!({"plugin_id":"superhuman-learning","command":"wisdom","note_id":note_id,"provider_id":p["id"]});
         let (status, j) = call(&r, "POST", "server-plugins/jobs", token, input.clone()).await;
         assert_eq!(status, StatusCode::ACCEPTED, "{j}");
@@ -142,7 +145,7 @@ async fn learning_end_to_end_and_failure_boundaries() {
         }
     }
     // Audio is an existing authorized attachment; no model credentials enter workers.
-    let (_,asr)=call(&r,"POST","ai/providers",token,json!({"name":"ASR","kind":"compatible","endpoint":format!("http://{address}/asr"),"model":"unused-chat-model","api_key":"secret"})).await;
+    let (_,asr)=call(&r,"POST","ai/providers",&admin_token,json!({"name":"ASR","kind":"compatible","endpoint":format!("http://{address}/asr"),"model":"unused-chat-model","api_key":"secret"})).await;
     std::env::set_var("MINERVA_ASR_PROVIDER", asr["id"].as_str().unwrap());
     std::env::set_var("MINERVA_ASR_MODEL", "mock-whisper");
     let response = r
@@ -222,7 +225,7 @@ async fn learning_end_to_end_and_failure_boundaries() {
         &r,
         "POST",
         "users",
-        token,
+        &admin_token,
         json!({"name":"Reader","email":"reader@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -231,7 +234,7 @@ async fn learning_end_to_end_and_failure_boundaries() {
         "PUT",
         "permissions",
         token,
-        json!({"folder_id":boot["folders"][0]["id"],"user_id":user["id"],"role":"viewer"}),
+        json!({"folder_id":common::team_folder(&boot)["id"],"user_id":user["id"],"role":"viewer"}),
     )
     .await;
     let (_, login) = call(

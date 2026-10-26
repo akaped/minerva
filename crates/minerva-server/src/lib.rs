@@ -1,3 +1,4 @@
+mod administration;
 mod ai;
 mod anki;
 mod attachments;
@@ -332,7 +333,20 @@ fn getting_started(folder_id: &str) -> Note {
 /// workspace the account owns that is evidently personal; otherwise one is
 /// created.
 fn ensure_personal(d: &mut Data) {
-    let users: Vec<String> = d.users.iter().map(|a| a.user.id.clone()).collect();
+    for a in &mut d.users {
+        if !d.local && a.user.admin {
+            a.default_workspace = None;
+            a.user.can_create_workspace = false;
+        } else {
+            a.user.can_create_workspace = true;
+        }
+    }
+    let users: Vec<String> = d
+        .users
+        .iter()
+        .filter(|a| d.local || !a.user.admin)
+        .map(|a| a.user.id.clone())
+        .collect();
     for uid in users {
         if d.workspaces.iter().any(|w| w.owner_id == uid && w.personal) {
             continue;
@@ -382,7 +396,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         name: if local { "You" } else { "Administrator" }.into(),
         email: email.to_lowercase(),
         admin: true,
-        can_create_workspace: true,
+        can_create_workspace: local,
         disabled: false,
     };
     // A server starts with a team workspace to share (the administrator's own
@@ -431,9 +445,9 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
             default_workspace: None,
             dashboard: None,
         }],
-        workspaces: vec![workspace],
-        folders: vec![folder],
-        notes: vec![note],
+        workspaces: if local { vec![workspace] } else { vec![] },
+        folders: if local { vec![folder] } else { vec![] },
+        notes: if local { vec![note] } else { vec![] },
         local,
         ..Default::default()
     })
@@ -474,6 +488,9 @@ fn field(v: &Value, key: &str) -> Result<String, ApiError> {
     Ok(s.into())
 }
 fn role(d: &Data, u: &User, folder_id: &str) -> Option<Role> {
+    if u.admin && !d.local {
+        return None;
+    }
     let f = d.folders.iter().find(|f| f.id == folder_id)?;
     if let Some(r) = replication::replica(d, &f.workspace_id) {
         return replication::replica_role(d, r, folder_id);
@@ -600,6 +617,9 @@ fn access(d: &Data, u: &User, f: &str, write: bool) -> Result<(), ApiError> {
 }
 /// Effective access to one note: its folder role, raised by a direct member share.
 fn note_role(d: &Data, u: &User, n: &Note) -> Option<Role> {
+    if u.admin && !d.local {
+        return None;
+    }
     let folder = role(d, u, &n.folder_id);
     match (folder, sharing::member_role(d, &u.id, n)) {
         (_, Some(Role::Editor)) => Some(Role::Editor),
@@ -710,6 +730,9 @@ fn admin(u: &User) -> Result<(), ApiError> {
     }
 }
 fn owns(d: &Data, u: &User, w: &str) -> bool {
+    if u.admin && !d.local {
+        return false;
+    }
     if let Some(r) = replication::replica(d, w) {
         return d.upstream || (r.owner && !r.revoked);
     }
@@ -718,6 +741,9 @@ fn owns(d: &Data, u: &User, w: &str) -> bool {
 /// The owner, and members who can edit the whole workspace: they add folders
 /// and set up its Journal and Templates.
 fn edits_workspace(d: &Data, u: &User, w: &str) -> bool {
+    if u.admin && !d.local {
+        return false;
+    }
     owns(d, u, w)
         || (replication::replica(d, w).is_none()
             && d.workspace_grants
@@ -844,6 +870,7 @@ pub fn app(store: Shared) -> Router {
         .route("/p/{*path}", get(sharing::public))
         .route("/preview/{note_id}", get(sharing::preview))
         .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .route("/api/v1/admin/overview", get(administration::overview))
         .route("/api/v1/admin/storage", any(attachments::storage))
         .route("/api/v1/admin/storage/cleanup", any(attachments::storage))
         .route("/api/v1/notes/{note_id}/attachments", any(attachments::endpoint).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
@@ -869,6 +896,7 @@ pub fn app(store: Shared) -> Router {
             h.entry("content-security-policy").or_insert("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src 'self' https: http:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
             h.entry("cache-control").or_insert("no-store".parse().unwrap()); r
         }))
+        .layer(axum::middleware::from_fn_with_state(store.clone(), administration::restrict))
         .with_state(store)
 }
 async fn api(
@@ -1039,6 +1067,10 @@ fn dispatch(
     }
     let u = authenticate(d, headers)?;
     let parts: Vec<&str> = path.split('/').collect();
+    if let Some(result) = administration::route(d, &u, method, &parts, &v)? {
+        return Ok((result, None));
+    }
+
     if parts.first() == Some(&"reminders") {
         return Ok((mail::reminders_route(d, &u, method, &parts, &v)?, None));
     }
@@ -1107,7 +1139,14 @@ fn dispatch(
             let workspaces: Vec<_> = d
                 .workspaces
                 .iter()
-                .filter(|w| owns(d, &u, &w.id) || folders.iter().any(|f| f.workspace_id == w.id))
+                .filter(|w| {
+                    owns(d, &u, &w.id)
+                        || (!u.admin
+                            && d.workspace_grants
+                                .iter()
+                                .any(|g| g.workspace_id == w.id && g.user_id == u.id))
+                        || folders.iter().any(|f| f.workspace_id == w.id)
+                })
                 .collect();
             let notes: Vec<_> = d
                 .notes
@@ -1137,11 +1176,12 @@ fn dispatch(
                     let mut v = json!(w);
                     v["can_delete"] = json!(removal::can_delete_workspace(d, &u, w));
                     v["can_edit"] = json!(edits_workspace(d, &u, &w.id));
+                    v["shared"] = json!(removal::shared(d, w));
                     v
                 })
                 .collect();
             let account = d.users.iter().find(|a| a.user.id == u.id);
-            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"owns_workspace":d.workspaces.iter().any(|w| w.owner_id == u.id),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -1160,7 +1200,7 @@ fn dispatch(
             json!(matches)
         }
         ("POST", ["workspaces"]) => {
-            if !u.admin && !u.can_create_workspace {
+            if u.admin && !d.local {
                 return Err(forbidden());
             }
             let w = Workspace {
@@ -1222,7 +1262,7 @@ fn dispatch(
                 .iter()
                 .find(|f| f.id == *fid)
                 .ok_or_else(missing)?;
-            if !owns(d, &u, &f.workspace_id) {
+            if !edits_workspace(d, &u, &f.workspace_id) {
                 return Err(forbidden());
             }
             let name = v.get("name").map(|_| field(&v, "name")).transpose()?;
@@ -1428,21 +1468,7 @@ fn dispatch(
                     user
                 })
                 .collect();
-            // Access to the administrator's own workspaces only.
-            let mine = |w: &str| d.workspaces.iter().any(|x| x.id == w && x.owner_id == u.id);
-            let folder_mine =
-                |f: &str| d.folders.iter().any(|x| x.id == f && mine(&x.workspace_id));
-            let grants: Vec<_> = d
-                .grants
-                .iter()
-                .filter(|g| folder_mine(&g.folder_id))
-                .collect();
-            let workspace_grants: Vec<_> = d
-                .workspace_grants
-                .iter()
-                .filter(|g| mine(&g.workspace_id))
-                .collect();
-            json!({"users":users,"grants":grants,"workspace_grants":workspace_grants})
+            json!({"users":users,"grants":[],"workspace_grants":[]})
         }
         ("POST", ["users"]) => {
             admin(&u)?;
@@ -1466,7 +1492,7 @@ fn dispatch(
                 name: field(&v, "name")?,
                 email,
                 admin: false,
-                can_create_workspace: v["can_create_workspace"].as_bool().unwrap_or(false),
+                can_create_workspace: true,
                 disabled: false,
             };
             d.users.push(Account {
@@ -1493,15 +1519,15 @@ fn dispatch(
                 .iter_mut()
                 .find(|a| a.user.id == *uid)
                 .ok_or_else(missing)?;
-            if let Some(b) = v["can_create_workspace"].as_bool() {
-                a.user.can_create_workspace = b;
+            if v.get("can_create_workspace").is_some() {
+                a.user.can_create_workspace = !a.user.admin;
             }
             if v.get("name").is_some() {
                 a.user.name = field(&v, "name")?;
             }
             if let Some(b) = v["admin"].as_bool() {
                 a.user.admin = b;
-                a.user.can_create_workspace |= b;
+                a.user.can_create_workspace = !b;
             }
             if v.get("email").is_some() {
                 let email = field(&v, "email")?.to_lowercase();
@@ -1554,11 +1580,13 @@ fn dispatch(
             let (mut transferred, mut removed) = (0, 0);
             for (wid, shared) in owned {
                 if shared {
+                    let successor = v["successor_id"].as_str().filter(|next| *next != *uid && d.users.iter().any(|a| a.user.id==*next && !a.user.admin && !a.user.disabled)).ok_or_else(||bad("Choose a non-administrator successor for shared workspaces before deleting this account"))?.to_string();
                     if let Some(w) = d.workspaces.iter_mut().find(|w| w.id == wid) {
-                        w.owner_id = u.id.clone();
+                        w.owner_id = successor.clone();
+                        w.personal = false;
                     }
                     d.workspace_grants
-                        .retain(|g| g.workspace_id != wid || g.user_id != u.id);
+                        .retain(|g| g.workspace_id != wid || g.user_id != successor);
                     transferred += 1;
                 } else {
                     removal::remove_workspace(d, &wid);
@@ -1629,14 +1657,24 @@ fn dispatch(
             let wid = field(&v, "workspace_id")?;
             let uid = field(&v, "user_id")?;
             // Refused before anything else, so nothing is revealed.
-            if !owns(d, &u, &wid) {
+            if !edits_workspace(d, &u, &wid) {
                 return Err(forbidden());
             }
             if d.workspaces.iter().any(|w| w.id == wid && w.personal) {
                 return Err(bad("A personal workspace cannot be shared"));
             }
-            if !d.users.iter().any(|a| a.user.id == uid) {
+            if !d
+                .users
+                .iter()
+                .any(|a| a.user.id == uid && !a.user.admin && !a.user.disabled)
+            {
                 return Err(missing());
+            }
+            if d.workspaces
+                .iter()
+                .any(|w| w.id == wid && w.owner_id == uid)
+            {
+                return Err(bad("The owner always has edit access"));
             }
             let role = match v["role"].as_str() {
                 Some("viewer") => Some(Role::Viewer),
@@ -1684,13 +1722,17 @@ fn dispatch(
                 .find(|f| f.id == fid)
                 .map(|f| f.workspace_id.clone())
                 .unwrap_or_default();
-            if !owns(d, &u, &workspace) {
+            if !edits_workspace(d, &u, &workspace) {
                 return Err(forbidden());
             }
             if d.workspaces.iter().any(|w| w.id == workspace && w.personal) {
                 return Err(bad("A personal workspace cannot be shared"));
             }
-            if !d.users.iter().any(|a| a.user.id == uid) {
+            if !d
+                .users
+                .iter()
+                .any(|a| a.user.id == uid && !a.user.admin && !a.user.disabled)
+            {
                 return Err(missing());
             }
             let role = match v["role"].as_str() {

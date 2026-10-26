@@ -11,6 +11,7 @@ use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 use yrs::{updates::decoder::Decode, Any, Doc, Map, ReadTxn, StateVector, Transact, Update};
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -72,10 +73,17 @@ async fn login(router: &Router, email: &str) -> String {
 async fn covers_tags_inline_tags_search_and_backlinks() {
     let path = std::env::temp_dir().join(format!("minerva-notes-{}.db", uuid::Uuid::new_v4()));
     let router = app(Store::open(path.to_str().unwrap(), "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let boot = api(&router, "GET", "bootstrap", &admin, json!({})).await.1;
-    let workspace = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let workspace = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let target = api(
         &router,
         "POST",
@@ -209,7 +217,7 @@ async fn covers_tags_inline_tags_search_and_backlinks() {
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Reader","email":"reader@test.local","password":PASSWORD}),
     )
     .await;
@@ -334,7 +342,7 @@ async fn covers_tags_inline_tags_search_and_backlinks() {
         [],
     )
     .unwrap();
-    let report = api(&router, "GET", "admin/storage", &admin, json!({}))
+    let report = api(&router, "GET", "admin/storage", &root, json!({}))
         .await
         .1;
     assert!(

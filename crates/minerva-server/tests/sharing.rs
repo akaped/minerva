@@ -10,6 +10,7 @@ use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 use yrs::{updates::decoder::Decode, Doc, ReadTxn, StateVector, Text, Transact, Update};
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -89,11 +90,15 @@ async fn login(router: &Router, email: &str) -> String {
     reply.json()["token"].as_str().unwrap().to_string()
 }
 async fn setup(router: &Router) -> (String, String, Value, String) {
-    let admin = login(router, "admin@test.local").await;
+    let root = login(router, "admin@test.local").await;
+    let admin = common::member(router, &root, "owner@test.local").await;
     let boot = api(router, "GET", "bootstrap", &admin, json!({}))
         .await
         .json();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let note = api(
         router,
         "POST",
@@ -118,7 +123,7 @@ async fn setup(router: &Router) -> (String, String, Value, String) {
         router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Robin Reader","email":"reader@test.local","password":PASSWORD}),
     )
     .await;
@@ -976,6 +981,7 @@ async fn storage_cleanup_only_deletes_files_no_content_references() {
     let path = std::env::temp_dir().join(format!("minerva-storage-{}.db", uuid::Uuid::new_v4()));
     let router = app(Store::open(path.to_str().unwrap(), "admin@test.local", PASSWORD).unwrap());
     let (admin, reader, note, _) = setup(&router).await;
+    let root = login(&router, "admin@test.local").await;
     let nid = note["id"].as_str().unwrap().to_string();
     let mut ids = vec![];
     for name in ["current", "history", "published", "orphan", "recent"] {
@@ -1032,7 +1038,7 @@ async fn storage_cleanup_only_deletes_files_no_content_references() {
             .status,
         StatusCode::FORBIDDEN
     );
-    let report = api(&router, "GET", "admin/storage", &admin, json!({}))
+    let report = api(&router, "GET", "admin/storage", &root, json!({}))
         .await
         .json();
     assert_eq!(report["files"], 5);
@@ -1044,7 +1050,7 @@ async fn storage_cleanup_only_deletes_files_no_content_references() {
         .collect();
     assert_eq!(orphans, vec![orphan.as_str()], "{report}");
     assert_eq!(report["recent_unreferenced"], 1);
-    assert_eq!(report["notes"][0]["note_id"], nid);
+    assert_eq!(common::welcome(&report)["note_id"], nid);
 
     assert_eq!(
         api(
@@ -1062,7 +1068,7 @@ async fn storage_cleanup_only_deletes_files_no_content_references() {
         &router,
         "POST",
         "admin/storage/cleanup",
-        &admin,
+        &root,
         json!({"ids":[orphan, current, in_history, in_publication, recent]}),
     )
     .await

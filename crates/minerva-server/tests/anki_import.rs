@@ -11,6 +11,7 @@ use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use std::io::Write;
 use tower::ServiceExt;
+mod common;
 
 async fn send(
     r: &Router,
@@ -39,12 +40,14 @@ async fn send(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
 }
+/// A member's session: the administrator only creates the account.
 async fn login(r: &Router) -> String {
     let body = json!({"email":"admin@test.local","password":"test-password-1234"}).to_string();
-    send(r, "POST", "login", "", body.into_bytes()).await.1["token"]
+    let admin: String = send(r, "POST", "login", "", body.into_bytes()).await.1["token"]
         .as_str()
         .unwrap()
-        .into()
+        .into();
+    common::member(r, &admin, "owner@test.local").await
 }
 fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = std::io::Cursor::new(Vec::new());

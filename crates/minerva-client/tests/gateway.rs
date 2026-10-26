@@ -13,8 +13,33 @@ async fn server() -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, minerva_server::app(store)).await });
-    format!("http://{address}")
+    let url = format!("http://{address}");
+    create_member(&url).await;
+    url
 }
+/// Creates `member@test.local` with `PASSWORD` on the server at `url`: content
+/// belongs to members, since administrators only manage the server.
+async fn create_member(url: &str) {
+    let http = reqwest::Client::new();
+    let admin: Value = http
+        .post(format!("{url}/api/v1/login"))
+        .header("x-minerva-client", "1")
+        .json(&json!({"email":"admin@test.local","password":PASSWORD}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    http.post(format!("{url}/api/v1/users"))
+        .header("x-minerva-client", "1")
+        .bearer_auth(admin["token"].as_str().unwrap())
+        .json(&json!({"name":"Member","email":"member@test.local","password":PASSWORD}))
+        .send()
+        .await
+        .unwrap();
+}
+
 fn request(method: &str, path: &str, body: Value) -> Request<Vec<u8>> {
     Request::builder()
         .method(method)
@@ -72,6 +97,13 @@ async fn gateway_authenticates_with_stored_tokens_and_isolates_origins() {
     assert!(html.contains(&format!(
         "<meta name=\"minerva-server-origin\" content=\"{url}\" />"
     )));
+    // Note tabs too: their share dialog shows the server's public addresses.
+    let pane = gateway
+        .handle(id, ORIGIN, request("GET", "/pane", Value::Null))
+        .await;
+    assert!(String::from_utf8_lossy(pane.body()).contains(&format!(
+        "<meta name=\"minerva-server-origin\" content=\"{url}\" />"
+    )));
     let unauthenticated = gateway
         .handle(id, ORIGIN, request("GET", "/api/v1/bootstrap", Value::Null))
         .await;
@@ -84,7 +116,7 @@ async fn gateway_authenticates_with_stored_tokens_and_isolates_origins() {
             request(
                 "POST",
                 "/api/v1/login",
-                json!({"email":"admin@test.local","password":PASSWORD}),
+                json!({"email":"member@test.local","password":PASSWORD}),
             ),
         )
         .await;
@@ -98,7 +130,7 @@ async fn gateway_authenticates_with_stored_tokens_and_isolates_origins() {
         login_body.get("token").is_none(),
         "the page must not receive the token"
     );
-    assert_eq!(login_body["user"]["email"], "admin@test.local");
+    assert_eq!(login_body["user"]["email"], "member@test.local");
     let token = credentials
         .get(id)
         .unwrap()
@@ -106,7 +138,7 @@ async fn gateway_authenticates_with_stored_tokens_and_isolates_origins() {
     assert!(gateway.signed_in(id));
     assert_eq!(
         gateway.connection(id).unwrap().account.as_deref(),
-        Some("admin@test.local")
+        Some("member@test.local")
     );
 
     let boot = gateway

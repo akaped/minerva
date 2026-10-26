@@ -9,6 +9,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 async fn call(r: &Router, method: &str, path: &str, token: &str, v: Value) -> (StatusCode, Value) {
     let response = r
         .clone()
@@ -56,7 +57,8 @@ async fn decks_reviews_persistence_and_isolation() {
         "test-password-1234",
     )
     .unwrap());
-    let token = login(&r, "admin@test.local").await;
+    let root = login(&r, "admin@test.local").await;
+    let token = common::member(&r, &root, "owner@test.local").await;
     let (status, d) = call(
         &r,
         "POST",
@@ -112,7 +114,7 @@ async fn decks_reviews_persistence_and_isolation() {
         &r,
         "POST",
         "users",
-        &token,
+        &root,
         json!({"name":"Member","email":"m@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -143,7 +145,8 @@ async fn decks_reviews_persistence_and_isolation() {
         "test-password-1234",
     )
     .unwrap());
-    let token = login(&r, "admin@test.local").await;
+    let root = login(&r, "admin@test.local").await;
+    let token = common::member(&r, &root, "owner@test.local").await;
     let (_, loaded) = call(&r, "GET", &route, &token, json!({})).await;
     assert_eq!(loaded["deck"]["cards"][0]["reviews"], 1);
     let mut edited = loaded["deck"]["cards"][0].clone();
@@ -195,10 +198,11 @@ async fn generation_uses_authorized_notes_and_real_search_sources() {
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
     let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&r, "admin@test.local").await;
+    let root = login(&r, "admin@test.local").await;
+    let token = common::member(&r, &root, "owner@test.local").await;
     let (_, boot) = call(&r, "GET", "bootstrap", &token, json!({})).await;
-    let note = &boot["notes"][0];
-    let (_,p)=call(&r,"POST","ai/providers",&token,json!({"name":"mock","kind":"compatible","endpoint":format!("http://{address}/v1"),"model":"mock","api_key":"test"})).await;
+    let note = &common::welcome(&boot);
+    let (_,p)=call(&r,"POST","ai/providers",&root,json!({"name":"mock","kind":"compatible","endpoint":format!("http://{address}/v1"),"model":"mock","api_key":"test"})).await;
     for kind in ["note", "folder"] {
         let (status,out)=call(&r,"POST","flashcards/generate",&token,json!({"kind":kind,"source_id":if kind=="note" {&note["id"]}else{&note["folder_id"]},"provider_id":p["id"],"count":5})).await;
         assert_eq!(status, StatusCode::OK, "{out}");
@@ -222,7 +226,7 @@ async fn generation_uses_authorized_notes_and_real_search_sources() {
         ("research", StatusCode::OK),
         ("fake", StatusCode::BAD_REQUEST),
     ] {
-        let (_,p)=call(&r,"POST","ai/providers",&token,json!({"name":path,"kind":"openai","endpoint":format!("http://{address}/{path}"),"model":"mock","api_key":"test","web_search":true})).await;
+        let (_,p)=call(&r,"POST","ai/providers",&root,json!({"name":path,"kind":"openai","endpoint":format!("http://{address}/{path}"),"model":"mock","api_key":"test","web_search":true})).await;
         let (status, result) = call(
             &r,
             "POST",
@@ -237,7 +241,7 @@ async fn generation_uses_authorized_notes_and_real_search_sources() {
         &r,
         "POST",
         "users",
-        &token,
+        &root,
         json!({"name":"Other","email":"other@test.local","password":"test-password-1234"}),
     )
     .await;

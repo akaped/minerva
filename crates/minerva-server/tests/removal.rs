@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -104,9 +105,10 @@ fn workspace<'a>(boot: &'a Value, wid: &str) -> Option<&'a Value> {
 #[tokio::test]
 async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
-    let (_, alice) = user(&router, &admin, "alice").await;
-    let (bob_id, bob) = user(&router, &admin, "bob").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
+    let (_, alice) = user(&router, &root, "alice").await;
+    let (bob_id, bob) = user(&router, &root, "bob").await;
     let (_, w) = api(
         &router,
         "POST",

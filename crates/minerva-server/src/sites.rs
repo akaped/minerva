@@ -126,7 +126,7 @@ pub(super) fn route(
             if !d.workspaces.iter().any(|w| w.id == workspace_id) {
                 return Err(missing());
             }
-            if !owns(d, u, &workspace_id) {
+            if !edits_workspace(d, u, &workspace_id) {
                 return Err(forbidden());
             }
             if d.sites
@@ -156,7 +156,7 @@ pub(super) fn route(
         }
         ("PATCH", ["sites", sid]) => {
             let site = d.sites.iter().find(|s| s.id == *sid).ok_or_else(missing)?;
-            if !owns(d, u, &site.workspace_id) {
+            if !edits_workspace(d, u, &site.workspace_id) {
                 return Err(forbidden());
             }
             let path = text(v, "path", 40)?;
@@ -190,7 +190,7 @@ pub(super) fn route(
         }
         ("DELETE", ["sites", sid]) => {
             let site = d.sites.iter().find(|s| s.id == *sid).ok_or_else(missing)?;
-            if !owns(d, u, &site.workspace_id) {
+            if !edits_workspace(d, u, &site.workspace_id) {
                 return Err(forbidden());
             }
             let pages = d.publications.iter().filter(|p| p.site_id == *sid).count();

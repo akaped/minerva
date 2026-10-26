@@ -90,9 +90,10 @@ async fn replicas_work_offline_and_converge() {
     let remote = Remote::start(store, "127.0.0.1:0".parse().unwrap());
     let url = remote.url();
     let base = url::Url::parse(&format!("{url}/")).unwrap();
+    create_member(&url).await;
     let token = Transport::new()
         .unwrap()
-        .login(&base, "admin@test.local", PASSWORD)
+        .login(&base, "member@test.local", PASSWORD)
         .await
         .unwrap()
         .token()
@@ -164,7 +165,7 @@ async fn replicas_work_offline_and_converge() {
         .call(Method::GET, &format!("notes/{welcome}"), Value::Null)
         .await
         .unwrap();
-    assert_eq!(note["title"], "Welcome to Minerva");
+    assert_eq!(note["title"], "Getting Started");
     assert_eq!(row_value(&local, &did, &rid, &column).await, "Draft");
     assert_eq!(
         worker.available(&connection.id).await.unwrap()[0]["offline"],
@@ -295,10 +296,34 @@ async fn replicas_work_offline_and_converge() {
         .await
         .unwrap();
     assert_eq!(after["workspaces"].as_array().unwrap().len(), 1);
-    // Team (the one that was copied) and the administrator's own My Workspace.
+    // The member's My Workspace, the one that was copied, is still there.
     let server_boot = remote_call(&url, &token, Method::GET, "bootstrap", Value::Null).await;
-    assert_eq!(server_boot["workspaces"].as_array().unwrap().len(), 2);
+    assert_eq!(server_boot["workspaces"].as_array().unwrap().len(), 1);
+    assert_eq!(server_boot["workspaces"][0]["id"], ws.as_str());
 
     drop(remote.stop());
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Creates `member@test.local` with `PASSWORD` on the server at `url`: content
+/// belongs to members, since administrators only manage the server.
+async fn create_member(url: &str) {
+    let http = reqwest::Client::new();
+    let admin: Value = http
+        .post(format!("{url}/api/v1/login"))
+        .header("x-minerva-client", "1")
+        .json(&json!({"email":"admin@test.local","password":PASSWORD}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    http.post(format!("{url}/api/v1/users"))
+        .header("x-minerva-client", "1")
+        .bearer_auth(admin["token"].as_str().unwrap())
+        .json(&json!({"name":"Member","email":"member@test.local","password":PASSWORD}))
+        .send()
+        .await
+        .unwrap();
 }

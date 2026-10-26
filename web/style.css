@@ -5219,3 +5219,45 @@ body.dragging-widget * {
   font-size: 13px;
   white-space: nowrap;
 }
+/* Server overview: the administrator's statistics. */
+.server-overview .panel {
+  padding: 20px 22px;
+}
+.server-overview .panel h2 {
+  margin: 0 0 6px;
+}
+.server-overview .panel > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.server-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.server-stat-grid strong {
+  display: block;
+  font-size: 30px;
+  margin-top: 12px;
+}
+.server-storage {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.storage-pie {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  flex: none;
+}
+.legacy-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}

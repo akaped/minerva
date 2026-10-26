@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -58,9 +59,13 @@ async fn templates_fill_from_note_metadata() {
         json!({"email":"admin@test.local","password":PASSWORD}),
     )
     .await;
-    let admin = login["token"].as_str().unwrap().to_string();
+    let root = login["token"].as_str().unwrap().to_string();
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Twenty built-in templates, in order, with their declared variables.
     let index: Value =
@@ -224,7 +229,7 @@ async fn templates_fill_from_note_metadata() {
     assert!(md.contains("Prepared by Security Team"));
 
     // Notes filled from a template inherit its metadata and PDF template.
-    let wid = boot["workspaces"][0]["id"].as_str().unwrap();
+    let wid = common::team_workspace(&boot)["id"].as_str().unwrap();
     let (_, template) = api(
         &router,
         "POST",

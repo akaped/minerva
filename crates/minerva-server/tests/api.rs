@@ -7,6 +7,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 async fn request(
     app: &Router,
@@ -47,15 +48,16 @@ async fn permissions_conflicts_history_and_revocation() {
         request(&app, "GET", "bootstrap", "", json!({})).await.0,
         StatusCode::UNAUTHORIZED
     );
-    let admin = login(&app, "admin@test.local").await;
+    let root = login(&app, "admin@test.local").await;
+    let admin = common::member(&app, &root, "owner@test.local").await;
     let (_, boot) = request(&app, "GET", "bootstrap", &admin, json!({})).await;
-    let folder = boot["folders"][0]["id"].as_str().unwrap();
-    let nid = boot["notes"][0]["id"].as_str().unwrap();
+    let folder = common::team_folder(&boot)["id"].as_str().unwrap();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap();
     let (_, user) = request(
         &app,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Reader","email":"reader@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -87,18 +89,25 @@ async fn permissions_conflicts_history_and_revocation() {
             "POST",
             "workspaces",
             &reader,
-            json!({"name":"Unauthorized"})
+            json!({"name":"Reader's own"})
         )
         .await
         .0,
-        StatusCode::FORBIDDEN
+        StatusCode::OK,
+        "every member creates workspaces"
     );
     assert_eq!(
         request(&app, "GET", "admin", &reader, json!({})).await.0,
         StatusCode::FORBIDDEN
     );
-    let (_, hidden_search) =
-        request(&app, "POST", "search", &reader, json!({"query":"little space for big ideas"})).await;
+    let (_, hidden_search) = request(
+        &app,
+        "POST",
+        "search",
+        &reader,
+        json!({"query":"little space for big ideas"}),
+    )
+    .await;
     assert_eq!(hidden_search.as_array().unwrap().len(), 0);
     let grant = json!({"folder_id":folder,"user_id":user["id"],"role":"viewer"});
     assert_eq!(
@@ -147,7 +156,8 @@ async fn permissions_conflicts_history_and_revocation() {
         json!({}),
     )
     .await;
-    assert_eq!(history.as_array().unwrap().len(), 1);
+    // The welcome note's first save, then the editor's change.
+    assert_eq!(history.as_array().unwrap().len(), 2);
     grant["role"] = json!("none");
     request(&app, "PUT", "permissions", &admin, grant).await;
     assert_eq!(
@@ -166,7 +176,7 @@ async fn permissions_conflicts_history_and_revocation() {
         &app,
         "PATCH",
         &format!("users/{}", user["id"].as_str().unwrap()),
-        &admin,
+        &root,
         json!({"disabled":true}),
     )
     .await;
@@ -182,7 +192,8 @@ async fn persistence_sanitization_and_csrf() {
     let path = std::env::temp_dir().join(format!("minerva-test-{}.db", uuid::Uuid::new_v4()));
     let p = path.to_str().unwrap();
     let server = app(Store::open(p, "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
     let (_, workspace) = request(
         &server,
         "POST",
@@ -249,9 +260,10 @@ async fn collaborative_text_merges_idempotently_and_survives_restart() {
         "test-password-1234",
     )
     .unwrap());
-    let token = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
-    let nid = boot["notes"][0]["id"].as_str().unwrap();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap();
     let route = format!("notes/{nid}/sync");
     let (_, initial) = request(&server, "POST", &route, &token, json!({"client_id":"a"})).await;
     let bid = initial["note"]["blocks"][0]["id"].as_str().unwrap();
@@ -334,9 +346,10 @@ async fn collaborative_text_merges_idempotently_and_survives_restart() {
 #[tokio::test]
 async fn typed_records_enforce_schema_versions_and_permissions() {
     let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let admin = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let admin = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &admin, json!({})).await;
-    let fid = &boot["folders"][0]["id"];
+    let fid = &common::team_folder(&boot)["id"];
     let columns = json!([
         {"id":"name","name":"Name","kind":"text"},
         {"id":"number","name":"Estimate","kind":"number"},
@@ -424,7 +437,7 @@ async fn typed_records_enforce_schema_versions_and_permissions() {
         &server,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Viewer","email":"viewer@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -467,7 +480,7 @@ async fn typed_records_enforce_schema_versions_and_permissions() {
             .0,
         StatusCode::FORBIDDEN
     );
-    let nid = boot["notes"][0]["id"].as_str().unwrap();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap();
     assert_eq!(
         request(
             &server,
@@ -528,10 +541,11 @@ async fn mcp_request(
 #[tokio::test]
 async fn mcp_is_scoped_read_only_revocable_and_origin_checked() {
     let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let admin = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let admin = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &admin, json!({})).await;
-    let wid = boot["workspaces"][0]["id"].as_str().unwrap();
-    let fid = &boot["folders"][0]["id"];
+    let wid = common::team_workspace(&boot)["id"].as_str().unwrap();
+    let fid = &common::team_folder(&boot)["id"];
     let (_, second) = request(
         &server,
         "POST",
@@ -544,7 +558,7 @@ async fn mcp_is_scoped_read_only_revocable_and_origin_checked() {
         &server,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"AI user","email":"ai@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -690,10 +704,11 @@ async fn attachment_storage_permissions_headers_and_restart() {
     )
     .unwrap();
     let router = app(store.clone());
-    let admin = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, boot) = request(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let nid = boot["notes"][0]["id"].as_str().unwrap();
-    let folder = boot["folders"][0]["id"].as_str().unwrap();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap();
+    let folder = common::team_folder(&boot)["id"].as_str().unwrap();
     let upload_path = format!("/api/v1/notes/{nid}/attachments?filename=..%2F..%2Ftest%0D%0A.png");
     let bytes = b"\x89PNG\r\n\x1a\noriginal bytes";
     let response = router
@@ -720,7 +735,7 @@ async fn attachment_storage_permissions_headers_and_restart() {
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Reader","email":"reader@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -880,7 +895,8 @@ async fn attachment_storage_permissions_headers_and_restart() {
 #[tokio::test]
 async fn fenced_and_inline_code_render_as_safe_text() {
     let router = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let token = common::member(&router, &root, "owner@test.local").await;
     let (_, rendered) = request(
         &router,
         "POST",
@@ -898,7 +914,8 @@ async fn fenced_and_inline_code_render_as_safe_text() {
 #[tokio::test]
 async fn markdown_images_allow_remote_urls_and_preview_uploaded_files() {
     let router = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let token = common::member(&router, &root, "owner@test.local").await;
     let key = uuid::Uuid::new_v4();
     let path = format!("/api/v1/attachments/{key}");
     let markdown = format!("![Remote](https://example.com/photo.png)\n\n![HTTP](http://example.com/photo.jpg)\n\n![Upload]({path})\n\n![Absolute](http://localhost:3001{path})\n\n[Download]({path})\n\n`![Code]({path})`\n\n![Unsafe](javascript:alert)");
@@ -931,11 +948,12 @@ async fn markdown_images_allow_remote_urls_and_preview_uploaded_files() {
 #[tokio::test]
 async fn ai_configuration_and_context_are_permission_scoped() {
     let router = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let admin = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, boot) = request(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let folder = boot["folders"][0]["id"].as_str().unwrap();
-    let workspace = boot["workspaces"][0]["id"].as_str().unwrap();
-    let note = boot["notes"][0]["id"].as_str().unwrap();
+    let folder = common::team_folder(&boot)["id"].as_str().unwrap();
+    let workspace = common::team_workspace(&boot)["id"].as_str().unwrap();
+    let note = common::welcome(&boot)["id"].as_str().unwrap();
     let (_, hidden) = request(
         &router,
         "POST",
@@ -964,7 +982,7 @@ async fn ai_configuration_and_context_are_permission_scoped() {
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Member","email":"reader@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -984,12 +1002,12 @@ async fn ai_configuration_and_context_are_permission_scoped() {
             .0,
         StatusCode::FORBIDDEN
     );
-    let (status, p) = request(&router, "POST", "ai/providers", &admin, config).await;
+    let (status, p) = request(&router, "POST", "ai/providers", &root, config).await;
     assert_eq!(status, StatusCode::OK, "{p}");
     assert!(p.get("api_key").is_none());
     let (_, listed) = request(&router, "GET", "ai/providers", &reader, json!({})).await;
     assert!(!listed.to_string().contains("never-return"));
-    assert_eq!(request(&router,"POST","ai/providers",&admin,json!({"kind":"compatible","name":"Blocked","endpoint":"ftp://127.0.0.1:1","model":"test","api_key":"key"})).await.0,StatusCode::BAD_REQUEST);
+    assert_eq!(request(&router,"POST","ai/providers",&root,json!({"kind":"compatible","name":"Blocked","endpoint":"ftp://127.0.0.1:1","model":"test","api_key":"key"})).await.0,StatusCode::BAD_REQUEST);
     for (kind, id) in [("workspace", workspace), ("folder", folder), ("note", note)] {
         let (status, chat) = request(
             &router,

@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -75,15 +76,22 @@ async fn write(router: &Router, token: &str, note: &Value, blocks: &[&str]) -> V
 #[tokio::test]
 async fn journals_templates_and_unfinished_tasks() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let boot = api(&router, "GET", "bootstrap", &admin, json!({})).await.1;
-    let ws = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let general = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let general = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (_, user) = api(
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Member","email":"member@test.local","password":PASSWORD}),
     )
     .await;
@@ -108,7 +116,10 @@ async fn journals_templates_and_unfinished_tasks() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
-    assert!(error["error"].as_str().unwrap().contains("can edit this workspace"));
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("can edit this workspace"));
     assert_eq!(
         api(
             &router,

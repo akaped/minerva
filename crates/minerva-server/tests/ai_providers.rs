@@ -9,6 +9,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 async fn request(
     app: &Router,
@@ -55,11 +56,12 @@ async fn providers_can_be_edited_without_exposing_their_key() {
         "test-password-1234",
     )
     .unwrap());
-    let admin = login(&app, "admin@test.local").await;
+    let root = login(&app, "admin@test.local").await;
+    let admin = common::member(&app, &root, "owner@test.local").await;
     let base = json!({"kind":"openai","name":"Team","endpoint":"https://api.openai.com/v1","model":"gpt-a"});
     let mut create = base.clone();
     create["api_key"] = json!("sk-original");
-    let (status, created) = request(&app, "POST", "ai/providers", &admin, create).await;
+    let (status, created) = request(&app, "POST", "ai/providers", &root, create).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     let id = created["id"].as_str().unwrap();
     let route = format!("ai/providers/{id}");
@@ -70,9 +72,9 @@ async fn providers_can_be_edited_without_exposing_their_key() {
     rename["model"] = json!("gpt-b");
     rename["endpoint"] = json!("https://api.openai.com/v2/");
     rename["api_key"] = json!("");
-    let (status, saved) = request(&app, "PATCH", &route, &admin, rename).await;
+    let (status, saved) = request(&app, "PATCH", &route, &root, rename).await;
     assert_eq!(status, StatusCode::OK, "{saved}");
-    let (_, list) = request(&app, "GET", "ai/providers", &admin, json!({})).await;
+    let (_, list) = request(&app, "GET", "ai/providers", &root, json!({})).await;
     assert_eq!(list[0]["name"], "Research");
     assert_eq!(list[0]["model"], "gpt-b");
     assert_eq!(list[0]["endpoint"], "https://api.openai.com/v2");
@@ -81,35 +83,35 @@ async fn providers_can_be_edited_without_exposing_their_key() {
     // Another server: only with the key entered again.
     let mut elsewhere = base.clone();
     elsewhere["endpoint"] = json!("https://collector.example/v1");
-    let (status, error) = request(&app, "PATCH", &route, &admin, elsewhere.clone()).await;
+    let (status, error) = request(&app, "PATCH", &route, &root, elsewhere.clone()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(error["error"].as_str().unwrap().contains("API key again"));
-    let (_, list) = request(&app, "GET", "ai/providers", &admin, json!({})).await;
+    let (_, list) = request(&app, "GET", "ai/providers", &root, json!({})).await;
     assert_eq!(list[0]["endpoint"], "https://api.openai.com/v2");
     elsewhere["api_key"] = json!("sk-new");
-    let (status, _) = request(&app, "PATCH", &route, &admin, elsewhere).await;
+    let (status, _) = request(&app, "PATCH", &route, &root, elsewhere).await;
     assert_eq!(status, StatusCode::OK);
 
     // Web search: only where the provider has its own search tool.
     let mut search = base.clone();
     search["web_search"] = json!(true);
-    let (status, saved) = request(&app, "PATCH", &route, &admin, search.clone()).await;
+    let (status, saved) = request(&app, "PATCH", &route, &root, search.clone()).await;
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
         "needs the key again for the old server: {saved}"
     );
     search["endpoint"] = json!("https://collector.example/v1");
-    let (status, saved) = request(&app, "PATCH", &route, &admin, search.clone()).await;
+    let (status, saved) = request(&app, "PATCH", &route, &root, search.clone()).await;
     assert_eq!(
         (status, saved["web_search"].as_bool()),
         (StatusCode::OK, Some(true)),
         "{saved}"
     );
-    let (_, list) = request(&app, "GET", "ai/providers", &admin, json!({})).await;
+    let (_, list) = request(&app, "GET", "ai/providers", &root, json!({})).await;
     assert_eq!(list[0]["web_search"], true);
     search["kind"] = json!("compatible");
-    let (status, error) = request(&app, "PATCH", &route, &admin, search).await;
+    let (status, error) = request(&app, "PATCH", &route, &root, search).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(error["error"].as_str().unwrap().contains("Web search"));
 
@@ -117,11 +119,11 @@ async fn providers_can_be_edited_without_exposing_their_key() {
     let mut bad = base.clone();
     bad["kind"] = json!("mystery");
     assert_eq!(
-        request(&app, "PATCH", &route, &admin, bad).await.0,
+        request(&app, "PATCH", &route, &root, bad).await.0,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        request(&app, "PATCH", "ai/providers/nope", &admin, base.clone())
+        request(&app, "PATCH", "ai/providers/nope", &root, base.clone())
             .await
             .0,
         StatusCode::NOT_FOUND
@@ -130,7 +132,7 @@ async fn providers_can_be_edited_without_exposing_their_key() {
         &app,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Member","email":"m@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -148,9 +150,10 @@ async fn providers_can_be_edited_without_exposing_their_key() {
 #[tokio::test]
 async fn conversations_are_deleted_by_their_owner_only() {
     let app = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let admin = login(&app, "admin@test.local").await;
+    let root = login(&app, "admin@test.local").await;
+    let admin = common::member(&app, &root, "owner@test.local").await;
     let (_, boot) = request(&app, "GET", "bootstrap", &admin, json!({})).await;
-    let scope = json!({"kind":"workspace","id":boot["workspaces"][0]["id"]});
+    let scope = json!({"kind":"workspace","id":common::team_workspace(&boot)["id"]});
     let mut ids = vec![];
     for _ in 0..3 {
         let (status, chat) =
@@ -162,7 +165,7 @@ async fn conversations_are_deleted_by_their_owner_only() {
         &app,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Member","email":"m@test.local","password":"test-password-1234"}),
     )
     .await;

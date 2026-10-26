@@ -10,6 +10,7 @@ use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
+mod common;
 
 async fn call(
     router: &Router,
@@ -161,10 +162,17 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
         json!({"email":"admin@test.local","password":"test-password-1234"}),
     )
     .await;
-    let admin = login["token"].as_str().unwrap().to_string();
+    let root = login["token"].as_str().unwrap().to_string();
+    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, boot) = call(&router, "GET", "bootstrap", &admin, json!({})).await;
-    let workspace = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let workspace = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (_, note) = call(
         &router,
         "POST",
@@ -214,7 +222,7 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Reader","email":"reader@test.local","password":"test-password-1234"}),
     )
     .await;
@@ -243,7 +251,7 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
     ] {
         // Web search where the provider offers it.
         let search = kind != "compatible";
-        let (status, provider) = call(&router, "POST", "ai/providers", &admin, json!({"kind":kind,"name":kind,"endpoint":format!("{base}/{path}"),"model":"mock-model","api_key":format!("key-{kind}"),"web_search":search})).await;
+        let (status, provider) = call(&router, "POST", "ai/providers", &root, json!({"kind":kind,"name":kind,"endpoint":format!("{base}/{path}"),"model":"mock-model","api_key":format!("key-{kind}"),"web_search":search})).await;
         assert_eq!(status, StatusCode::OK, "{provider}");
         let provider = provider["id"].as_str().unwrap().to_string();
         let (_, chat) = call(
@@ -331,7 +339,7 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
 
     // Cancellation: dropping the response stops the request and frees the user's slot
     // without saving partial output.
-    let (_, slow) = call(&router, "POST", "ai/providers", &admin, json!({"kind":"compatible","name":"slow","endpoint":format!("{base}/slow"),"model":"mock","api_key":"k"})).await;
+    let (_, slow) = call(&router, "POST", "ai/providers", &root, json!({"kind":"compatible","name":"slow","endpoint":format!("{base}/slow"),"model":"mock","api_key":"k"})).await;
     let slow = slow["id"].as_str().unwrap().to_string();
     let (_, chat) = call(
         &router,

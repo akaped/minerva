@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -51,12 +52,13 @@ async fn throttling_one_account_does_not_lock_out_others() {
         json!({"email":"admin@test.local","password":PASSWORD}),
     )
     .await;
-    let admin = login["token"].as_str().unwrap().to_string();
+    let root = login["token"].as_str().unwrap().to_string();
+    let admin = common::member(&router, &root, "owner@test.local").await;
     api(
         &router,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Victim","email":"victim@test.local","password":PASSWORD}),
     )
     .await;
@@ -121,7 +123,8 @@ async fn render_rejects_oversized_input() {
         json!({"email":"admin@test.local","password":PASSWORD}),
     )
     .await;
-    let token = login["token"].as_str().unwrap().to_string();
+    let root = login["token"].as_str().unwrap().to_string();
+    let token = common::member(&router, &root, "owner@test.local").await;
     let (status, _) = api(
         &router,
         "POST",

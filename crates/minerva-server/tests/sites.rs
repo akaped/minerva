@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+mod common;
 
 const PASSWORD: &str = "test-password-1234";
 
@@ -122,10 +123,11 @@ async fn publish(router: &Router, token: &str, nid: &str, body: Value) -> (Statu
 #[tokio::test]
 async fn sites_group_pages_under_their_own_paths() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
-    let admin = login(&router, "admin@test.local").await;
-    let (_, alice) = user(&router, &admin, "alice").await;
-    let (_, bob) = user(&router, &admin, "bob").await;
-    let (carol_id, carol) = user(&router, &admin, "carol").await;
+    let root = login(&router, "admin@test.local").await;
+    let admin = common::member(&router, &root, "owner@test.local").await;
+    let (_, alice) = user(&router, &root, "alice").await;
+    let (_, bob) = user(&router, &root, "bob").await;
+    let (carol_id, carol) = user(&router, &root, "carol").await;
     let (ws, folder) = workspace(&router, &alice, "Alpha").await;
     let (bob_ws, bob_folder) = workspace(&router, &bob, "Beta").await;
 

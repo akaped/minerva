@@ -270,7 +270,13 @@ impl Gateway {
         if login && status.is_success() {
             body = self.capture_login(&connection, &body)?;
         }
-        if parts.uri.path() == "/" && status.is_success() {
+        // Every app page (the main page, note tabs, share links) learns the
+        // server's public address.
+        let html = headers
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|t| t.starts_with("text/html"));
+        if html && status.is_success() {
             body = announce_server_origin(body, &base(&connection)?);
         }
         if logout || (status == StatusCode::UNAUTHORIZED && token.is_some()) {

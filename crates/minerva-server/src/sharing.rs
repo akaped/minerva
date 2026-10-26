@@ -319,6 +319,9 @@ fn overview(d: &Data, u: &User) -> Value {
 }
 /// Notes shared directly with `u` that their folder access would not already show.
 pub(super) fn shared_with(d: &Data, u: &User) -> Vec<Value> {
+    if u.admin && !d.local {
+        return vec![];
+    }
     d.notes
         .iter()
         .filter(|n| role(d, u, &n.folder_id).is_none())

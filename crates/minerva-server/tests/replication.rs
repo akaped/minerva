@@ -12,6 +12,7 @@ use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 use yrs::{updates::decoder::Decode, Array, Doc, ReadTxn, StateVector, Text, Transact, Update};
+mod common;
 
 async fn request(
     app: &Router,
@@ -110,11 +111,18 @@ async fn replicas_pull_push_and_merge_offline_edits() {
         "test-password-1234",
     )
     .unwrap());
-    let token = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
-    let ws = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
-    let nid = boot["notes"][0]["id"].as_str().unwrap().to_string();
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap().to_string();
 
     // The first pull returns everything, including the welcome note's document.
     let first = pull(&server, &token, &ws, 0).await;
@@ -260,10 +268,14 @@ async fn replicas_pull_push_and_merge_offline_edits() {
 #[tokio::test]
 async fn concurrent_record_edits_keep_a_conflict_copy() {
     let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
-    let ws = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap();
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"].as_str().unwrap();
     let (_, db) = request(
         &server,
         "POST",
@@ -347,10 +359,17 @@ async fn concurrent_record_edits_keep_a_conflict_copy() {
 #[tokio::test]
 async fn deletes_lose_to_later_edits_and_revoked_members_are_told() {
     let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let token = login(&server, "admin@test.local").await;
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
-    let ws = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
-    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (_, note) = request(
         &server,
         "POST",
@@ -418,7 +437,7 @@ async fn deletes_lose_to_later_edits_and_revoked_members_are_told() {
         &server,
         "POST",
         "users",
-        &token,
+        &root,
         json!({"name":"Other","email":"other@test.local","password":"test-password-1234"}),
     )
     .await;

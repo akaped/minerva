@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tower::ServiceExt;
+mod common;
 
 async fn call(r: &Router, method: &str, path: &str, token: &str, v: Value) -> (StatusCode, Value) {
     let response = r
@@ -133,7 +134,11 @@ async fn the_server_emails_people() {
     std::env::set_var("MINERVA_MAIL_FROM", "Minerva <minerva@test.local>");
     std::env::set_var("MINERVA_PUBLIC_URL", "https://notes.test");
     let r = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
-    let admin = login(&r, "admin@test.local", "test-password-1234").await;
+    let root = login(&r, "admin@test.local", "test-password-1234").await;
+    let admin = common::member(&r, &root, "owner@test.local").await;
+    // The owner's own invitation goes first; the checks below start after it.
+    assert_eq!(wait_for(&inbox, 1).await[0].0, "owner@test.local");
+    inbox.lock().unwrap().clear();
     let (_, health) = call(&r, "GET", "health", "", json!({})).await;
     assert_eq!(health["mail"], true);
 
@@ -142,7 +147,7 @@ async fn the_server_emails_people() {
         &r,
         "POST",
         "users",
-        &admin,
+        &root,
         json!({"name":"Ada","email":"ada@test.local","password":"temporary-pass-1234"}),
     )
     .await;
@@ -202,6 +207,7 @@ async fn the_server_emails_people() {
     assert!(mail[1].1.contains("Reset your Minerva password") || mail[1].1.contains("?reset="));
 
     // Sharing a workspace tells the person.
+    call(&r, "POST", "workspaces", &admin, json!({"name":"Team"})).await;
     let (_, boot) = call(&r, "GET", "bootstrap", &admin, json!({})).await;
     let team = boot["workspaces"]
         .as_array()

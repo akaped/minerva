@@ -10,9 +10,9 @@ mod bridge;
 mod chrome;
 mod downloads;
 mod ipc;
-mod origin;
 #[cfg(target_os = "linux")]
 mod media;
+mod origin;
 #[cfg(target_os = "linux")]
 mod print;
 

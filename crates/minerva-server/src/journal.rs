@@ -187,7 +187,7 @@ pub(super) fn route(
         ("POST", ["journal"]) => open_day(d, u, v)?,
         ("PUT", ["journal", "settings"]) => {
             let ws = field(v, "workspace_id")?;
-            if !owns(d, u, &ws) {
+            if !edits_workspace(d, u, &ws) {
                 return Err(forbidden());
             }
             match v["template_id"].as_str().filter(|t| !t.is_empty()) {

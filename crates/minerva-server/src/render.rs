@@ -426,7 +426,11 @@ fn to_html(markdown: &str, links: Links) -> String {
 
 /// Addresses of audio files and playlists, by their extension.
 pub(crate) fn is_audio(url: &str) -> bool {
-    let path = url.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     [
         ".mp3", ".wav", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".flac", ".weba", ".m3u", ".m3u8",
     ]
@@ -1022,7 +1026,9 @@ mod audio_tests {
         let html = super::render("![Song](https://example.com/a/song.MP3?x=1)");
         assert!(html.contains(r#"<audio class="audio-player" controls="" preload="metadata" src="https://example.com/a/song.MP3?x=1"></audio>"#) || html.contains(r#"<audio class="audio-player" controls preload="metadata""#), "{html}");
         assert!(!html.contains("Song"), "{html}");
-        let html = super::render(r#"![Recording.webm](/api/v1/attachments/00000000-0000-0000-0000-000000000000/preview "audio")"#);
+        let html = super::render(
+            r#"![Recording.webm](/api/v1/attachments/00000000-0000-0000-0000-000000000000/preview "audio")"#,
+        );
         assert!(html.contains("<audio"), "{html}");
         let html = super::render("![Photo](https://example.com/cat.png)");
         assert!(html.contains("<img"), "{html}");
