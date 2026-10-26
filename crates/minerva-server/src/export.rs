@@ -61,7 +61,7 @@ pub(super) async fn export(
                 // This page is printed from a hidden frame inside the app.
                 response.headers_mut().insert(
                     "content-security-policy",
-                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' http: https:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
                         .parse()
                         .unwrap(),
                 );

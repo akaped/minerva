@@ -10,12 +10,18 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Added
+
+- Images: pasting a link to an image shows it, and images or files dropped onto a note are added to it (#2).
+- Audio: links to audio files (MP3, WAV, OGG, FLAC, M4A, playlists) and uploaded audio files play in the page, and **/ → Record audio** records from the microphone into the note (#1).
+
 ### Changed
 
 - New app icon: the blue Minerva asterisk.
 
 ### Fixed
 
+- Members who can edit a shared workspace add folders and subfolders and start its journal and templates, not only its owner (#3).
 - The sidebar updates as soon as notes are created, renamed, starred, moved, trashed or deleted, also from a note's tab.
 - A note's tab closes when the note is moved to the trash or deleted.
 - Linux: the window moves by dragging its title bar, and a double-click maximizes it.

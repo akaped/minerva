@@ -217,6 +217,39 @@ const videos = createYouTubeEmbeds({
   error,
 });
 if (isPane) document.documentElement.classList.add("editor-pane");
+/**
+ * The desktop app serves pages from its own address (`minerva://`), where
+ * WebKitGTK's media player cannot load files. There, this server's audio is
+ * downloaded by the page and played from memory.
+ */
+if (!/^https?:$/.test(location.protocol)) {
+  const loaded = new Map();
+  const play = (audio) => {
+    const src = audio.getAttribute("src");
+    if (!src?.startsWith("/") || audio.dataset.local) return;
+    audio.dataset.local = "1";
+    if (!loaded.has(src))
+      loaded.set(
+        src,
+        fetch(src, { credentials: "same-origin" })
+          .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))))
+          .then((blob) => URL.createObjectURL(blob)),
+      );
+    loaded
+      .get(src)
+      .then((url) => (audio.src = url))
+      .catch(() => loaded.delete(src));
+  };
+  new MutationObserver((changes) => {
+    for (const change of changes)
+      for (const node of change.addedNodes)
+        if (node.nodeType === 1)
+          (node.matches("audio[src]")
+            ? [node]
+            : node.querySelectorAll("audio[src]")
+          ).forEach(play);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+}
 let paneShape = null,
   paneChanged = false;
 function paneState() {
@@ -579,6 +612,10 @@ function editable(n = note) {
 }
 function owner() {
   return data.user.admin || currentWorkspace()?.owner_id === data.user.id;
+}
+/** The owner, or a member who can edit the whole workspace: adds folders. */
+function editsWorkspace() {
+  return owner() || !!currentWorkspace()?.can_edit;
 }
 async function refresh() {
   data = await api("bootstrap");
@@ -2103,9 +2140,70 @@ document.addEventListener("copy", (e) => note && copyBlocks(e));
 document.addEventListener("selectionchange", () =>
   document.body.classList.toggle("selecting-text", !getSelection().isCollapsed),
 );
+/**
+ * Files dropped on the note are uploaded; an image dragged from a web page, or
+ * a link to an image or audio file, is shown. A drop on the block being edited
+ * goes at its cursor, anywhere else in a new block after the one below it.
+ */
+function bindMediaDrop(root) {
+  const media = (dt) => {
+    const html = dt.getData("text/html");
+    const src =
+      html &&
+      new DOMParser().parseFromString(html, "text/html").querySelector("img")
+        ?.src;
+    if (src && /^https?:/.test(src)) {
+      const md = mediaMarkdown(src);
+      return md || `![](${src.replace(/[()\s]/g, encodeURIComponent)})`;
+    }
+    const uri = (dt.getData("text/uri-list") || dt.getData("text/plain"))
+      .split("\n")
+      .find((l) => l.trim() && !l.startsWith("#"));
+    return uri ? mediaMarkdown(uri) : null;
+  };
+  const wanted = (dt) =>
+    dt.types.includes("Files") ||
+    dt.types.includes("text/uri-list") ||
+    dt.types.includes("text/html");
+  root.ondragover = (e) => {
+    if (!editable() || !wanted(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    root.classList.add("media-drop");
+  };
+  root.ondragleave = (e) => {
+    if (!root.contains(e.relatedTarget)) root.classList.remove("media-drop");
+  };
+  root.ondrop = (e) => {
+    root.classList.remove("media-drop");
+    if (!editable()) return;
+    const after = e.target.closest?.("[data-block]")?.dataset.block || null;
+    const files = [...e.dataTransfer.files];
+    if (files.length) {
+      e.preventDefault();
+      uploadAttachments(files, after).catch(error);
+      return;
+    }
+    const md = media(e.dataTransfer);
+    if (!md) return;
+    e.preventDefault();
+    const ta = e.target.closest?.("textarea");
+    if (ta) {
+      const at = ta.selectionEnd;
+      replaceRange(ta, {
+        from: at,
+        to: at,
+        text: md,
+        selStart: at + md.length,
+        selEnd: at + md.length,
+      });
+    } else insertBlockAfter(md, after).catch(error);
+  };
+}
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
   const root = $("#blocks");
+  bindMediaDrop(root);
   root.innerHTML = note.blocks
     .map((b, i) =>
       mode === "document"
@@ -2130,7 +2228,7 @@ function renderBlocks() {
     action($(".block-body", el), "click", (e) => {
       if (
         e.target.closest(
-          "a, .tag, .journal-tasks button, .db-embed, .youtube-card",
+          "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio",
         )
       )
         return;
@@ -2704,6 +2802,20 @@ function editBlock(id, caret = null) {
     }
     const html = e.clipboardData.getData("text/html");
     let text = e.clipboardData.getData("text/plain");
+    // A link to an image or an audio file shows it.
+    const media =
+      !insideCodeFence(ta.value, ta.selectionStart) && mediaMarkdown(text);
+    if (media) {
+      e.preventDefault();
+      replaceRange(ta, {
+        from: ta.selectionStart,
+        to: ta.selectionEnd,
+        text: media,
+        selStart: ta.selectionStart + media.length,
+        selEnd: ta.selectionStart + media.length,
+      });
+      return;
+    }
     // Formatted content from web pages, Google Docs or Word becomes Markdown.
     const fromHTML = html && !insideCodeFence(ta.value, ta.selectionStart);
     if (fromHTML) text = htmlToMarkdown(html) || text;
@@ -2768,6 +2880,89 @@ async function appendToBlock(existingId, text) {
   renderBlocks();
   editBlock(b.id);
   return b;
+}
+/**
+ * `/record`: records from the microphone and saves the recording as a file of
+ * the note, shown with a player after block `afterId`.
+ */
+async function recordDialog(afterId) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
+    return toast("This browser cannot record audio.");
+  const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) =>
+    MediaRecorder.isTypeSupported(t),
+  );
+  if (!type) return toast("This browser cannot record audio.");
+  const targetId = note.id;
+  let stream, recorder, started, timer, blob;
+  let chunks = [],
+    size = 0;
+  modal.innerHTML = `<form method="dialog" id="record-form"><h2>Record audio</h2><p>The recording is saved with this note, with a player. Up to about 40 minutes.</p><div class="recorder"><button type="button" class="btn primary" id="record-toggle">● Start recording</button><span class="record-time" aria-live="polite">0:00</span></div><audio class="audio-player" id="record-preview" controls hidden></audio><div class="form-error" role="alert"></div><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok" id="record-save" disabled>Save to note</button></footer></form>`;
+  modal.showModal();
+  const form = $("#record-form"),
+    toggle = $("#record-toggle"),
+    clock = $(".record-time", form),
+    preview = $("#record-preview");
+  const stop = () => {
+    clearInterval(timer);
+    if (recorder?.state === "recording") recorder.stop();
+    stream?.getTracks().forEach((t) => t.stop());
+  };
+  modal.addEventListener("close", stop, { once: true });
+  toggle.onclick = async () => {
+    if (recorder?.state === "recording") return stop();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      $(".form-error", form).textContent =
+        "Minerva cannot use the microphone. Allow it in your browser's site settings.";
+      return;
+    }
+    chunks = [];
+    size = 0;
+    recorder = new MediaRecorder(stream, { mimeType: type });
+    recorder.ondataavailable = (e) => {
+      chunks.push(e.data);
+      size += e.data.size;
+      // Files hold up to 10 MiB.
+      if (size > 9.5 * 1024 * 1024) stop();
+    };
+    recorder.onstop = () => {
+      blob = new Blob(chunks, { type: type.split(";")[0] });
+      preview.src = URL.createObjectURL(blob);
+      preview.hidden = false;
+      toggle.textContent = "● Record again";
+      $("#record-save").disabled = false;
+    };
+    recorder.start(1000);
+    started = Date.now();
+    toggle.textContent = "■ Stop";
+    $("#record-save").disabled = true;
+    preview.hidden = true;
+    timer = setInterval(() => {
+      const s = Math.floor((Date.now() - started) / 1000);
+      clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }, 500);
+  };
+  form.onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok" || !blob) return;
+    e.preventDefault();
+    const stamp = new Date()
+      .toISOString()
+      .slice(0, 16)
+      .replace("T", " ")
+      .replace(":", "-");
+    const file = new File(
+      [blob],
+      `Recording ${stamp}.${type.includes("mp4") ? "m4a" : "webm"}`,
+      { type: blob.type },
+    );
+    modal.close();
+    if (note?.id !== targetId) return;
+    await flush();
+    toast("Saving the recording…");
+    await insertAttachment(await uploadFile(file, targetId), targetId, afterId);
+    toast("Recording saved");
+  };
 }
 /** `/assigntouser`: `@person@example.com` in the block; they get an email. */
 function assignDialog(existingId) {
@@ -2891,6 +3086,7 @@ function blockMenu(existingId, capturedSelection = "") {
     if (command[1] === null) return attachmentDialog();
     if (command[1] === "@database") return databaseEmbedDialog(existingId);
     if (command[1] === "@assign") return assignDialog(existingId);
+    if (command[1] === "@record") return recordDialog(existingId);
     if (command[1] === "@remind") return reminderDialog(existingId);
     let b = note.blocks.find((b) => b.id === existingId);
     if (!b) {
@@ -2943,29 +3139,53 @@ function blockMenu(existingId, capturedSelection = "") {
 function attachmentMarkdown(file) {
   const label = file.filename.replace(/[\\[\]!*_`<>]/g, "_");
   const url = `/api/v1/attachments/${file.id}`;
-  return file.media_type.startsWith("image/")
-    ? `![${label}](${url}/preview)\n\n[Download ${label}](${url})`
-    : `[Download ${label}](${url})`;
+  if (file.media_type.startsWith("image/"))
+    return `![${label}](${url}/preview)\n\n[Download ${label}](${url})`;
+  // The "audio" title shows a player (the address has no file extension).
+  if (file.media_type.startsWith("audio/"))
+    return `![${label}](${url}/preview "audio")\n\n[Download ${label}](${url})`;
+  return `[Download ${label}](${url})`;
 }
-async function insertAttachment(file, targetId) {
+const IMAGE_LINK =
+  /^https?:\/\/\S+\.(png|jpe?g|gif|webp|svg|avif|bmp)(\?\S*)?$/i;
+const AUDIO_LINK =
+  /^https?:\/\/\S+\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|weba|m3u8?)(\?\S*)?$/i;
+/**
+ * A pasted or dropped address of an image or audio file, as Markdown that
+ * shows it (audio files become a player); `null` for anything else.
+ */
+function mediaMarkdown(text) {
+  const url = text.trim();
+  if (!IMAGE_LINK.test(url) && !AUDIO_LINK.test(url)) return null;
+  const name = decodeURIComponent(
+    new URL(url).pathname.split("/").pop() || "",
+  ).replace(/[\\[\]!*_`<>]/g, "_");
+  return `![${name}](${url.replace(/[()\s]/g, encodeURIComponent)})`;
+}
+async function insertAttachment(file, targetId, afterId = null) {
   if (note?.id !== targetId) return;
-  const markdown = attachmentMarkdown(file);
+  await insertBlockAfter(attachmentMarkdown(file), afterId);
+}
+/** Adds a block after block `afterId` (or at the end) and saves. */
+async function insertBlockAfter(markdown, afterId = null) {
   const rendered = await renderMarkdown(markdown);
-  if (note?.id !== targetId) return;
   live?.boundary();
-  note.blocks.push(newBlock(markdown));
-  note.rendered.push(rendered);
+  const index = note.blocks.findIndex((b) => b.id === afterId);
+  const at = index < 0 ? note.blocks.length : index + 1;
+  note.blocks.splice(at, 0, newBlock(markdown));
+  note.rendered.splice(at, 0, rendered);
   markDirty();
   renderBlocks();
   await queueSave();
 }
-async function uploadAttachments(files) {
+async function uploadAttachments(files, afterId = null) {
   if (!editable()) return;
   await flush();
   const targetId = note.id;
-  for (const file of files) {
+  // After a block, the last file goes in first so they keep their order.
+  for (const file of afterId ? [...files].reverse() : files) {
     toast(`Uploading ${file.name}…`);
-    await insertAttachment(await uploadFile(file, targetId), targetId);
+    await insertAttachment(await uploadFile(file, targetId), targetId, afterId);
   }
   toast("Files saved. Originals are available for download.");
 }
@@ -2981,7 +3201,9 @@ async function uploadFile(file, targetId) {
         "Content-Type": "application/octet-stream",
       },
       credentials: "same-origin",
-      body: file,
+      // The bytes, not the File: the Linux desktop app's webview crashes on
+      // file bodies sent to the app's own address.
+      body: await file.arrayBuffer(),
     },
   );
   const result = await response.json();
@@ -3924,9 +4146,9 @@ function sidebarSections() {
       folderChildren(list, null)
         .map((f) => folderNode(f, list, 0))
         .join("") ||
-      `<p class="side-empty">${owner() ? "Create a folder to get started." : "Your administrator can give you access to this workspace."}</p>`
+      `<p class="side-empty">${editsWorkspace() ? "Create a folder to get started." : "Your administrator can give you access to this workspace."}</p>`
     }</div>`,
-    owner()
+    editsWorkspace()
       ? `<button class="section-add" id="add-folder" aria-label="Create folder">${icon("plus")}</button>`
       : "",
   )}${
@@ -4137,13 +4359,17 @@ function folderMenu(anchor, id) {
     ...(canEdit
       ? [{ icon: "note", label: "New note", run: () => newNoteIn(id) }]
       : []),
-    ...(owner()
+    ...(editsWorkspace()
       ? [
           {
             icon: "folder",
             label: "New subfolder",
             run: () => createFolder(id),
           },
+        ]
+      : []),
+    ...(owner()
+      ? [
           { icon: "edit", label: "Rename", run: () => renameFolder(id) },
           ...(f.parent_id
             ? [

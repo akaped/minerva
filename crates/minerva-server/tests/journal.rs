@@ -97,7 +97,8 @@ async fn journals_templates_and_unfinished_tasks() {
     .await;
     let member = login(&router, "member@test.local").await;
 
-    // Only an owner can set up the Journal and Templates folders.
+    // Editing one folder is not enough to set up the Journal and Templates
+    // folders: that takes editing the whole workspace.
     let (status, error) = api(
         &router,
         "POST",
@@ -107,7 +108,7 @@ async fn journals_templates_and_unfinished_tasks() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
-    assert!(error["error"].as_str().unwrap().contains("owner"));
+    assert!(error["error"].as_str().unwrap().contains("can edit this workspace"));
     assert_eq!(
         api(
             &router,

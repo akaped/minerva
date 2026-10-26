@@ -641,7 +641,7 @@ async fn workspaces_are_sealed_until_granted_or_shared() {
         json!({"workspace_id":a.workspace,"name":"x"}),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "folders stay with the owner");
+    assert_eq!(status, StatusCode::OK, "workspace editors add folders");
     assert_sealed(&router, &carol, &b, &a.note).await;
     let (_, admin_view) = api(&router, "GET", "admin", &admin, json!({})).await;
     // Who has access to Alice's workspace is hers to know.

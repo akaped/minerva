@@ -13,15 +13,33 @@ pub(super) fn initialize(db: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-fn image_type(bytes: &[u8]) -> &'static str {
+/// The type of an image or audio file, from its first bytes; anything else is
+/// served only as a download.
+fn media_type(bytes: &[u8]) -> &'static str {
+    let at = |range: std::ops::Range<usize>| bytes.get(range).unwrap_or_default();
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "image/png"
     } else if bytes.starts_with(b"\xff\xd8\xff") {
         "image/jpeg"
     } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
         "image/gif"
-    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+    } else if bytes.starts_with(b"RIFF") && at(8..12) == b"WEBP" {
         "image/webp"
+    } else if bytes.starts_with(b"RIFF") && at(8..12) == b"WAVE" {
+        "audio/wav"
+    } else if bytes.starts_with(b"ID3")
+        || (bytes.len() > 1 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0 && bytes[1] & 0x06 != 0)
+    {
+        "audio/mpeg"
+    } else if bytes.starts_with(b"OggS") {
+        "audio/ogg"
+    } else if bytes.starts_with(b"fLaC") {
+        "audio/flac"
+    } else if bytes.starts_with(b"\x1a\x45\xdf\xa3") {
+        // WebM, as browsers record audio.
+        "audio/webm"
+    } else if at(4..8) == b"ftyp" && matches!(at(8..11), b"M4A" | b"mp4" | b"iso" | b"dash") {
+        "audio/mp4"
     } else {
         "application/octet-stream"
     }
@@ -86,7 +104,7 @@ pub(super) fn upload(
         .unwrap_or_default();
     let name = filename(&raw);
     let key = replicated.map_or_else(id, String::from);
-    let media = image_type(body);
+    let media = media_type(body);
     s.db.execute(
         "INSERT INTO attachments VALUES(?1,?2,?3,?4,?5,?6)",
         params![key, note.id, name, media, now(), body],
@@ -123,8 +141,9 @@ pub(super) fn blob(
         .find(|n| n.id == note_id)
         .ok_or_else(missing)?;
     allowed(note)?;
-    if preview && !media.starts_with("image/") {
-        return Err(bad("Only PNG, JPEG, GIF and WebP images can be previewed"));
+    // Images and audio show in the page; everything else downloads.
+    if preview && !media.starts_with("image/") && !media.starts_with("audio/") {
+        return Err(bad("Only images and audio files play in the page"));
     }
     let bytes: Vec<u8> =
         s.db.query_row("SELECT content FROM attachments WHERE id=?1", [key], |r| {
@@ -335,4 +354,18 @@ pub(super) async fn storage(
     })
     .await
     .map_err(|_| internal())?
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn recognizes_audio() {
+        assert_eq!(super::media_type(b"ID3\x04\0\0"), "audio/mpeg");
+        assert_eq!(super::media_type(b"\xff\xfb\x90\x00"), "audio/mpeg");
+        assert_eq!(super::media_type(b"RIFF\0\0\0\0WAVEfmt "), "audio/wav");
+        assert_eq!(super::media_type(b"OggS\0\x02"), "audio/ogg");
+        assert_eq!(super::media_type(b"\x1a\x45\xdf\xa3\x9f"), "audio/webm");
+        assert_eq!(super::media_type(b"\0\0\0\x20ftypM4A \0"), "audio/mp4");
+        assert_eq!(super::media_type(b"%PDF-1.7"), "application/octet-stream");
+    }
 }

@@ -102,7 +102,7 @@ fn special_folder_id(d: &Data, ws: &str, kind: Special) -> Option<String> {
         })
         .cloned()
 }
-/// Returns the workspace's special folder, creating it when the user owns the workspace.
+/// Returns the workspace's special folder, creating it when the user can edit the workspace.
 fn special_folder(d: &mut Data, u: &User, ws: &str, kind: Special) -> Result<String, ApiError> {
     if let Some(folder) = special_folder_id(d, ws, kind) {
         return Ok(folder);
@@ -111,10 +111,10 @@ fn special_folder(d: &mut Data, u: &User, ws: &str, kind: Special) -> Result<Str
         Special::Journal => "Journal",
         Special::Templates => "Templates",
     };
-    if !owns(d, u, ws) {
+    if !edits_workspace(d, u, ws) {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
-            format!("A workspace owner must open {name} once to set it up"),
+            format!("Someone who can edit this workspace must open {name} once to set it up"),
         ));
     }
     let folder = Folder {

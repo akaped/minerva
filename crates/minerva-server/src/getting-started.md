@@ -86,7 +86,9 @@ graph LR
 
 ## 8. Images, files and videos
 
-Use **/ → Image or file**, or paste an image while editing a block. Every file of the note is listed under **Files** in the toolbar.
+Use **/ → Image or file**, paste an image while editing a block, or drop images and files onto the note. Paste a link to an image and it shows in the page. Every file of the note is listed under **Files** in the toolbar.
+
+Paste a link to an audio file (`.mp3`, `.wav`, `.ogg`...) and it becomes a player. **/ → Record audio** records from your microphone and saves the recording in the note, with a player.
 
 Paste a YouTube link alone in a block and it becomes a player that keeps playing while you write. With the learning plugin, `/youtube` also imports its captions with timestamps.
 

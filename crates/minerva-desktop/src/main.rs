@@ -12,6 +12,8 @@ mod downloads;
 mod ipc;
 mod origin;
 #[cfg(target_os = "linux")]
+mod media;
+#[cfg(target_os = "linux")]
 mod print;
 
 use chrome::Command;
@@ -161,7 +163,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         builder.build_gtk(window.default_vbox().ok_or("Missing GTK container")?)?
     };
     #[cfg(target_os = "linux")]
-    print::install(&webview);
+    {
+        print::install(&webview);
+        media::install(&webview);
+    }
     #[cfg(not(target_os = "linux"))]
     let webview = builder.build(&window)?;
 

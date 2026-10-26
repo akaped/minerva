@@ -303,7 +303,13 @@ fn to_html(markdown: &str, links: Links) -> String {
     let mut code: Option<(String, String)> = None;
     // Note links are private IDs: guests and the public see their text only.
     let mut dropped_links = 0usize;
+    // Inside an image written as an audio player: its alt text is not shown.
+    let mut in_audio = false;
     for event in Parser::new_ext(markdown, pulldown_cmark::Options::all()) {
+        if in_audio {
+            in_audio = !matches!(event, Event::End(TagEnd::Image));
+            continue;
+        }
         match event {
             Event::Start(Tag::CodeBlock(kind)) => {
                 let language = match kind {
@@ -352,6 +358,18 @@ fn to_html(markdown: &str, links: Links) -> String {
                     .map(&dest_url, true)
                     .map(Into::into)
                     .unwrap_or(dest_url);
+                // `![name](song.mp3)`, or an uploaded recording marked "audio".
+                if &*title == "audio" || is_audio(&dest_url) {
+                    events.push(Event::InlineHtml(
+                        format!(
+                            "<audio class=\"audio-player\" controls preload=\"metadata\" src=\"{}\"></audio>",
+                            escape(&dest_url)
+                        )
+                        .into(),
+                    ));
+                    in_audio = true;
+                    continue;
+                }
                 events.push(Event::Start(Tag::Image {
                     link_type,
                     dest_url,
@@ -406,6 +424,15 @@ fn to_html(markdown: &str, links: Links) -> String {
     html
 }
 
+/// Addresses of audio files and playlists, by their extension.
+pub(crate) fn is_audio(url: &str) -> bool {
+    let path = url.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    [
+        ".mp3", ".wav", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".flac", ".weba", ".m3u", ".m3u8",
+    ]
+    .iter()
+    .any(|ext| path.ends_with(ext))
+}
 /// Splits text into `==highlights==` and inline `#tags`.
 fn decorate(text: &str, events: &mut Vec<pulldown_cmark::Event<'_>>) {
     use pulldown_cmark::Event;
@@ -766,6 +793,8 @@ fn clean(html: &str) -> String {
             let mut builder = ammonia::Builder::default();
             builder
                 .add_tag_attributes("span", &["class", "data-tag", "title"])
+                .add_tags(["audio"])
+                .add_tag_attributes("audio", &["class", "controls", "preload", "src"])
                 .add_tag_attributes("code", &["class"])
                 .add_tag_attributes("p", &["class"])
                 .add_tag_attributes("blockquote", &["class"])
@@ -793,6 +822,7 @@ fn clean(html: &str) -> String {
                                     | "tag"
                                     | "mention"
                                     | "reminder"
+                                    | "audio-player"
                                     | "math-error"
                                     | "journal-tasks"
                                     | "task-marker"
@@ -983,6 +1013,21 @@ mod tests {
         assert!(public.contains("href=\"https://example.com/a\""));
         assert!(render_for("- [x] done\n- [ ] open", Links::Public("p")).contains("☑ done"));
         assert!(!render("- [x] done").contains('☑'));
+    }
+}
+#[cfg(test)]
+mod audio_tests {
+    #[test]
+    fn renders_audio_players() {
+        let html = super::render("![Song](https://example.com/a/song.MP3?x=1)");
+        assert!(html.contains(r#"<audio class="audio-player" controls="" preload="metadata" src="https://example.com/a/song.MP3?x=1"></audio>"#) || html.contains(r#"<audio class="audio-player" controls preload="metadata""#), "{html}");
+        assert!(!html.contains("Song"), "{html}");
+        let html = super::render(r#"![Recording.webm](/api/v1/attachments/00000000-0000-0000-0000-000000000000/preview "audio")"#);
+        assert!(html.contains("<audio"), "{html}");
+        let html = super::render("![Photo](https://example.com/cat.png)");
+        assert!(html.contains("<img"), "{html}");
+        let html = super::render("<audio src=x onplay=alert(1)></audio>");
+        assert!(!html.contains("onplay"), "{html}");
     }
 }
 #[cfg(test)]

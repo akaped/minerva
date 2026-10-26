@@ -51,6 +51,7 @@ export const blockCommands = [
   ["Table", "| Column | Column |\n| --- | --- |\n| Value | Value |", "grid"],
   ["Link", "[Link text](https://example.com)", "url"],
   ["Image or file", null, "attachment upload photo"],
+  ["Record audio", "@record", "/record voice microphone memo sound"],
   ["Database (live)", "@database", "table board tasks records todo embed"],
   ["Callout · Note", "> [!NOTE]\n> ", "callout info alert admonition"],
   ["Callout · Tip", "> [!TIP]\n> ", "callout hint idea admonition"],

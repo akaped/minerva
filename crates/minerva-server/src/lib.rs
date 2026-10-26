@@ -715,6 +715,15 @@ fn owns(d: &Data, u: &User, w: &str) -> bool {
     }
     d.workspaces.iter().any(|v| v.id == w && v.owner_id == u.id)
 }
+/// The owner, and members who can edit the whole workspace: they add folders
+/// and set up its Journal and Templates.
+fn edits_workspace(d: &Data, u: &User, w: &str) -> bool {
+    owns(d, u, w)
+        || (replication::replica(d, w).is_none()
+            && d.workspace_grants
+                .iter()
+                .any(|g| g.workspace_id == w && g.user_id == u.id && g.role == Role::Editor))
+}
 fn authenticate(d: &Data, headers: &HeaderMap) -> Result<User, ApiError> {
     let bearer = headers
         .get("authorization")
@@ -806,7 +815,7 @@ async fn editor_pane() -> Response {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    let policy = format!("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com 'self'; frame-ancestors 'self' {origins}; base-uri 'none'; form-action 'self'");
+    let policy = format!("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com 'self'; frame-ancestors 'self' {origins}; base-uri 'none'; form-action 'self'");
     (
         [("content-security-policy", policy)],
         axum::response::Html(include_str!("../../../web/index.html")),
@@ -857,7 +866,7 @@ pub fn app(store: Shared) -> Router {
             let h = r.headers_mut();
             h.insert("x-content-type-options", "nosniff".parse().unwrap());
             h.insert("referrer-policy", "same-origin".parse().unwrap());
-            h.entry("content-security-policy").or_insert("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self'; frame-src 'self' https: http:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
+            h.entry("content-security-policy").or_insert("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src 'self' https: http:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
             h.entry("cache-control").or_insert("no-store".parse().unwrap()); r
         }))
         .with_state(store)
@@ -1127,6 +1136,7 @@ fn dispatch(
                 .map(|w| {
                     let mut v = json!(w);
                     v["can_delete"] = json!(removal::can_delete_workspace(d, &u, w));
+                    v["can_edit"] = json!(edits_workspace(d, &u, &w.id));
                     v
                 })
                 .collect();
@@ -1190,7 +1200,7 @@ fn dispatch(
             if !d.workspaces.iter().any(|w| w.id == wid) {
                 return Err(missing());
             }
-            if !owns(d, &u, &wid) {
+            if !edits_workspace(d, &u, &wid) {
                 return Err(forbidden());
             }
             let parent_id = match v["parent_id"].as_str().filter(|p| !p.is_empty()) {

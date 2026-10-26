@@ -353,3 +353,48 @@ async fn folders_nest_notes_move_and_grants_cover_subfolders() {
         StatusCode::OK
     );
 }
+
+/// Members who can edit a shared workspace add folders and start its journal;
+/// members who can only view it cannot.
+#[tokio::test]
+async fn workspace_editors_add_folders_and_journals() {
+    let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
+    let admin = login(&router, "admin@test.local").await;
+    for (name, email) in [("Ed", "ed@test.local"), ("Vi", "vi@test.local")] {
+        api(&router, "POST", "users", &admin, json!({"name":name,"email":email,"password":PASSWORD})).await;
+    }
+    let (_, boot) = api(&router, "GET", "bootstrap", &admin, json!({})).await;
+    let team = boot["workspaces"].as_array().unwrap().iter().find(|w| w["name"] == "Team").unwrap()["id"].as_str().unwrap().to_string();
+    let (_, admin_view) = api(&router, "GET", "admin", &admin, json!({})).await;
+    let id_of = |email: &str| admin_view["users"].as_array().unwrap().iter().find(|u| u["email"] == email).unwrap()["id"].as_str().unwrap().to_string();
+    for (email, role) in [("ed@test.local", "editor"), ("vi@test.local", "viewer")] {
+        let (status, _) = api(&router, "PUT", "workspace-access", &admin, json!({"workspace_id":team,"user_id":id_of(email),"role":role})).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let editor = login(&router, "ed@test.local").await;
+    let viewer = login(&router, "vi@test.local").await;
+    // Accounts created by an administrator must change their password first.
+    for token in [&editor, &viewer] {
+        api(&router, "POST", "account/password", token, json!({"current_password":PASSWORD,"new_password":PASSWORD})).await;
+    }
+
+    let (_, boot) = api(&router, "GET", "bootstrap", &editor, json!({})).await;
+    let shared = boot["workspaces"].as_array().unwrap().iter().find(|w| w["id"] == team.as_str()).unwrap();
+    assert_eq!(shared["can_edit"], true);
+    let (status, folder) = api(&router, "POST", "folders", &editor, json!({"workspace_id":team,"name":"Ed's folder"})).await;
+    assert_eq!(status, StatusCode::OK, "{folder}");
+    let (status, sub) = api(&router, "POST", "folders", &editor, json!({"workspace_id":team,"name":"Inside","parent_id":folder["id"]})).await;
+    assert_eq!(status, StatusCode::OK, "{sub}");
+    let (status, day) = api(&router, "POST", "journal", &editor, json!({"workspace_id":team,"date":"2026-10-26"})).await;
+    assert_eq!(status, StatusCode::OK, "{day}");
+    // Renaming stays with the owner.
+    let fid = folder["id"].as_str().unwrap();
+    let (status, _) = api(&router, "PATCH", &format!("folders/{fid}"), &editor, json!({"name":"Renamed"})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (_, boot) = api(&router, "GET", "bootstrap", &viewer, json!({})).await;
+    let shared = boot["workspaces"].as_array().unwrap().iter().find(|w| w["id"] == team.as_str()).unwrap();
+    assert_eq!(shared["can_edit"], false);
+    let (status, _) = api(&router, "POST", "folders", &viewer, json!({"workspace_id":team,"name":"Nope"})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

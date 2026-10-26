@@ -2419,6 +2419,28 @@ mark {
   font-weight: 500;
   cursor: pointer;
 }
+/* Audio files and recordings in notes. */
+.audio-player {
+  display: block;
+  width: min(100%, 520px);
+  height: 40px;
+  margin: 4px 0;
+}
+.recorder {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 12px;
+}
+.record-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+#blocks.media-drop {
+  outline: 2px dashed var(--accent);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
 /* `@person@example.com` assignments and `⏰` email reminders in notes. */
 .mention,
 .reminder {

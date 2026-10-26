@@ -236,7 +236,8 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     if (chat) url.searchParams.set("chat", chat);
     else if (id) url.searchParams.set("note", id);
     frame.src = url.href;
-    frame.allow = "autoplay; fullscreen; picture-in-picture; clipboard-write";
+    frame.allow =
+      "autoplay; fullscreen; picture-in-picture; clipboard-write; microphone";
     frame.referrerPolicy = "strict-origin-when-cross-origin";
     const tab = {
       key,
