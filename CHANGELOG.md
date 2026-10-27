@@ -23,6 +23,7 @@ turns that section into the next version.
 
 ### Fixed
 
+- AI chat: an answer cut off at the model's length limit is kept and saved with a warning, instead of being discarded; long answers from slow local models are no longer stopped after two minutes while they are still streaming; thinking models (Qwen, DeepSeek R1) show “Thinking…” while they reason.
 - A note's Share dialog offers sites created after the note was opened, for example on the Sharing page.
 - Importing Markdown no longer turns the blank lines between paragraphs into empty blocks.
 - Sidebar items under **Others** (Sharing, Trash, AI providers…) respond to clicks again after you work in a note tab, and the sidebar no longer highlights a page while a note tab is in front.

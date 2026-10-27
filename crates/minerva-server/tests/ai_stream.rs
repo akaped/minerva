@@ -113,7 +113,26 @@ async fn mock_provider(seen: Seen) -> String {
             json!({"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":3}}),
         ])
     );
+    // A thinking model (Qwen, DeepSeek R1) streams reasoning first, then the
+    // answer, and here runs out of length before finishing.
+    let thinking = sse(&[
+        json!({"choices":[{"delta":{"reasoning_content":"Let me check the notes..."}}]}),
+        json!({"choices":[{"delta":{"content":"The codename is "}}]}),
+        json!({"choices":[{"delta":{"content":"Aurora"},"finish_reason":"length"}]}),
+    ]);
+    let overthinking = sse(&[
+        json!({"choices":[{"delta":{"reasoning_content":"Hmm, long reasoning..."}}]}),
+        json!({"choices":[{"delta":{},"finish_reason":"length"}]}),
+    ]);
     let router = Router::new()
+        .route(
+            "/thinking/chat/completions",
+            post(record("thinking", seen.clone(), thinking)),
+        )
+        .route(
+            "/overthinking/chat/completions",
+            post(record("overthinking", seen.clone(), overthinking)),
+        )
         .route(
             "/openai/responses",
             post(record("openai", seen.clone(), openai)),
@@ -335,6 +354,58 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
                 .contains(json!(expected).to_string().trim_matches('"')),
             "previous answer included as history"
         );
+    }
+
+    // A thinking model cut off by its length limit: the reasoning is not part
+    // of the answer, the written part is kept with a warning, and a model that
+    // only reasoned gets a clear error.
+    for (path, kept) in [("thinking", true), ("overthinking", false)] {
+        let (_, p) = call(&router, "POST", "ai/providers", &root, json!({"kind":"compatible","name":path,"endpoint":format!("{base}/{path}"),"model":"qwen","api_key":"k"})).await;
+        let p = p["id"].as_str().unwrap().to_string();
+        let (_, chat) = call(
+            &router,
+            "POST",
+            "ai/chats",
+            &reader,
+            json!({"scope":{"kind":"workspace","id":workspace}}),
+        )
+        .await;
+        let chat = chat["id"].as_str().unwrap().to_string();
+        let (_, events) = stream(&router, &reader, &chat, &p, 0).await;
+        assert!(events.iter().any(|e| e["type"] == "thinking"), "{events:?}");
+        let answer: String = events
+            .iter()
+            .filter(|e| e["type"] == "delta")
+            .map(|e| e["text"].as_str().unwrap())
+            .collect();
+        assert!(
+            !answer.contains("Let me check"),
+            "reasoning is not shown as the answer"
+        );
+        let (_, saved) = call(
+            &router,
+            "GET",
+            &format!("ai/chats/{chat}"),
+            &reader,
+            json!({}),
+        )
+        .await;
+        if kept {
+            assert_eq!(events.last().unwrap()["type"], "done", "{events:?}");
+            assert!(
+                answer.starts_with("The codename is Aurora") && answer.contains("cut off"),
+                "{answer}"
+            );
+            assert_eq!(saved["turns"][0]["answer"], answer.as_str());
+        } else {
+            let last = events.last().unwrap();
+            assert_eq!(last["type"], "error");
+            assert!(
+                last["message"].as_str().unwrap().contains("length limit"),
+                "{last}"
+            );
+            assert!(saved["turns"].as_array().unwrap().is_empty());
+        }
     }
 
     // Cancellation: dropping the response stops the request and frees the user's slot

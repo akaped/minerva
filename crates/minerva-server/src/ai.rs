@@ -41,7 +41,9 @@ pub(super) fn initialize(
         client: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(120))
+            // Local models can stream for many minutes: give up only when the
+            // provider sends nothing for two minutes, not after a fixed total.
+            .read_timeout(Duration::from_secs(120))
             .build()?,
         active: HashSet::new(),
     })
@@ -669,6 +671,9 @@ pub(super) async fn endpoint(
         let request = model_request(&client, &provider, &secret, &system, messages, true, true);
         let response=match request.send().await {Ok(r) if r.status().is_success()=>r,Ok(r)=>{yield packet(json!({"type":"error","message":format!("Provider returned HTTP {}. Check the model, key, quota and endpoint.",r.status().as_u16())}));return},Err(_)=>{yield packet(json!({"type":"error","message":"Provider connection failed or timed out."}));return}};
         let mut upstream=response.bytes_stream(); let mut buffer=Vec::new(); let mut answer=String::new();let mut usage=json!({});let mut done=false;let mut failed=false;
+        // The model stopped at its length limit; what it wrote is kept. Thinking
+        // models first stream their reasoning, which is not part of the answer.
+        let mut truncated=false;let mut thinking=false;
         // Web pages the provider cited, listed under the answer: (title, url).
         let mut web: Vec<(String,String)>=Vec::new();
         while let Some(chunk)=upstream.next().await {
@@ -682,8 +687,11 @@ pub(super) async fn endpoint(
                 if raw=="[DONE]" {done=true;break;}
                 let value:Value=match serde_json::from_str(raw){Ok(v)=>v,Err(_)=>{failed=true;break}};
                 let event=value["type"].as_str().unwrap_or("");
-                if value["choices"][0]["finish_reason"]=="length" || value["delta"]["stop_reason"]=="max_tokens" {failed=true;break;}
-                if ["error","response.failed","response.incomplete"].contains(&event) || value.get("error").is_some() {failed=true;break;}
+                // The last chunk may carry both final text and the stop: read it first.
+                let length_stop=value["choices"][0]["finish_reason"]=="length" || value["delta"]["stop_reason"]=="max_tokens" || event=="response.incomplete";
+                if ["error","response.failed"].contains(&event) || value.get("error").is_some() {failed=true;break;}
+                let reasoning=value["choices"][0]["delta"]["reasoning_content"].as_str().or(value["choices"][0]["delta"]["reasoning"].as_str()).or((event=="content_block_delta" && value["delta"]["type"]=="thinking_delta").then(||"…"));
+                if !thinking && reasoning.is_some_and(|r|!r.is_empty()) {thinking=true;yield packet(json!({"type":"thinking"}));}
                 let delta=match provider.kind.as_str(){"openai" if event=="response.output_text.delta"=>value["delta"].as_str(),"anthropic" if event=="content_block_delta"=>value["delta"]["text"].as_str(),"deepseek"|"compatible"=>value["choices"][0]["delta"]["content"].as_str(),_=>None};
                 if let Some(delta)=delta {
                     let allowed={let s=store.lock().map_err(|_|internal());s.is_ok_and(|s|authenticate(&s.data,&headers).is_ok() && context.sources.iter().all(|source|source_allowed(&s.data,&user,&chat.scope,source)) && load_chat(&s,&user,&chat.id).is_ok())};
@@ -691,6 +699,7 @@ pub(super) async fn endpoint(
                     answer.push_str(delta); if answer.len()>64_000 {failed=true;break;}
                     yield packet(json!({"type":"delta","text":delta}));
                 }
+                if length_stop {truncated=true;done=true;break;}
                 let citation=match event {"response.output_text.annotation.added"=>Some(&value["annotation"]),"content_block_delta" if value["delta"]["type"]=="citations_delta"=>Some(&value["delta"]["citation"]),_=>None};
                 if let Some(c)=citation {
                     if let (Some(url),Some(title))=(c["url"].as_str(),c["title"].as_str().or(c["url"].as_str())) {
@@ -704,7 +713,9 @@ pub(super) async fn endpoint(
             }
             if done || failed {break;}
         }
+        if truncated && answer.trim().is_empty() {yield packet(json!({"type":"error","message":"The model reached its length limit before answering, probably while reasoning. Give the model a larger context window, or ask for less at once."}));return;}
         if failed || !done || answer.is_empty() {yield packet(json!({"type":"error","message":"Response was interrupted, unavailable, or access changed. Partial output was not saved; retry or start a new chat."}));return;}
+        if truncated {let note="\n\n> [!WARNING]\n> The answer was cut off: the model reached its length limit. Ask it to continue, or give the model a larger context window.";answer.push_str(note);yield packet(json!({"type":"delta","text":note}));}
         // Cited pages the answer does not already link, as a list of links.
         let listed:Vec<_>=web.iter().filter(|(_,url)|!answer.contains(url.as_str())).map(|(title,url)|format!("- [{}]({})",title.replace(['[',']','\n'],""),url.replace(['(',')',' '],""))).collect();
         if !listed.is_empty() {let sources=format!("\n\n**Web sources**\n{}",listed.join("\n"));answer.push_str(&sources);yield packet(json!({"type":"delta","text":sources}));}

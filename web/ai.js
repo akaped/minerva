@@ -548,9 +548,13 @@ export async function renderAIChat({
               ? "Reading selected excerpts · context truncated"
               : "Reading " + sources.length + " sources";
           }
+          // Thinking models reason before they answer.
+          if (event.type === "thinking" && !answer)
+            $("#chat-status").textContent = "Thinking…";
           if (event.type === "delta") {
             answer += event.text;
             live(answer);
+            $("#chat-status").textContent = "Writing…";
           }
           if (event.type === "error") throw new Error(event.message);
           if (event.type === "done") {
