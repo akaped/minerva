@@ -4,7 +4,7 @@
 //! - Link shares grant one note to anyone holding a secret token. Only the token's
 //!   hash is stored; guests exchange it for an HttpOnly cookie scoped to the
 //!   share API, so it never needs to appear in a URL path or query.
-//! - Publications render a note as a public, read-only page under `/p/{slug}` or a
+//! - Publications render a note as a public, read-only page under `/shared/{slug}` or a
 //!   site's path (`/blog/{slug}`, see `sites`), either pinned to a snapshot or
 //!   following live edits.
 use super::*;
@@ -39,7 +39,7 @@ pub(super) struct Snapshot {
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Publication {
     pub note_id: String,
-    /// The site the page belongs to; empty for `/p/`.
+    /// The site the page belongs to; empty for `/shared/`.
     #[serde(default)]
     pub site_id: String,
     pub slug: String,
@@ -624,7 +624,7 @@ pub(super) fn rfc3339(timestamp: u64) -> String {
         rem % 60
     )
 }
-/// One part of the public web: `/p/` or a site such as `/blog/`.
+/// One part of the public web: `/shared/` or a site such as `/blog/`.
 struct Section {
     site_id: String,
     base: String,
@@ -635,10 +635,10 @@ struct Section {
 }
 impl Section {
     fn find(d: &Data, base: &str) -> Option<Section> {
-        if base == "p" {
+        if base == sites::DEFAULT_BASE {
             return Some(Section {
                 site_id: String::new(),
-                base: "p".into(),
+                base: sites::DEFAULT_BASE.into(),
                 title: site_name(),
                 description: String::new(),
                 wiki: false,
@@ -795,7 +795,7 @@ fn article(
 }
 
 /// `/{base}`, `/{base}/{slug}`, `/{base}/{slug}/files/{id}[/preview]`, and
-/// `/{base}/feed.xml`, where `base` is `p` or a site's path.
+/// `/{base}/feed.xml`, where `base` is `shared` or a site's path.
 pub(super) async fn public(State(store): State<Shared>, uri: Uri, headers: HeaderMap) -> Response {
     let result = tokio::task::spawn_blocking(move || -> Result<Response, ApiError> {
         let s = store.lock().map_err(|_| internal())?;
@@ -967,4 +967,21 @@ mod tests {
         assert_eq!(date(951_782_400), "2000-02-29");
         assert_eq!(rfc3339(1_792_852_623), "2026-10-24T14:37:03Z");
     }
+}
+
+/// `/p/...`, where published pages used to live: a permanent redirect to the
+/// same address under `/shared/`, so links already shared keep working.
+pub(super) async fn moved(uri: Uri) -> Response {
+    let rest = uri.path().strip_prefix("/p").unwrap_or("");
+    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let target = format!(
+        "/{}{}{query}",
+        sites::DEFAULT_BASE,
+        if rest.is_empty() { "/" } else { rest }
+    );
+    (
+        axum::http::StatusCode::PERMANENT_REDIRECT,
+        [(axum::http::header::LOCATION, target)],
+    )
+        .into_response()
 }

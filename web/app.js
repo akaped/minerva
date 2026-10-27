@@ -651,6 +651,11 @@ function redrawSidebar() {
   const top = scroll.scrollTop;
   while (nav.nextSibling) nav.nextSibling.remove();
   nav.insertAdjacentHTML("afterend", sidebarSections());
+  // Menu items in the redrawn sections (Sharing, Trash, ...) need their
+  // handlers again; the main menu above them was not replaced.
+  $$("[data-view]", scroll)
+    .filter((b) => !nav.contains(b))
+    .forEach((b) => action(b, "click", () => navigate(b.dataset.view)));
   $$("[data-folder]", scroll).forEach((b) =>
     action(b, "click", () => navigate("folder", b.dataset.folder)),
   );
@@ -3740,34 +3745,53 @@ function printDocument(url) {
   frame.src = url;
   document.body.append(frame);
 }
+/** Imports Markdown files, one note per file, into a folder. */
 function importMarkdown() {
   if (!folderOptions()) return toast("Editor access is required.");
   formDialog(
     "Bring your notes along",
-    "Import a Markdown file. Each line becomes an editable block.",
-    `<label>Markdown file<input type="file" name="file" accept=".md,.markdown,.txt" required></label><label>Folder<select name="folder_id">${folderOptions()}</select></label>`,
+    "Choose one or more Markdown files. Each file becomes a note, titled from its first heading or its file name; each paragraph becomes an editable block.",
+    `<label>Markdown files<input type="file" name="file" accept=".md,.markdown,.txt" multiple required></label><label>Folder<select name="folder_id">${folderOptions()}</select></label><p class="hint" id="import-progress" aria-live="polite"></p>`,
     async (v) => {
-      const file = $("[name=file]", modal).files[0];
-      if (file.size > 500000)
-        throw new Error("Please use a file smaller than 500 KB.");
-      const text = await file.text();
-      const lines = splitMarkdown(text);
-      if (lines.length > 2000)
-        throw new Error("A note supports up to 2,000 blocks.");
-      let title = file.name.replace(/\.[^.]+$/, "");
-      if (lines[0]?.startsWith("# ")) title = lines.shift().slice(2);
-      const n = await api("notes", "POST", {
-        folder_id: v.folder_id,
-        title: title.slice(0, 200) || "Imported note",
-      });
-      await api("notes/" + n.id, "PUT", {
-        ...n,
-        blocks: lines.map((s, i) => newBlock(s, i)),
-      });
+      const files = [...$("[name=file]", modal).files];
+      const progress = $("#import-progress", modal);
+      const failed = [];
+      let last = null;
+      for (const [i, file] of files.entries()) {
+        progress.textContent = `Importing ${i + 1} of ${files.length}: ${file.name}`;
+        try {
+          if (file.size > 500000) throw new Error("larger than 500 KB");
+          // Blank lines separate paragraphs; they are not blocks of their own.
+          const lines = splitMarkdown(await file.text()).filter((l) =>
+            l.trim(),
+          );
+          if (lines.length > 2000) throw new Error("more than 2,000 blocks");
+          let title = file.name.replace(/\.[^.]+$/, "");
+          if (lines[0]?.startsWith("# ")) title = lines.shift().slice(2);
+          const n = await api("notes", "POST", {
+            folder_id: v.folder_id,
+            title: title.slice(0, 200) || "Imported note",
+          });
+          await api("notes/" + n.id, "PUT", {
+            ...n,
+            blocks: (lines.length ? lines : [""]).map((s, i) => newBlock(s, i)),
+          });
+          last = n;
+        } catch (err) {
+          failed.push(`${file.name} (${err.message})`);
+        }
+      }
       await refresh();
-      await openNote(n.id);
+      const done = files.length - failed.length;
+      if (failed.length)
+        toast(
+          `Imported ${done} of ${files.length}. Not imported: ${failed.join(", ")}`,
+        );
+      else if (done > 1) toast(`Imported ${done} notes`);
+      if (done === 1 && last) await openNote(last.id);
+      else navigate("folder", v.folder_id);
     },
-    "Import note",
+    "Import",
   );
 }
 async function history() {
@@ -4199,7 +4223,7 @@ async function renderSharing() {
   }</section>`;
 
   $("#content").innerHTML =
-    `<section class="page sharing-page"><div class="eyebrow">WHO CAN SEE WHAT</div><div class="page-heading"><div><h1>Sharing</h1><p class="subtitle">Across all your workspaces. Public pages without a site are listed at <a href="${esc(origin)}/p/" target="_blank" rel="noopener">${esc(origin)}/p/</a>.</p></div></div>${statsHTML}${workspacesHTML}${notesHTML}${receivedHTML}${sitesPanel(origin)}</section>`;
+    `<section class="page sharing-page"><div class="eyebrow">WHO CAN SEE WHAT</div><div class="page-heading"><div><h1>Sharing</h1><p class="subtitle">Across all your workspaces. Public pages without a site are listed at <a href="${esc(origin)}/shared/" target="_blank" rel="noopener">${esc(origin)}/shared/</a>.</p></div></div>${statsHTML}${workspacesHTML}${notesHTML}${receivedHTML}${sitesPanel(origin)}</section>`;
   $$("[data-open-note]").forEach((b) =>
     action(b, "click", () => openNote(b.dataset.openNote)),
   );
@@ -4300,7 +4324,12 @@ function siteDialog(site = null) {
 async function shareDialog(newToken = null) {
   await flush();
   const targetId = note.id;
-  const info = await api(`notes/${targetId}/shares`);
+  // A note tab loads its data once: sites created since (for example on the
+  // Sharing page) must be offered too.
+  const [info] = await Promise.all([
+    api(`notes/${targetId}/shares`),
+    refresh(),
+  ]);
   if (note?.id !== targetId) return;
   const origin = serverOrigin();
   const members = info.shares.filter((s) => s.kind === "member"),
@@ -4311,8 +4340,8 @@ async function shareDialog(newToken = null) {
   )?.workspace_id;
   const sites = workspaceSites(noteWorkspace);
   const siteField = sites.length
-    ? `<select name="site_id" aria-label="Site"><option value="">p</option>${sites.map((s) => `<option value="${s.id}" ${pub?.site_id === s.id ? "selected" : ""}>${esc(s.path)}</option>`).join("")}</select>/`
-    : '<input type="hidden" name="site_id" value="">p/';
+    ? `<select name="site_id" aria-label="Site"><option value="">shared</option>${sites.map((s) => `<option value="${s.id}" ${pub?.site_id === s.id ? "selected" : ""}>${esc(s.path)}</option>`).join("")}</select>/`
+    : '<input type="hidden" name="site_id" value="">shared/';
   const roleSelect = (name, label) =>
     `<select name="${name}" aria-label="${label}"><option value="viewer" selected>Can view</option><option value="editor">Can edit</option></select>`;
   modal.innerHTML = `<h2>Share “${esc(note.title)}”</h2><p>Read-only access is selected by default. Only people who manage this folder can change sharing.</p>

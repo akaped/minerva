@@ -5574,3 +5574,12 @@ dialog:has(.share-workspace) {
     grid-template-columns: 1fr;
   }
 }
+
+/* A note tab is in front: the page under it is not the current one. Wins
+   over every theme's highlight. */
+body.note-tab-shown .sidebar .nav .active,
+body.note-tab-shown .sidebar .tree-row.active {
+  background: none !important;
+  color: inherit !important;
+  font-weight: inherit !important;
+}

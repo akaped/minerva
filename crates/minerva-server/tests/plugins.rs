@@ -183,7 +183,7 @@ async fn themes_load_from_builtins_and_the_plugin_folder() {
     assert!(index_page.contains("public-notes-themes/paper.css"));
 
     // Pages without a site use MINERVA_PUBLIC_THEME.
-    let (_, p) = get(&router, "/p/").await;
+    let (_, p) = get(&router, "/shared/").await;
     assert!(p.contains("public-notes-themes/midnight.css") && p.contains("data-scheme=\"dark\""));
 
     // Clearing the theme, or removing its file, falls back to the default look.
@@ -205,7 +205,7 @@ async fn themes_load_from_builtins_and_the_plugin_folder() {
     let (_, page) = get(&router, "/journal-site/hi").await;
     assert!(!page.contains("public-notes-themes") && page.contains("<html lang=\"en\">"));
     std::env::set_var("MINERVA_PUBLIC_THEME", "gone");
-    let (_, p) = get(&router, "/p/").await;
+    let (_, p) = get(&router, "/shared/").await;
     assert!(!p.contains("public-notes-themes"));
     std::fs::remove_dir_all(&dir).unwrap();
 }

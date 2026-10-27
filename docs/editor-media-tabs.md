@@ -8,7 +8,7 @@ The block shows the video player directly, using YouTube's privacy-enhanced ifra
 
 While a playing video scrolls out of view, its player floats at the upper-right of that editor pane. Back to video scrolls to the original block; × pauses it and returns it to its block. Hidden tabs pause their videos. Below each player, Open on YouTube is the fallback for videos disabled for embedding, and Edit link changes the address. Network restrictions, consent requirements, and video-owner restrictions can prevent playback.
 
-Published pages (`/p/…` and sites such as `/blog/…`) show the same video as an embedded player, rendered by the server since published pages run no scripts, with a Watch on YouTube link below it. The player iframe sends the page's origin as referrer, which YouTube requires; the rest of the page still sends none to other sites. Atom feeds carry the same player; readers that drop iframes still show the Watch on YouTube link. Exports keep the plain link.
+Published pages (`/shared/…` and sites such as `/blog/…`) show the same video as an embedded player, rendered by the server since published pages run no scripts, with a Watch on YouTube link below it. The player iframe sends the page's origin as referrer, which YouTube requires; the rest of the page still sends none to other sites. Atom feeds carry the same player; readers that drop iframes still show the Watch on YouTube link. Exports keep the plain link.
 
 Implementation reference: https://developers.google.com/youtube/iframe_api_reference
 

@@ -75,7 +75,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
         content.inert = false;
         content.style.visibility = "";
       }
-      document.body.classList.remove("has-note-tabs");
+      document.body.classList.remove("has-note-tabs", "note-tab-shown");
       return;
     }
     root.hidden = false;
@@ -88,6 +88,8 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       top: `${Math.max(0, bar.bottom)}px`,
     });
     deck.hidden = !shown;
+    // The sidebar highlights no page while a note tab is in front.
+    document.body.classList.toggle("note-tab-shown", shown);
     const content = document.querySelector("#content");
     if (content) {
       content.inert = shown;

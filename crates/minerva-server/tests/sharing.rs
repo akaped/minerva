@@ -762,12 +762,16 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
     assert_eq!(published.status, StatusCode::OK, "{}", published.text());
     assert_eq!(published.json()["mode"], "pinned", "pinned is the default");
 
-    let page = send(&router, "GET", "/p/roadmap", "", "", Body::empty()).await;
+    let page = send(&router, "GET", "/shared/roadmap", "", "", Body::empty()).await;
     assert_eq!(page.status, StatusCode::OK);
+    // Pages used to live under /p/: old links land on the same page.
+    let old = send(&router, "GET", "/p/roadmap?x=1", "", "", Body::empty()).await;
+    assert_eq!(old.status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(old.headers["location"], "/shared/roadmap?x=1");
     let html = page.text();
     assert!(html.contains("<h1>Roadmap</h1>") && html.contains("Aurora"));
     assert!(html.contains("Our plan for &lt;2027&gt;"));
-    assert!(html.contains(&format!("/p/roadmap/files/{fid}/preview")));
+    assert!(html.contains(&format!("/shared/roadmap/files/{fid}/preview")));
     for private in [
         "Getting started",
         "My workspace",
@@ -783,7 +787,7 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
         send(
             &router,
             "GET",
-            &format!("/p/roadmap/files/{fid}/preview"),
+            &format!("/shared/roadmap/files/{fid}/preview"),
             "",
             "",
             Body::empty()
@@ -796,7 +800,7 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
         send(
             &router,
             "GET",
-            &format!("/p/roadmap/files/{}", hidden["id"].as_str().unwrap()),
+            &format!("/shared/roadmap/files/{}", hidden["id"].as_str().unwrap()),
             "",
             "",
             Body::empty()
@@ -813,10 +817,12 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
     let edit = api(&router, "PUT", &format!("notes/{nid}"), &admin, edit)
         .await
         .json();
-    assert!(send(&router, "GET", "/p/roadmap", "", "", Body::empty())
-        .await
-        .text()
-        .contains("Aurora"));
+    assert!(
+        send(&router, "GET", "/shared/roadmap", "", "", Body::empty())
+            .await
+            .text()
+            .contains("Aurora")
+    );
     api(
         &router,
         "PUT",
@@ -825,10 +831,12 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
         json!({"slug":"roadmap","refresh":true}),
     )
     .await;
-    assert!(send(&router, "GET", "/p/roadmap", "", "", Body::empty())
-        .await
-        .text()
-        .contains("Borealis"));
+    assert!(
+        send(&router, "GET", "/shared/roadmap", "", "", Body::empty())
+            .await
+            .text()
+            .contains("Borealis")
+    );
     // Live: follows edits.
     api(
         &router,
@@ -841,10 +849,12 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
     let mut edit = edit.clone();
     edit["blocks"][0]["markdown"] = json!("Live wording.");
     api(&router, "PUT", &format!("notes/{nid}"), &admin, edit).await;
-    assert!(send(&router, "GET", "/p/roadmap", "", "", Body::empty())
-        .await
-        .text()
-        .contains("Live wording."));
+    assert!(
+        send(&router, "GET", "/shared/roadmap", "", "", Body::empty())
+            .await
+            .text()
+            .contains("Live wording.")
+    );
 
     let other = api(
         &router,
@@ -875,11 +885,13 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
         json!({"slug":"second"}),
     )
     .await;
-    let index = send(&router, "GET", "/p/", "", "", Body::empty())
+    let index = send(&router, "GET", "/shared/", "", "", Body::empty())
         .await
         .text();
-    assert!(index.contains("href=\"/p/roadmap\"") && index.contains("href=\"/p/second\""));
-    let feed = send(&router, "GET", "/p/feed.xml", "", "", Body::empty()).await;
+    assert!(
+        index.contains("href=\"/shared/roadmap\"") && index.contains("href=\"/shared/second\"")
+    );
+    let feed = send(&router, "GET", "/shared/feed.xml", "", "", Body::empty()).await;
     assert!(feed.headers["content-type"]
         .to_str()
         .unwrap()
@@ -895,7 +907,7 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
         .find(|n| n["id"] == nid.as_str())
         .unwrap()["sharing"]
         .clone();
-    assert_eq!(summary["published"], "p/roadmap");
+    assert_eq!(summary["published"], "shared/roadmap");
 
     // Preview requires a member who manages sharing.
     assert_eq!(
@@ -945,7 +957,7 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
     )
     .await;
     assert_eq!(
-        send(&router, "GET", "/p/roadmap", "", "", Body::empty())
+        send(&router, "GET", "/shared/roadmap", "", "", Body::empty())
             .await
             .status,
         StatusCode::NOT_FOUND
@@ -969,7 +981,7 @@ async fn published_pages_are_clean_pinned_or_live_and_expose_only_referenced_fil
     )
     .await;
     assert_eq!(
-        send(&router, "GET", "/p/second", "", "", Body::empty())
+        send(&router, "GET", "/shared/second", "", "", Body::empty())
             .await
             .status,
         StatusCode::NOT_FOUND

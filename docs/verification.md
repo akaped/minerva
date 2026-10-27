@@ -87,7 +87,6 @@ Linux end-to-end, on Fedora with WebKitGTK 2.52 in an isolated headless KWin ses
 
 Windows: `cargo build`/`clippy --target x86_64-pc-windows-gnu` pass. The release executable uses the GUI subsystem, embeds its icon and version resources, and imports only system DLLs plus the bundled `WebView2Loader.dll`. It has not yet been run on Windows; validate WebView2 rendering, Credential Manager storage, downloads, and the `https://minerva.<host>` origin mapping on Windows 10/11 before release.
 
-
 ## Sharing, publishing, editor, AI, and storage increment
 
 `cargo test --locked --workspace` adds:
@@ -137,16 +136,17 @@ The browser run found and fixed two bugs: the app's `history()` function shadowe
 
 Remaining: real screen-reader and IME testing (only synthetic events were used), cross-browser checks beyond WebKit, and load testing of guest polling. Share links do not work inside the desktop client, which keeps no cookies; they open in the system browser.
 
-
 ## Editor writing tools increment
 
 `cargo test --locked --workspace` adds `tests/notes.rs`:
+
 - Covers and tags are validated and normalized on save and in CRDT updates.
 - Inline tags are derived, and `#tag` search matches note tags and inline tags.
 - Backlinks only include notes the reader may open.
 - An uploaded cover appears on the published page, and storage cleanup keeps it.
 
 Render unit tests cover:
+
 - callouts and math, including `\le`, display math, and hostile TeX/MathML (no `href`, `onclick`, or scripts);
 - highlight edge cases;
 - inline tag rules (not `C#`, `#123`, code, or headings);
@@ -155,6 +155,7 @@ Render unit tests cover:
 `npm test` adds `editor-tools.test.js`: formatting toggles, link placeholders, `[[` queries, find/replace, word counts, tag normalization, and HTML-to-Markdown conversion (headings, emphasis, highlights, lists, tables, code, Google Docs styling, script removal).
 
 Browser checks used WebKitGTK MiniBrowser in an isolated session:
+
 - Ctrl+B and the selection toolbar, highlight, and Ctrl+K link creation, with native undo intact.
 - A Google Docs paste producing heading, paragraph, and list blocks.
 - Callout, inline tag, inline and display math, and a rendered Mermaid diagram.
@@ -166,12 +167,12 @@ Browser checks used WebKitGTK MiniBrowser in an isolated session:
 - A published page with callout, tag, and math, and no scripts.
 
 The browser run found and fixed three bugs:
+
 - Ctrl+K inside a block also opened global search.
 - The tag bar did not refresh after inline tags changed.
 - Consecutive task blocks stair-stepped because floats were not contained. This bug predated this change.
 
 Not yet verified: real clipboard pastes from Word, and math rendering in browsers without MathML Core support. Mermaid's ELK layout is intentionally not bundled.
-
 
 ## Export increment
 
@@ -187,7 +188,6 @@ Not yet verified: real clipboard pastes from Word, and math rendering in browser
 The browser run also fixed a dialog bug where an option label overrode the `hidden` attribute. It also caught a spacing bug: the Markdown title was followed by an extra blank line.
 
 PDF output itself depends on the browser's print engine and was not inspected as a file.
-
 
 ## Journals and templates increment
 
@@ -212,13 +212,13 @@ The browser run fixed one bug: the calendar's blank cells reused the app's empty
 Real PDFs were generated with headless Chromium in forced dark mode and rendered to images for inspection. Exports now embed a self-contained stylesheet that is always light: typography, title block, code with highlighting, tables, callouts, highlights, tags, ☐/☑ task markers, consecutive list blocks joined into one list, and print rules for margins, page breaks, preserved backgrounds, and external link URLs. Note links become plain text, and the live task list is omitted.
 
 Defects found by inspecting the PDFs and fixed:
+
 - Dark-mode colors leaked into printed documents.
 - `math[display="block"] { display: block }` broke Chromium's MathML layout (also in the app and on published pages).
 - Without a math font, display math was cramped. A math font stack fixes this, with STIX Two Math as the first choice.
 - Stubbing ELK broke every Mermaid diagram, because Mermaid 12 defaults to the ELK layout. Diagrams now use `layout: "dagre"`, and Mermaid's error graphic is removed when a diagram fails.
 
 Empty blocks render as one line of blank space. Only a new note's single empty block shows "Write something…".
-
 
 ## Two-factor authentication increment
 
@@ -236,7 +236,6 @@ Empty blocks render as one line of blank space. Only a new note's single empty b
   - Signed out and signed back in through the code step: a wrong code was rejected and the right code signed in.
   - The admin 2FA column shows the status.
 
-
 ## Block nesting increment
 
 - **Render unit test:** indentation levels, dedenting (four spaces stay a paragraph), indented fenced code, the six-level cap, and blank blocks.
@@ -247,16 +246,17 @@ Empty blocks render as one line of blank space. Only a new note's single empty b
   - Tab and Shift+Tab work on paragraphs, and bullet styles alternate by level.
 - **Export check:** Markdown export produced a nested list, and the HTML export carried the indent classes.
 
-
 ## Security review increment
 
 A manual review covered authentication and sessions, CSRF, authorization on every route, rendering and sanitization, share links, published pages, uploads, exports, the desktop gateway, and two-factor authentication. Fixes, with `tests/security.rs`:
+
 - **Render cache memory exhaustion:** any member, or any holder of a share link, could fill the render cache with up to 4,096 entries of up to 2 MB each. The cache now has a 32 MiB byte budget and caches only blocks up to 16 KiB, and `/render` refuses input over 100,000 bytes, matching blocks.
 - **Lockout by anyone:** the global limit of 20 sign-ins per minute let any anonymous client lock every user out. It is now 10 attempts per account and 300 per server per minute, and attacking one account leaves others able to sign in.
 - **Account discovery:** unknown or disabled accounts returned before password hashing, revealing valid emails through timing. They now verify against a dummy Argon2 hash.
 - **Stale 2FA sign-ins:** pending second-factor challenges survived administrator account changes, such as a password reset. They are now cancelled.
 
 Reviewed and unchanged (by design, or documented):
+
 - AI provider endpoints are unrestricted for administrators, as requested.
 - TOTP secrets are stored in the database like password hashes.
 - MCP credentials remain valid after enabling 2FA; they are read-only and individually revocable.

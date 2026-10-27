@@ -326,7 +326,7 @@ async fn databases_records_and_properties_delete_and_embed_live_in_notes() {
         json!({"slug":"today","mode":"live"}),
     )
     .await;
-    let (_, page) = send(&router, "GET", "/p/today", "", Value::Null).await;
+    let (_, page) = send(&router, "GET", "/shared/today", "", Value::Null).await;
     assert!(
         page.contains("Embedded database")
             && !page.contains("Write report")

@@ -28,13 +28,13 @@ Configuration wrappers and transport-name fields differ by MCP client. The endpo
 
 ## Tools
 
-| Tool | Purpose |
-| --- | --- |
-| `doc_search` | Case-insensitive keyword search of permitted note titles and Markdown; up to 50 results with bounded passages and stable block IDs |
-| `read_document` | Read a permitted document with up to 100 blocks per page; follow `next_offset` |
-| `list_folders` | List accessible folders within the credential's workspace |
-| `list_databases` | List accessible structured databases and their property schemas |
-| `query_database` | Read up to 100 records per page, with optional text query and exact typed property filter |
+| Tool             | Purpose                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_search`     | Case-insensitive keyword search of permitted note titles and Markdown; up to 50 results with bounded passages and stable block IDs |
+| `read_document`  | Read a permitted document with up to 100 blocks per page; follow `next_offset`                                                     |
+| `list_folders`   | List accessible folders within the credential's workspace                                                                          |
+| `list_databases` | List accessible structured databases and their property schemas                                                                    |
+| `query_database` | Read up to 100 records per page, with optional text query and exact typed property filter                                          |
 
 `query_database` filter example:
 

@@ -4,7 +4,7 @@
 //!   renames, and removes it; any folder editor in that workspace can publish into it.
 //! - Only notes from the site's workspace can be published there, so one workspace
 //!   cannot place pages under another's path.
-//! - Pages without a site stay under `/p/`.
+//! - Pages without a site live under `/shared/` (formerly `/p/`, which redirects).
 //! - `blog` sites list pages newest first and offer an Atom feed; `wiki` sites list
 //!   pages alphabetically and show when each page last changed.
 use super::*;
@@ -24,6 +24,10 @@ pub(super) struct Site {
     pub theme: String,
     pub created_at: u64,
 }
+
+/// Where published pages without a site live: `/shared/{slug}`. Pages that
+/// were published under `/p/` are redirected there.
+pub(super) const DEFAULT_BASE: &str = "shared";
 
 /// First path segments the server already uses or may need, which sites cannot take.
 const RESERVED: &[&str] = &[
@@ -76,9 +80,9 @@ pub(super) fn base<'a>(d: &'a Data, site_id: &str) -> &'a str {
     d.sites
         .iter()
         .find(|s| s.id == site_id)
-        .map_or("p", |s| s.path.as_str())
+        .map_or(DEFAULT_BASE, |s| s.path.as_str())
 }
-/// Checks that a note may be published into `site_id` (empty: `/p/`).
+/// Checks that a note may be published into `site_id` (empty: `/shared/`).
 pub(super) fn allowed(d: &Data, n: &Note, site_id: &str) -> Result<(), ApiError> {
     if site_id.is_empty() {
         return Ok(());

@@ -236,7 +236,7 @@ async fn sites_group_pages_under_their_own_paths() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // A wiki page linking to the blog post, with an image; plus a /p/ page.
+    // A wiki page linking to the blog post, with an image; plus a /shared/ page.
     let dragon = note(&router, &alice, &folder, "How to train your dragon", "").await;
     let (_, file) = send(
         &router,
@@ -285,7 +285,7 @@ async fn sites_group_pages_under_their_own_paths() {
     )
     .await;
     assert_eq!(
-        p["path"], "p/hello",
+        p["path"], "shared/hello",
         "the same slug may exist in another site"
     );
 
@@ -338,10 +338,10 @@ async fn sites_group_pages_under_their_own_paths() {
         StatusCode::OK
     );
 
-    let (_, index) = get(&router, "/p/").await;
+    let (_, index) = get(&router, "/shared/").await;
     assert!(index.contains("Plain") && !index.contains("Hello world"));
     assert_eq!(
-        get(&router, "/p/how-to-train-your-dragon").await.0,
+        get(&router, "/shared/how-to-train-your-dragon").await.0,
         StatusCode::NOT_FOUND
     );
     for missing in ["/nowhere/", "/nowhere/hello", "/wiki/hello", "/api"] {
@@ -395,7 +395,7 @@ async fn sites_group_pages_under_their_own_paths() {
         json!({"slug":"hello-again","site_id":"","mode":"live"}),
     )
     .await;
-    assert_eq!(moved["path"], "p/hello-again");
+    assert_eq!(moved["path"], "shared/hello-again");
     let (status, _) = api(
         &router,
         "DELETE",

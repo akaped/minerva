@@ -170,7 +170,7 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         json!({"slug":"doomed","mode":"live"}),
     )
     .await;
-    let (status, _) = send(&router, "GET", "/p/doomed", "", Body::empty()).await;
+    let (status, _) = send(&router, "GET", "/shared/doomed", "", Body::empty()).await;
     assert_eq!(status, StatusCode::OK);
 
     // Notes: only folder editors, and only from the trash.
@@ -222,7 +222,9 @@ async fn editors_delete_notes_and_folders_and_owners_delete_personal_workspaces(
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        send(&router, "GET", "/p/doomed", "", Body::empty()).await.0,
+        send(&router, "GET", "/shared/doomed", "", Body::empty())
+            .await
+            .0,
         StatusCode::NOT_FOUND
     );
     let (_, sharing) = api(&router, "GET", "sharing", &bob, json!({})).await;

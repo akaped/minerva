@@ -121,7 +121,7 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
   - Providers can be edited by administrators, who can also allow web search for OpenAI and Anthropic providers: the model then researches the web, and the pages it cites are listed under its answer.
   - Conversations can be deleted one by one or all at once.
 - Built-in read-only MCP over stateless Streamable HTTP, with workspace-scoped credentials, expiry, revocation, note search/read, and typed database queries. See [MCP setup](mcp.md).
-- Sharing: share a note with a member (view or edit), or create view/edit links that work without signing in, with revocation. Publish notes as clean public pages at `/p/{slug}`, pinned or live, with an index and an Atom feed, or group them into sites with their own paths, such as a `/blog` or a `/wiki`. See [Sharing](sharing.md).
+- Sharing: share a note with a member (view or edit), or create view/edit links that work without signing in, with revocation. Publish notes as clean public pages at `/shared/{slug}`, pinned or live, with an index and an Atom feed, or group them into sites with their own paths, such as a `/blog` or a `/wiki`. See [Sharing](sharing.md).
 - Attachment storage administration with reference-aware cleanup of unreferenced files.
 - Search across accessible note titles and text, grid/list views, favorites, recoverable trash.
 - Export a note as PDF (print-designed, A4 or Letter, with cover, highlighted code, math and diagrams, via the system's "Save as PDF"), Markdown with optional front matter, Markdown + attachments (.zip, ready for Obsidian or Joplin), or a self-contained HTML file. Markdown import.
@@ -154,11 +154,11 @@ Import preserves each Markdown source line as a block. Multiline structures such
 | `MINERVA_SMTP_PASSWORD`  | none                  | SMTP password or app password                                                                                 |
 | `MINERVA_MAIL_FROM`      | none                  | Sender, e.g. `Minerva <notes@example.com>`                                                                    |
 | `MINERVA_PLUGINS`        | `plugins`             | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
-| `MINERVA_PUBLIC_THEME`   | none                  | Public theme for pages under `/p/`, e.g. `paper`                                                              |
+| `MINERVA_PUBLIC_THEME`   | none                  | Public theme for pages under `/shared/`, e.g. `paper`                                                         |
 
 Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
 
-For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/p/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/shared/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
 
 ### Email
 

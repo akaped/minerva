@@ -2,7 +2,7 @@
 //!
 //! - `themes/{id}.css` are app color themes, applied on top of the built-in light
 //!   or dark theme (the `base`) and scoped to `[data-variant="{id}"]`.
-//! - `public-notes-themes/{id}.css` restyle published pages (`/p/` and sites).
+//! - `public-notes-themes/{id}.css` restyle published pages (`/shared/` and sites).
 //! - `pdf-prints/{id}.css` are PDF templates; an optional `{id}.html` replaces the
 //!   default page layout. See `plugins/README.md` for the variables they use.
 //!

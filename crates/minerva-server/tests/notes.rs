@@ -318,9 +318,9 @@ async fn covers_tags_inline_tags_search_and_backlinks() {
         json!({"slug":"target"}),
     )
     .await;
-    let (_, _, html) = call(&router, "GET", "/p/target", "", json!({})).await;
+    let (_, _, html) = call(&router, "GET", "/shared/target", "", json!({})).await;
     assert!(
-        html.contains(&format!("<img src=\"/p/target/files/{fid}/preview\"")),
+        html.contains(&format!("<img src=\"/shared/target/files/{fid}/preview\"")),
         "{html}"
     );
     assert!(html.contains("<span class=\"tag\" data-tag=\"project/alpha\">#Project/Alpha</span>"));
@@ -328,7 +328,7 @@ async fn covers_tags_inline_tags_search_and_backlinks() {
         call(
             &router,
             "GET",
-            &format!("/p/target/files/{fid}/preview"),
+            &format!("/shared/target/files/{fid}/preview"),
             "",
             json!({})
         )
