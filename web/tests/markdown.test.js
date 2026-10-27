@@ -21,3 +21,17 @@ test("table and list rows preserve multiline Markdown semantics", () => {
     3,
   );
 });
+
+test("quotes, callouts and display math stay one block", () => {
+  assert.deepEqual(
+    splitMarkdown("> [!TIP]\n> Keep it short.\n\n> A quote\n- a list"),
+    ["> [!TIP]\n> Keep it short.", "", "> A quote", "- a list"],
+  );
+  assert.deepEqual(splitMarkdown("Before\n$$\nE = mc^2\n$$\nAfter"), [
+    "Before",
+    "$$\nE = mc^2\n$$",
+    "After",
+  ]);
+  // Inline math on one line is an ordinary line.
+  assert.deepEqual(splitMarkdown("$$ x $$\nnext"), ["$$ x $$", "next"]);
+});

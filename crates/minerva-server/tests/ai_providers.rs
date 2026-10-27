@@ -57,12 +57,21 @@ async fn providers_can_be_edited_without_exposing_their_key() {
     )
     .unwrap());
     let root = login(&app, "admin@test.local").await;
-    let admin = common::member(&app, &root, "owner@test.local").await;
     let base = json!({"kind":"openai","name":"Team","endpoint":"https://api.openai.com/v1","model":"gpt-a"});
     let mut create = base.clone();
     create["api_key"] = json!("sk-original");
     let (status, created) = request(&app, "POST", "ai/providers", &root, create).await;
     assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["max_tokens"], 4096, "the default answer limit");
+    let mut too_small = base.clone();
+    too_small["api_key"] = json!("sk-test");
+    too_small["max_tokens"] = json!(10);
+    assert_eq!(
+        request(&app, "POST", "ai/providers", &root, too_small)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
     let id = created["id"].as_str().unwrap();
     let route = format!("ai/providers/{id}");
 

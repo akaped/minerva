@@ -29,6 +29,17 @@ pub(super) fn initialize(
             "ALTER TABLE ai_providers ADD COLUMN web_search INTEGER NOT NULL DEFAULT 0",
         )?;
     }
+    // Added later: providers created before it keep the previous fixed limit.
+    let has_max_tokens: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('ai_providers') WHERE name='max_tokens')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_max_tokens {
+        db.execute_batch(&format!(
+            "ALTER TABLE ai_providers ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT {DEFAULT_MAX_TOKENS}"
+        ))?;
+    }
     let mut memory_key = [0; 32];
     OsRng.fill_bytes(&mut memory_key);
     Ok(Runtime {
@@ -103,6 +114,26 @@ struct Provider {
     model: String,
     /// Chat may search the web with the provider's own tool (OpenAI, Anthropic).
     web_search: bool,
+    /// The longest answer the model may write, in tokens. Thinking models
+    /// count their reasoning too, so they need more than cloud chat models.
+    #[serde(default = "default_max_tokens")]
+    max_tokens: u32,
+}
+const DEFAULT_MAX_TOKENS: u32 = 4096;
+fn default_max_tokens() -> u32 {
+    DEFAULT_MAX_TOKENS
+}
+/// The answer length limit from a provider form: 256 to 131,072 tokens.
+fn max_tokens(v: &Value) -> Result<u32, ApiError> {
+    match v.get("max_tokens").filter(|m| !m.is_null()) {
+        None => Ok(DEFAULT_MAX_TOKENS),
+        Some(m) => m
+            .as_u64()
+            .or_else(|| m.as_str().and_then(|t| t.trim().parse().ok()))
+            .filter(|n| (256..=131_072).contains(n))
+            .map(|n| n as u32)
+            .ok_or_else(|| bad("The answer length must be between 256 and 131,072 tokens")),
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Scope {
@@ -143,7 +174,7 @@ struct Context {
 }
 fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
     s.db.query_row(
-        "SELECT id,name,kind,endpoint,model,secret,web_search FROM ai_providers WHERE id=?1",
+        "SELECT id,name,kind,endpoint,model,secret,web_search,max_tokens FROM ai_providers WHERE id=?1",
         [key],
         |r| {
             Ok((
@@ -154,6 +185,7 @@ fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
                     endpoint: r.get(3)?,
                     model: r.get(4)?,
                     web_search: r.get(6)?,
+                    max_tokens: r.get(7)?,
                 },
                 r.get(5)?,
             ))
@@ -434,6 +466,7 @@ fn route(
                 id: id(),
                 name: field(&v, "name")?,
                 web_search: web_search(&v, &kind)?,
+                max_tokens: max_tokens(&v)?,
                 kind,
                 endpoint: provider_endpoint(&v)?,
                 model: field(&v, "model")?,
@@ -446,7 +479,7 @@ fn route(
                 return Err(bad("Maximum 20 provider profiles"));
             }
             s.db.execute(
-                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search, max_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
                 params![
                     p.id,
                     p.name,
@@ -454,7 +487,8 @@ fn route(
                     p.endpoint,
                     p.model,
                     s.ai.encrypt(secret)?,
-                    p.web_search
+                    p.web_search,
+                    p.max_tokens
                 ],
             )
             .map_err(|_| internal())?;
@@ -468,6 +502,7 @@ fn route(
                 id: old.id.clone(),
                 name: field(&v, "name")?,
                 web_search: web_search(&v, &kind)?,
+                max_tokens: max_tokens(&v)?,
                 kind,
                 endpoint: provider_endpoint(&v)?,
                 model: field(&v, "model")?,
@@ -487,12 +522,12 @@ fn route(
             }
             match secret {
                 Some(secret) => s.db.execute(
-                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, secret=?7 WHERE id=?1",
-                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, s.ai.encrypt(secret)?],
+                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?8, secret=?7 WHERE id=?1",
+                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, s.ai.encrypt(secret)?, p.max_tokens],
                 ),
                 None => s.db.execute(
-                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6 WHERE id=?1",
-                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search],
+                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?7 WHERE id=?1",
+                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, p.max_tokens],
                 ),
             }
             .map_err(|_| internal())?;
@@ -780,17 +815,17 @@ fn model_request(
     let (suffix, mut payload) = match p.kind.as_str() {
         "openai" => (
             "responses",
-            json!({"model":p.model,"instructions":system,"input":messages,"store":false,"max_output_tokens":4096}),
+            json!({"model":p.model,"instructions":system,"input":messages,"store":false,"max_output_tokens":p.max_tokens}),
         ),
         "anthropic" => (
             "messages",
-            json!({"model":p.model,"system":system,"messages":messages,"max_tokens":4096}),
+            json!({"model":p.model,"system":system,"messages":messages,"max_tokens":p.max_tokens}),
         ),
         _ => {
             messages.insert(0, json!({"role":"system","content":system}));
             (
                 "chat/completions",
-                json!({"model":p.model,"messages":messages,"max_tokens":4096}),
+                json!({"model":p.model,"messages":messages,"max_tokens":p.max_tokens}),
             )
         }
     };

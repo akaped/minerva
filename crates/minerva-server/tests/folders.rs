@@ -101,7 +101,6 @@ fn ids(v: &Value) -> Vec<&str> {
 async fn folders_nest_notes_move_and_grants_cover_subfolders() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
     let root = login(&router, "admin@test.local").await;
-    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, alice) = user(&router, &root, "alice").await;
     let (carol_id, carol) = user(&router, &root, "carol").await;
     let (_, w) = api(

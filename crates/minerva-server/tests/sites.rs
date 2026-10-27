@@ -124,7 +124,6 @@ async fn publish(router: &Router, token: &str, nid: &str, body: Value) -> (Statu
 async fn sites_group_pages_under_their_own_paths() {
     let router = app(Store::open(":memory:", "admin@test.local", PASSWORD).unwrap());
     let root = login(&router, "admin@test.local").await;
-    let admin = common::member(&router, &root, "owner@test.local").await;
     let (_, alice) = user(&router, &root, "alice").await;
     let (_, bob) = user(&router, &root, "bob").await;
     let (carol_id, carol) = user(&router, &root, "carol").await;

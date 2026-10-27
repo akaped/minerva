@@ -12,17 +12,20 @@ turns that section into the next version.
 
 ### Added
 
+- AI providers have a **Max answer length** setting (default 4096 tokens). Raise it for thinking models such as Qwen or DeepSeek R1, which spend part of it reasoning before they answer.
 - Import several Markdown files at once: each becomes a note in the chosen folder, with progress and a list of any files that could not be imported.
 - Mentions: type `@` in a note to pick someone who can open it; the mention shows their name, emails them the block, and appears in their new **Mentions** dashboard widget. `/assigntouser` opens the same picker. Published pages and exports show only the name part of a mentioned address.
 
 ### Changed
 
+- Ask AI beside a note: a compact header with History and Providers, the conversation fills the panel with the question box pinned at the bottom (Enter sends, Shift+Enter for a new line), each reply shows who answers and an animated “Reading… / Thinking…” indicator, sources are compact chips, and tables in replies have borders.
 - Published pages without a site now live under `/shared/` instead of `/p/`. Old `/p/…` links redirect permanently to the same page under `/shared/`.
 - The workspace share dialog lists the people with access, each with their own Edit or Read only menu and a button to remove them, and invites new people at the top; changes apply at once.
 - The Sharing page covers all your workspaces: shared workspaces (yours, with who has access, and those shared with you), notes you share grouped by workspace with names, links and public addresses and a filter, notes shared with you, and the public sites of every workspace. It moved to **Others** in the sidebar.
 
 ### Fixed
 
+- Callouts, quotes and multi-line `$$` formulas stay one block when Markdown is imported, pasted or shown in an AI reply.
 - AI chat: an answer cut off at the model's length limit is kept and saved with a warning, instead of being discarded; long answers from slow local models are no longer stopped after two minutes while they are still streaming; thinking models (Qwen, DeepSeek R1) show “Thinking…” while they reason.
 - A note's Share dialog offers sites created after the note was opened, for example on the Sharing page.
 - Importing Markdown no longer turns the blank lines between paragraphs into empty blocks.

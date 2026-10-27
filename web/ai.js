@@ -26,7 +26,7 @@ export async function renderAISettings({ api, esc, data, error }) {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">IN-APP INTELLIGENCE</div><div class="page-heading"><div><h1>AI providers</h1><p class="subtitle">Choose the models your server can use for contextual chat.</p></div>${data.user.admin ? '<button class="btn primary" id="add-provider">+ Add provider</button>' : ""}</div>
     <div class="panel ai-notice"><h2>Your context, your choice</h2><p>Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Uploaded image and file contents are not sent. Provider usage may incur API charges.</p><p>API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.</p></div>
-    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? " · web search on" : ""}</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">Edit</button><button class="btn danger" data-remove-provider="${p.id}">Remove provider</button></div>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
+    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? " · web search on" : ""} · answers up to ${Number(p.max_tokens || 4096).toLocaleString()} tokens</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">Edit</button><button class="btn danger" data-remove-provider="${p.id}">Remove provider</button></div>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
   // Adds a provider, or edits `existing`. The stored key is never shown: an
   // empty key field keeps it, and pointing it at another server needs it again.
   const providerForm = (existing = null) => {
@@ -41,7 +41,7 @@ export async function renderAISettings({ api, esc, data, error }) {
       )
       .join(
         "",
-      )}</select></label><label>Profile name<input name="name" maxlength="200" placeholder="e.g. Team assistant" value="${esc(p.name || "")}" required></label><label>API base URL<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>Model ID<input name="model" placeholder="Exact model ID from your provider" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>Allow web search</label><p class="hint web-search-hint"></p><label>API key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? "<p>The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.</p>" : ""}<p>Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">Cancel</button><button class="btn primary" type="submit">Save provider</button></footer></form>`;
+      )}</select></label><label>Profile name<input name="name" maxlength="200" placeholder="e.g. Team assistant" value="${esc(p.name || "")}" required></label><label>API base URL<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>Model ID<input name="model" placeholder="Exact model ID from your provider" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>Allow web search</label><p class="hint web-search-hint"></p><label>Max answer length (tokens)<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.</p><label>API key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? "<p>The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.</p>" : ""}<p>Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">Cancel</button><button class="btn primary" type="submit">Save provider</button></footer></form>`;
     modal.showModal();
     const clear = () => {
       modal.close();
@@ -79,6 +79,7 @@ export async function renderAISettings({ api, esc, data, error }) {
       try {
         const values = Object.fromEntries(new FormData(e.target));
         values.web_search = $("input[name=web_search]", modal).checked;
+        values.max_tokens = Number(values.max_tokens);
         if (existing) await api(`ai/providers/${existing.id}`, "PATCH", values);
         else await api("ai/providers", "POST", values);
         clear();
@@ -184,8 +185,29 @@ export async function renderAIChat({
   );
   $("#breadcrumb").textContent = "AI chat";
   $("#content").innerHTML =
-    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1>AI · ${esc(dockedTitle)}</h1><button class="btn" id="ai-settings">Providers</button></div>` : '<div class="eyebrow">ANSWERS FROM YOUR KNOWLEDGE</div><div class="page-heading"><div><h1>Ask your workspace</h1><p class="subtitle">A focused conversation, with sources you can open.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history"><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><p class="ai-disclosure">Only permitted text from this context is sent to the selected provider, together with recent conversation. Context is capped; source coverage appears with each answer. Replies may be inaccurate.</p><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Summarize a project, compare ideas, or ask about a note.</p></div></div><form id="chat-form"><label for="chat-question">Your question</label><textarea id="chat-question" rows="3" maxlength="8000" placeholder="Ask a question about this context…" required ${providers.length ? "" : "disabled"}></textarea><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Ready" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button><button class="btn primary" id="send-chat" ${providers.length ? "" : "disabled"}>Send</button></div></form></section></div></section>`;
+    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">History</button><button class="btn" id="ai-settings">Providers</button></div></div>` : '<div class="eyebrow">ANSWERS FROM YOUR KNOWLEDGE</div><div class="page-heading"><div><h1>Ask your workspace</h1><p class="subtitle">A focused conversation, with sources you can open.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><details class="ai-disclosure"><summary>What is sent to the model?</summary><p>Only permitted text from this context is sent to the selected provider, together with recent conversation. Context is capped; source coverage appears with each answer. Replies may be inaccurate.</p></details><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Summarize a project, compare ideas, or ask about a note.</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">Your question</label><div class="chat-input"><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? "Ask about this note…" : "Ask a question about this context…"}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="Send (Enter)" aria-label="Send" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Enter to send · Shift+Enter for a new line" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button></div></form></section></div></section>`;
   $("#ai-settings").onclick = configure;
+  // Beside a note, past conversations open on demand.
+  const historyToggle = $("#ai-history-toggle");
+  if (historyToggle)
+    historyToggle.onclick = () => {
+      const panel = $("#ai-history");
+      panel.hidden = !panel.hidden;
+      historyToggle.setAttribute("aria-expanded", String(!panel.hidden));
+    };
+  // The question box grows with its text; Enter sends, Shift+Enter breaks a line.
+  const questionBox = $("#chat-question");
+  const fit = () => {
+    questionBox.style.height = "auto";
+    questionBox.style.height = Math.min(questionBox.scrollHeight, 220) + "px";
+  };
+  questionBox.addEventListener("input", fit);
+  questionBox.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      $("#chat-form").requestSubmit();
+    }
+  });
   const scope = () => {
     const selected = scopeOptions[Number($("#chat-scope").value)];
     return selected && { kind: selected.kind, id: selected.id };
@@ -313,9 +335,13 @@ export async function renderAIChat({
     return sources
       .map(
         (s, i) =>
-          `<button class="btn source-chip" data-source="${esc(s.id)}" data-kind="${esc(s.kind)}">[S${i + 1}] ${esc(s.title)}</button>`,
+          `<button class="source-chip" data-source="${esc(s.id)}" data-kind="${esc(s.kind)}" title="Open ${esc(s.title)}"><span class="source-number">S${i + 1}</span>${esc(s.title)}</button>`,
       )
       .join("");
+  }
+  /** Who answers: the assistant, with the provider and model. */
+  function replyMeta(provider, model) {
+    return `<div class="chat-meta"><span class="chat-avatar" aria-hidden="true">✳</span><strong>${esc(provider || "Assistant")}</strong><span>${esc(model || "")}</span></div>`;
   }
   function bindSources(root) {
     $$("[data-source]", root).forEach(
@@ -333,7 +359,7 @@ export async function renderAIChat({
       chat?.turns
         .map(
           (t) =>
-            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}</p><div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small>${esc(t.provider)} · ${esc(t.model)} · ${usageLabel(t.usage)}</small></article>`,
+            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
         )
         .join("") ||
       '<div class="empty"><h3>A new conversation</h3><p>Ask a question to get started.</p></div>';
@@ -467,11 +493,13 @@ export async function renderAIChat({
     if (!chat?.turns.length) messages.innerHTML = "";
     const turn = document.createElement("article");
     turn.className = "chat-turn";
-    turn.innerHTML = `<p class="chat-question">${esc(question)}</p><div class="chat-answer chat-pending">Thinking…</div><div class="chat-sources"></div><small class="chat-usage"></small>`;
+    const chosen = providers.find((p) => p.id === $("#chat-provider").value);
+    turn.innerHTML = `<p class="chat-question">${esc(question)}</p><div class="chat-reply">${replyMeta(chosen?.name, chosen?.model)}<div class="chat-answer chat-pending"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chat-pending-text">Reading your notes…</span></div><div class="chat-sources"></div><small class="chat-usage"></small></div>`;
     messages.append(turn);
     turn.scrollIntoView({ block: "start", behavior: "smooth" });
     // The question is on its way: the box is free for the next one.
     $("#chat-question").value = "";
+    fit();
     let complete = false;
     // The reply is shown formatted while it streams, redrawn a few times a
     // second rather than on every token.
@@ -547,10 +575,16 @@ export async function renderAIChat({
             $("#chat-status").textContent = event.truncated
               ? "Reading selected excerpts · context truncated"
               : "Reading " + sources.length + " sources";
+            const pending = $(".chat-pending-text", turn);
+            if (pending)
+              pending.textContent = `Reading ${sources.length} source${sources.length === 1 ? "" : "s"}…`;
           }
           // Thinking models reason before they answer.
-          if (event.type === "thinking" && !answer)
+          if (event.type === "thinking" && !answer) {
             $("#chat-status").textContent = "Thinking…";
+            const pending = $(".chat-pending-text", turn);
+            if (pending) pending.textContent = "Thinking…";
+          }
           if (event.type === "delta") {
             answer += event.text;
             live(answer);

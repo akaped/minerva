@@ -360,7 +360,9 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
     // of the answer, the written part is kept with a warning, and a model that
     // only reasoned gets a clear error.
     for (path, kept) in [("thinking", true), ("overthinking", false)] {
-        let (_, p) = call(&router, "POST", "ai/providers", &root, json!({"kind":"compatible","name":path,"endpoint":format!("{base}/{path}"),"model":"qwen","api_key":"k"})).await;
+        // Thinking models get a larger answer limit, sent with every request.
+        let (_, p) = call(&router, "POST", "ai/providers", &root, json!({"kind":"compatible","name":path,"endpoint":format!("{base}/{path}"),"model":"qwen","api_key":"k","max_tokens":16384})).await;
+        assert_eq!(p["max_tokens"], 16384, "{p}");
         let p = p["id"].as_str().unwrap().to_string();
         let (_, chat) = call(
             &router,
@@ -373,6 +375,8 @@ async fn chat_streams_from_each_provider_saves_history_and_releases_on_cancel() 
         let chat = chat["id"].as_str().unwrap().to_string();
         let (_, events) = stream(&router, &reader, &chat, &p, 0).await;
         assert!(events.iter().any(|e| e["type"] == "thinking"), "{events:?}");
+        let (_, sent) = seen.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(sent["max_tokens"], 16384);
         let answer: String = events
             .iter()
             .filter(|e| e["type"] == "delta")

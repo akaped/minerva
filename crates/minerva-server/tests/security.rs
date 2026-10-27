@@ -53,7 +53,6 @@ async fn throttling_one_account_does_not_lock_out_others() {
     )
     .await;
     let root = login["token"].as_str().unwrap().to_string();
-    let admin = common::member(&router, &root, "owner@test.local").await;
     api(
         &router,
         "POST",

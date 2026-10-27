@@ -1,32 +1,47 @@
-// A line is a block, except fenced code and contiguous tables/lists: their
-// Markdown meaning depends on keeping the lines together.
+// A line is a block, except fenced code, display math and contiguous
+// tables/lists/quotes: their Markdown meaning depends on keeping the lines
+// together (a callout is a quote whose first line is `> [!NOTE]`).
 export function splitMarkdown(markdown) {
   const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
   const blocks = [];
   let fence = null;
   let group = [];
+  // What the open group holds: "list" (tables and lists) or "quote".
+  let kind = null;
   const flush = () => {
     if (group.length) blocks.push(group.join("\n"));
     group = [];
+    kind = null;
   };
   for (const line of lines) {
     if (fence) {
       group.push(line);
-      const end = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
-      if (end && end[1][0] === fence[0] && end[1].length >= fence.length) {
+      const end =
+        fence === "$$"
+          ? /^\s*\$\$\s*$/.test(line)
+          : (() => {
+              const m = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+              return m && m[1][0] === fence[0] && m[1].length >= fence.length;
+            })();
+      if (end) {
         flush();
         fence = null;
       }
       continue;
     }
     const start = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (start) {
+    if (start || /^\s*\$\$\s*$/.test(line)) {
       flush();
-      fence = start[1];
+      fence = start ? start[1] : "$$";
       group.push(line);
       continue;
     }
-    if (/^\s*\|/.test(line) || /^\s*(?:[-+*]|\d+[.)])\s/.test(line)) {
+    const quote = /^\s{0,3}>/.test(line);
+    const list = /^\s*\|/.test(line) || /^\s*(?:[-+*]|\d+[.)])\s/.test(line);
+    if (quote || list) {
+      const next = quote ? "quote" : "list";
+      if (kind && kind !== next) flush();
+      kind = next;
       group.push(line);
       continue;
     }

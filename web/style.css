@@ -5583,3 +5583,255 @@ body.note-tab-shown .sidebar .tree-row.active {
   color: inherit !important;
   font-weight: inherit !important;
 }
+
+/* Ask AI, refreshed: a full-height conversation with the question box pinned
+   at the bottom, replies introduced by who answers, compact sources. */
+.ai-disclosure {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-disclosure summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.ai-disclosure p {
+  margin: 6px 0 0;
+}
+.chat-reply {
+  display: grid;
+  gap: 8px;
+}
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.chat-meta strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chat-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+}
+.chat-answer {
+  border-radius: 14px;
+}
+.chat-answer.chat-pending {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-style: normal;
+}
+.chat-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.chat-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-dot 1.2s infinite ease-in-out;
+}
+.chat-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.chat-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes chat-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+.chat-sources {
+  margin: 0;
+}
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: transparent;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-chip:hover {
+  border-color: var(--accent);
+}
+.source-number {
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+.chat-usage {
+  font-size: 11px;
+  color: var(--muted);
+}
+.chat-reply-actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+/* The question box: grows with the text, send button inside. */
+.chat-composer {
+  margin-top: 10px;
+}
+.chat-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+}
+.chat-input:focus-within {
+  border-color: var(--accent);
+}
+.chat-input textarea#chat-question {
+  flex: 1;
+  min-height: 24px;
+  max-height: 220px;
+  padding: 4px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  resize: none;
+  box-shadow: none;
+}
+.chat-send {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+}
+.chat-composer .chat-compose-actions {
+  margin-top: 6px;
+}
+.chat-composer #stop-chat:disabled {
+  visibility: hidden;
+}
+/* Beside a note: the conversation fills the panel. */
+.ai-page.docked {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 14px 16px;
+  box-sizing: border-box;
+}
+.ai-page.docked .ai-docked-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ai-page.docked .ai-docked-heading h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+}
+.ai-heading-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.ai-heading-actions .btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.ai-page.docked .ai-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.ai-page.docked .ai-history {
+  order: 0;
+  flex: none;
+  max-height: 40vh;
+}
+.ai-page.docked .ai-conversation {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+}
+.ai-page.docked .chat-messages {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.ai-page.docked .ai-controls label {
+  font-size: 12px;
+}
+/* Tables in replies read like tables in notes. */
+.chat-block-body table {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+  font-size: 13px;
+}
+.chat-block-body th,
+.chat-block-body td {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.chat-block-body th {
+  background: var(--line);
+}
+/* The chat tab fills its frame; only the conversation scrolls. */
+html.editor-pane.chat-pane,
+html.editor-pane.chat-pane body {
+  overflow: hidden;
+}
+/* Every theme keeps the chat heading compact and the send button round. */
+.ai-page.docked .ai-docked-heading h1 {
+  font-family: inherit !important;
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+.chat-input .chat-send {
+  border-radius: 50% !important;
+}
