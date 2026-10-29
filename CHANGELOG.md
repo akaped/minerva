@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
 ### Added
 
 - AI providers have a **Max answer length** setting (default 4096 tokens). Raise it for thinking models such as Qwen or DeepSeek R1, which spend part of it reasoning before they answer.
