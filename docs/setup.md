@@ -137,24 +137,25 @@ Import preserves each Markdown source line as a block. Multiline structures such
 
 ## Configuration
 
-| Variable                 | Default               | Purpose                                                                                                       |
-| ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `MINERVA_BIND`           | `127.0.0.1:3000`      | Listen address                                                                                                |
-| `MINERVA_DATABASE`       | `data/minerva.db`     | SQLite file                                                                                                   |
-| `MINERVA_ADMIN_EMAIL`    | `admin@minerva.local` | Initial admin only                                                                                            |
-| `MINERVA_ADMIN_PASSWORD` | none                  | Required on initial setup, minimum 12 characters                                                              |
-| `MINERVA_SECURE_COOKIE`  | unset                 | Set to `1` behind HTTPS                                                                                       |
-| `MINERVA_PUBLIC_URL`     | HTTP listen address   | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com`     |
-| `MINERVA_SITE_NAME`      | `Published notes`     | Title of the published pages index and feed                                                                   |
-| `MINERVA_TOTP_ISSUER`    | `Minerva`             | Name shown in authenticator apps                                                                              |
-| `MINERVA_SMTP_HOST`      | none                  | SMTP server; with `MINERVA_MAIL_FROM`, turns email on (see [Email](#email))                                   |
-| `MINERVA_SMTP_PORT`      | by security           | 587 for `starttls`, 465 for `tls`, 25 for `none`                                                              |
-| `MINERVA_SMTP_SECURITY`  | `starttls`            | `starttls`, `tls`, or `none` (only for a relay on a private network)                                          |
-| `MINERVA_SMTP_USERNAME`  | none                  | SMTP sign-in; empty sends without authentication                                                              |
-| `MINERVA_SMTP_PASSWORD`  | none                  | SMTP password or app password                                                                                 |
-| `MINERVA_MAIL_FROM`      | none                  | Sender, e.g. `Minerva <notes@example.com>`                                                                    |
-| `MINERVA_PLUGINS`        | `plugins`             | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
-| `MINERVA_PUBLIC_THEME`   | none                  | Public theme for pages under `/shared/`, e.g. `paper`                                                         |
+| Variable                        | Default               | Purpose                                                                                                       |
+| ------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `MINERVA_BIND`                  | `127.0.0.1:3000`      | Listen address                                                                                                |
+| `MINERVA_DATABASE`              | `data/minerva.db`     | SQLite file                                                                                                   |
+| `MINERVA_ADMIN_EMAIL`           | `admin@minerva.local` | Initial admin only                                                                                            |
+| `MINERVA_ADMIN_PASSWORD`        | none                  | Required on initial setup, minimum 12 characters                                                              |
+| `MINERVA_SECURE_COOKIE`         | unset                 | Set to `1` behind HTTPS                                                                                       |
+| `MINERVA_PUBLIC_URL`            | HTTP listen address   | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com`     |
+| `MINERVA_SITE_NAME`             | `Published notes`     | Title of the published pages index and feed                                                                   |
+| `MINERVA_TOTP_ISSUER`           | `Minerva`             | Name shown in authenticator apps                                                                              |
+| `MINERVA_ATTACHMENT_STORAGE_GB` | `10`                  | Total space for note files, in GiB (60 MiB per file, 500 MiB per note)                                        |
+| `MINERVA_SMTP_HOST`             | none                  | SMTP server; with `MINERVA_MAIL_FROM`, turns email on (see [Email](#email))                                   |
+| `MINERVA_SMTP_PORT`             | by security           | 587 for `starttls`, 465 for `tls`, 25 for `none`                                                              |
+| `MINERVA_SMTP_SECURITY`         | `starttls`            | `starttls`, `tls`, or `none` (only for a relay on a private network)                                          |
+| `MINERVA_SMTP_USERNAME`         | none                  | SMTP sign-in; empty sends without authentication                                                              |
+| `MINERVA_SMTP_PASSWORD`         | none                  | SMTP password or app password                                                                                 |
+| `MINERVA_MAIL_FROM`             | none                  | Sender, e.g. `Minerva <notes@example.com>`                                                                    |
+| `MINERVA_PLUGINS`               | `plugins`             | Folder with extra or replacement themes; read on each request (see [plugins/README.md](../plugins/README.md)) |
+| `MINERVA_PUBLIC_THEME`          | none                  | Public theme for pages under `/shared/`, e.g. `paper`                                                         |
 
 Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
 

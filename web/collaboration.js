@@ -63,6 +63,17 @@ export class Collaboration {
       this.debounce = setTimeout(() => this.sync().catch(() => {}), 180);
     });
   }
+  /**
+   * Where this user is in the note: the block they are on, and whether they
+   * have it open for editing. The editor replaces this with its own view.
+   */
+  presence() {
+    const active = document.activeElement;
+    return {
+      active_block: active?.closest?.("[data-block]")?.dataset.block || null,
+      editing: active?.tagName === "TEXTAREA",
+    };
+  }
   async start() {
     await this.sync();
     // Undo only reverts this client's own changes, never collaborators' edits.
@@ -131,12 +142,10 @@ export class Collaboration {
     const updates = this.pending.splice(0);
     this.sending = (async () => {
       try {
-        const active = document.activeElement;
         const result = await this.api(this.syncPath, "POST", {
           update: updates.length ? encode(Y.mergeUpdates(updates)) : "",
           client_id: this.clientId,
-          active_block:
-            active?.closest?.("[data-block]")?.dataset.block || null,
+          ...this.presence(),
         });
         if (this.closed) return;
         const focused = document.activeElement,
@@ -232,7 +241,25 @@ export class Collaboration {
     await this.sync();
     while (this.pending.length) await this.sync();
   }
+  /**
+   * Tells the server this user left, so collaborators stop seeing them at
+   * once instead of after a timeout. Also safe while the page unloads.
+   */
+  leave() {
+    if (!this.ready || this.closed) return;
+    fetch("/api/v1/" + this.syncPath, {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", "X-Minerva-Client": "1" },
+      body: JSON.stringify({
+        update: "",
+        client_id: this.clientId,
+        leave: true,
+      }),
+    }).catch(() => {});
+  }
   destroy() {
+    this.leave();
     this.closed = true;
     clearInterval(this.timer);
     clearTimeout(this.debounce);

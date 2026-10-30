@@ -10,6 +10,18 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Added
+
+- Files in notes show as cards: an icon for the type of file, its name, size and upload date, with Download. PDFs also have **Open**, which shows the PDF in a tab beside the note.
+- **/emoji** in the editor opens an emoji picker: every emoji, searchable by name or keyword (“heart”, “pizza”, “rocket”), grouped like a phone keyboard, with recently used ones first.
+- When several people are in a note, a small name tag beside each block shows who is on it: solid while they edit the block, outlined while they read it. The tag moves with them and goes away when they leave the note.
+- Only one person can edit a block at a time. Clicking a block someone else is editing tells you who has it, and if two people open the same block at once, the first one keeps it. Deleting that block, or merging into it with Backspace or Delete, waits until they move on.
+
+### Changed
+
+- Files attached to notes can be up to **60 MiB** (was 10 MiB), and up to 500 MiB per note (was 100 MiB). The total for the server is 10 GiB by default (was 1 GiB) and can be set with `MINERVA_ATTACHMENT_STORAGE_GB`.
+- The note icon is chosen with the same searchable emoji picker, instead of a short list and a box to type an emoji into.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added

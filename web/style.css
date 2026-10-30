@@ -1008,6 +1008,55 @@ body.dragging-block * {
   color: #b1b8c3;
   font-size: 13px;
 }
+/* Collaborators: a name tag left of the block each one is on, solid while they
+   edit it and outlined while they read. A block someone else edits shows their
+   colour on its left edge and cannot be opened. */
+.peer-layer {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.peer-tag {
+  position: absolute;
+  transform: translateX(calc(-100% - 40px));
+  max-width: 120px;
+  padding: 1px 7px;
+  border: 1px solid var(--peer);
+  border-radius: 5px;
+  background: var(--surface, #fff);
+  color: var(--peer);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    top 0.25s ease,
+    left 0.25s ease;
+}
+.peer-tag.editing {
+  background: var(--peer);
+  color: #fff;
+}
+.peer-tag.inside {
+  transform: translateX(calc(-100% - 4px));
+  opacity: 0.92;
+}
+.block.peer-editing {
+  box-shadow: inset 2px 0 0 var(--peer);
+  background: color-mix(in srgb, var(--peer) 5%, transparent);
+}
+.block.peer-editing .block-body {
+  cursor: not-allowed;
+}
+.presence .peer {
+  background: color-mix(in srgb, var(--peer) 12%, transparent);
+  color: var(--peer);
+}
 .add-block {
   color: #9aa3b4;
   font-size: 12px;
@@ -5834,4 +5883,142 @@ html.editor-pane.chat-pane body {
 }
 .chat-input .chat-send {
   border-radius: 50% !important;
+}
+
+/* Emoji pickers: the note icon and /emoji. */
+.emoji-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, 82vw);
+}
+.emoji-dialog .emoji-picker {
+  width: 100%;
+}
+.emoji-search {
+  width: 100%;
+}
+.emoji-tabs {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.emoji-tabs button {
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+}
+.emoji-grid {
+  height: 280px;
+  overflow-y: auto;
+}
+.emoji-grid h4 {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 6px 2px 4px;
+  background: var(--surface, #fff);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.emoji-set {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+}
+.emoji-set button {
+  height: 36px;
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 1;
+}
+.emoji-set button:hover,
+.emoji-set button:focus-visible,
+.emoji-tabs button:hover {
+  background: var(--line);
+}
+.emoji-name,
+.emoji-empty,
+.emoji-loading {
+  margin: 0;
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.emoji-tabs[hidden] {
+  display: none;
+}
+
+/* Files in notes: a card with the file's type, name, size and date. */
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 560px;
+  margin: 4px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+.file-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--line);
+  font-size: 22px;
+}
+.file-pdf .file-icon {
+  background: #fbe3e1;
+}
+.file-image .file-icon,
+.file-video .file-icon {
+  background: #e3ecfb;
+}
+.file-audio .file-icon {
+  background: #ece3fb;
+}
+.file-sheet .file-icon {
+  background: #e1f4e6;
+}
+[data-theme="dark"] .file-icon {
+  background: #2b3445;
+}
+.file-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.file-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-info small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.file-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.file-actions .btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  text-decoration: none;
+}
+@media (max-width: 560px) {
+  .file-card {
+    flex-wrap: wrap;
+  }
 }

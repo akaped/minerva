@@ -218,8 +218,10 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     title = "Note",
     workspace = "",
     chat = "",
+    file = "",
   }) {
-    const key = origin + "|" + (chat ? `chat:${chat}` : id);
+    const key =
+      origin + "|" + (chat ? `chat:${chat}` : file ? `file:${file}` : id);
     const existing = tabs.find((t) => t.key === key);
     if (existing) {
       active = key;
@@ -232,39 +234,61 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     const frame = document.createElement("iframe");
     frame.className = "note-pane-frame";
     frame.title = title;
-    const url = new URL("/pane", origin);
-    url.searchParams.set("host", location.origin);
-    url.searchParams.set("group", group);
-    if (chat) url.searchParams.set("chat", chat);
-    else if (id) url.searchParams.set("note", id);
+    // A file (a PDF) shows in the browser's own viewer, not in a note page.
+    const url = file
+      ? new URL(
+          `/api/v1/attachments/${encodeURIComponent(file)}/preview`,
+          origin,
+        )
+      : new URL("/pane", origin);
+    if (!file) {
+      url.searchParams.set("host", location.origin);
+      url.searchParams.set("group", group);
+      if (chat) url.searchParams.set("chat", chat);
+      else if (id) url.searchParams.set("note", id);
+    }
     frame.src = url.href;
     frame.allow =
       "autoplay; fullscreen; picture-in-picture; clipboard-write; microphone";
     frame.referrerPolicy = "strict-origin-when-cross-origin";
     const tab = {
       key,
-      id: chat ? "" : id,
+      id: chat || file ? "" : id,
       chat,
+      file,
       queue: [],
       origin,
       title,
       workspace,
       frame,
       dirty: false,
-      ready: false,
+      // A file has nothing to save and sends no "ready".
+      ready: !!file,
     };
     tabs.push(tab);
     deck.append(frame);
     active = key;
     shown = true;
-    tab.timer = setTimeout(() => {
-      if (!tab.ready && tabs.includes(tab))
-        error(
-          new Error(
-            "The server tab has not connected. Check its address and MINERVA_EMBED_ORIGINS setting.",
-          ),
-        );
-    }, 15000);
+    if (!file)
+      tab.timer = setTimeout(() => {
+        if (!tab.ready && tabs.includes(tab))
+          error(
+            new Error(
+              "The server tab has not connected. Check its address and MINERVA_EMBED_ORIGINS setting.",
+            ),
+          );
+      }, 15000);
+    draw();
+  }
+  /** Opens (or shows) a file, such as a PDF, side by side with the tab `beside`. */
+  function openFile({ file, title, beside, origin = location.origin }) {
+    open({ origin, file, title: `📄 ${title}` });
+    const key = `${origin}|file:${file}`;
+    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
+      active = beside;
+      secondary = key;
+    }
+    shown = true;
     draw();
   }
   /** Opens (or shows) an AI chat tab side by side with the tab `beside`. */
@@ -305,6 +329,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     });
   }
   async function flushTab(tab) {
+    if (tab.file) return;
     if (!tab.ready) {
       if (tab.dirty)
         throw new Error("This tab has not connected; it cannot safely close.");
@@ -347,6 +372,17 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       tab.queue.splice(0).forEach((deliver) => deliver());
       place();
     }
+    // A note opens one of its files (a PDF) beside it.
+    if (
+      message.type === "open-file" &&
+      /^[a-f0-9-]{36}$/i.test(message.file || "")
+    )
+      openFile({
+        file: message.file,
+        title: String(message.title || "File").slice(0, 200),
+        beside: tab.key,
+        origin: tab.origin,
+      });
     // A note asks for an AI chat about itself, beside it.
     if (
       message.type === "open-chat" &&
@@ -436,6 +472,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
   return {
     open,
     openChat,
+    openFile,
     insertBlocks,
     place,
     hide() {

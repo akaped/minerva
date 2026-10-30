@@ -1,12 +1,13 @@
 # syntax=docker/dockerfile:1
 # Minerva server with its embedded web app. Build: docker compose build
 
-# 1. Browser bundles (app.js, mermaid.js) from source.
+# 1. Browser bundles (app.js, mermaid.js) and emoji data from source.
 FROM node:24-bookworm-slim AS web
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY web ./web
+COPY scripts/build-emoji.mjs ./scripts/
 RUN npm run build
 
 # 2. The Rust server; web assets are embedded at compile time.

@@ -827,12 +827,27 @@ async fn attachment_storage_permissions_headers_and_restart() {
                 .uri(&upload_path)
                 .header("authorization", format!("Bearer {admin}"))
                 .header("x-minerva-client", "1")
-                .body(Body::from(vec![0u8; 10 * 1024 * 1024 + 1]))
+                .body(Body::from(vec![0u8; 60 * 1024 * 1024 + 4096]))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(large.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    // Files up to 60 MiB are accepted: a 20 MiB one, over the former limit.
+    let medium = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&upload_path)
+                .header("authorization", format!("Bearer {admin}"))
+                .header("x-minerva-client", "1")
+                .body(Body::from(vec![1u8; 20 * 1024 * 1024]))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(medium.status(), StatusCode::CREATED);
     let html = router
         .clone()
         .oneshot(

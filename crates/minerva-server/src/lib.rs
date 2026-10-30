@@ -822,8 +822,10 @@ fn note_view(n: &Note) -> Value {
 }
 
 /// Only the reduced editor may be embedded, and only by explicitly trusted origins.
-async fn editor_pane() -> Response {
-    let origins = std::env::var("MINERVA_EMBED_ORIGINS")
+/// Other sites allowed to show Minerva's pages in a frame
+/// (`MINERVA_EMBED_ORIGINS`), space-separated for `frame-ancestors`.
+pub(crate) fn embed_origins() -> String {
+    std::env::var("MINERVA_EMBED_ORIGINS")
         .unwrap_or_default()
         .split(',')
         .filter_map(|raw| {
@@ -841,7 +843,10 @@ async fn editor_pane() -> Response {
             Some(url.origin().ascii_serialization())
         })
         .collect::<Vec<_>>()
-        .join(" ");
+        .join(" ")
+}
+async fn editor_pane() -> Response {
+    let origins = embed_origins();
     let policy = format!("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com 'self'; frame-ancestors 'self' {origins}; base-uri 'none'; form-action 'self'");
     (
         [("content-security-policy", policy)],
@@ -858,6 +863,8 @@ pub fn app(store: Shared) -> Router {
         .route("/app.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], include_str!("../../../web/dist/app.js")) }))
         .route("/style.css", get(|| async { ([("content-type","text/css; charset=utf-8")], include_str!("../../../web/style.css")) }))
         .route("/share", get(|| async { ([("x-robots-tag","noindex"),("referrer-policy","no-referrer")], axum::response::Html(include_str!("../../../web/index.html"))) }))
+        // Emoji names and search tags for the pickers, loaded when one opens.
+        .route("/emoji.json", get(|| async { ([("content-type","application/json"),("cache-control","public, max-age=86400")], include_str!("../../../web/dist/emoji.json")) }))
         .route("/mermaid.js", get(|| async { ([("content-type","text/javascript; charset=utf-8"),("cache-control","public, max-age=86400")], include_str!("../../../web/dist/mermaid.js")) }))
         .route("/export/{note_id}", get(export::export))
         .route("/export.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], export::EXPORT_JS) }))
@@ -873,12 +880,12 @@ pub fn app(store: Shared) -> Router {
         .route("/p/", get(sharing::moved))
         .route("/p/{*path}", get(sharing::moved))
         .route("/preview/{note_id}", get(sharing::preview))
-        .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
         .route("/api/v1/admin/overview", get(administration::overview))
         .route("/api/v1/admin/storage", any(attachments::storage))
         .route("/api/v1/admin/storage/cleanup", any(attachments::storage))
-        .route("/api/v1/notes/{note_id}/attachments", any(attachments::endpoint).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        .route("/api/v1/notes/{note_id}/attachments/{attachment_id}", any(attachments::endpoint).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .route("/api/v1/notes/{note_id}/attachments", any(attachments::endpoint).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
+        .route("/api/v1/notes/{note_id}/attachments/{attachment_id}", any(attachments::endpoint).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
         .route("/api/v1/attachments/{attachment_id}", get(attachments::endpoint))
         .route("/api/v1/attachments/{attachment_id}/preview", get(attachments::endpoint))
         // Anki packages can be large; their media is not kept.

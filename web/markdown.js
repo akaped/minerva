@@ -82,6 +82,7 @@ export const blockCommands = [
     "flowchart chart graph sequence gantt",
   ],
   ["Highlight", "==highlighted text==", "marker mark color"],
+  ["Emoji", "@emoji", "/emoji smiley icon face symbol"],
   ["Link to note", "[[", "wiki backlink mention reference recall"],
   [
     "Assign to someone",

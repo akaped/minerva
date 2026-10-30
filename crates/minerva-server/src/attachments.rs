@@ -1,8 +1,16 @@
 use super::*;
 
-const FILE_LIMIT: usize = 10 * 1024 * 1024;
-const NOTE_QUOTA: i64 = 100 * 1024 * 1024;
-const SERVER_QUOTA: i64 = 1024 * 1024 * 1024;
+pub(super) const FILE_LIMIT: usize = 60 * 1024 * 1024;
+const NOTE_QUOTA: i64 = 500 * 1024 * 1024;
+/// All attachments together: `MINERVA_ATTACHMENT_STORAGE_GB`, 10 GiB by default.
+fn server_quota() -> i64 {
+    let gib = std::env::var("MINERVA_ATTACHMENT_STORAGE_GB")
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|g| *g > 0)
+        .unwrap_or(10);
+    gib.saturating_mul(1024 * 1024 * 1024)
+}
 
 pub(super) fn initialize(db: &Connection) -> rusqlite::Result<()> {
     db.execute_batch(
@@ -31,6 +39,8 @@ fn media_type(bytes: &[u8]) -> &'static str {
         || (bytes.len() > 1 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0 && bytes[1] & 0x06 != 0)
     {
         "audio/mpeg"
+    } else if bytes.starts_with(b"%PDF-") {
+        "application/pdf"
     } else if bytes.starts_with(b"OggS") {
         "audio/ogg"
     } else if bytes.starts_with(b"fLaC") {
@@ -90,13 +100,14 @@ pub(super) fn upload(
         return Err(bad("Restore this note before adding files"));
     }
     if body.is_empty() || body.len() > FILE_LIMIT {
-        return Err(bad("Files must contain 1 byte to 10 MiB"));
+        return Err(bad("Files must contain 1 byte to 60 MiB"));
     }
     let used: (i64, i64) = s.db.query_row("SELECT COALESCE(SUM(length(content)),0),COALESCE(SUM(CASE WHEN note_id=?1 THEN length(content) ELSE 0 END),0) FROM attachments", [&note.id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| internal())?;
-    if used.0 + body.len() as i64 > SERVER_QUOTA || used.1 + body.len() as i64 > NOTE_QUOTA {
-        return Err(bad(
-            "Attachment storage limit reached (100 MiB per note, 1 GiB per server)",
-        ));
+    if used.0 + body.len() as i64 > server_quota() || used.1 + body.len() as i64 > NOTE_QUOTA {
+        return Err(bad(&format!(
+            "Attachment storage limit reached (500 MiB per note, {} GiB per server)",
+            server_quota() / (1024 * 1024 * 1024)
+        )));
     }
     let raw = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
         .find(|(k, _)| k == "filename")
@@ -141,15 +152,22 @@ pub(super) fn blob(
         .find(|n| n.id == note_id)
         .ok_or_else(missing)?;
     allowed(note)?;
-    // Images and audio show in the page; everything else downloads.
-    if preview && !media.starts_with("image/") && !media.starts_with("audio/") {
-        return Err(bad("Only images and audio files play in the page"));
-    }
     let bytes: Vec<u8> =
         s.db.query_row("SELECT content FROM attachments WHERE id=?1", [key], |r| {
             r.get(0)
         })
         .map_err(|_| internal())?;
+    // PDFs uploaded before they were recognized were stored as plain files.
+    let media = if media == "application/octet-stream" && bytes.starts_with(b"%PDF-") {
+        "application/pdf".to_string()
+    } else {
+        media
+    };
+    let pdf = media == "application/pdf";
+    // Images, audio and PDFs show in the page; everything else downloads.
+    if preview && !media.starts_with("image/") && !media.starts_with("audio/") && !pdf {
+        return Err(bad("Only images, audio and PDF files open in the page"));
+    }
     let mut response = bytes.into_response();
     let h = response.headers_mut();
     h.insert(
@@ -177,6 +195,16 @@ pub(super) fn blob(
         "cross-origin-resource-policy",
         "same-origin".parse().unwrap(),
     );
+    // A PDF opens in a tab beside its note: Minerva's own pages may frame it.
+    if preview && pdf {
+        h.insert(
+            "content-security-policy",
+            format!("frame-ancestors 'self' {}", crate::embed_origins())
+                .trim()
+                .parse()
+                .map_err(|_| internal())?,
+        );
+    }
     Ok(response)
 }
 
@@ -343,7 +371,7 @@ pub(super) async fn storage(
         Ok(axum::Json(json!({
             "used": files.iter().map(|f| f.size).sum::<i64>(),
             "files": files.len(),
-            "server_quota": SERVER_QUOTA,
+            "server_quota": server_quota(),
             "note_quota": NOTE_QUOTA,
             "file_limit": FILE_LIMIT,
             "grace_seconds": ORPHAN_GRACE,
@@ -366,6 +394,7 @@ mod tests {
         assert_eq!(super::media_type(b"OggS\0\x02"), "audio/ogg");
         assert_eq!(super::media_type(b"\x1a\x45\xdf\xa3\x9f"), "audio/webm");
         assert_eq!(super::media_type(b"\0\0\0\x20ftypM4A \0"), "audio/mp4");
-        assert_eq!(super::media_type(b"%PDF-1.7"), "application/octet-stream");
+        assert_eq!(super::media_type(b"%PDF-1.7"), "application/pdf");
+        assert_eq!(super::media_type(b"PK\x03\x04"), "application/octet-stream");
     }
 }

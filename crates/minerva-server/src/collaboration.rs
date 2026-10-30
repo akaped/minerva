@@ -12,6 +12,10 @@ pub(super) struct Presence {
     user_id: String,
     name: String,
     active_block: Option<String>,
+    /// True while this client has the block open for editing. Only one client
+    /// edits a block at a time; the others see who holds it.
+    #[serde(default)]
+    editing: bool,
     seen: u64,
 }
 fn load(d: &Data, note: &Note) -> Result<Doc, ApiError> {
@@ -227,21 +231,36 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
     }
     d.collaboration.insert(nid.into(), encoded.clone());
     let peers = d.presence.entry(nid.into()).or_default();
-    peers.retain(|p| p.seen + 15 > now());
+    peers.retain(|p| p.seen + 10 > now());
+    let mut denied_block = None;
     if let Some(client) = v["client_id"]
         .as_str()
         .filter(|s| !s.is_empty() && s.len() < 100)
     {
         peers.retain(|p| p.client_id != client || p.user_id != actor.id);
-        if peers.len() < 128 {
+        let active_block = v["active_block"]
+            .as_str()
+            .filter(|s| s.len() <= 80)
+            .map(String::from);
+        let mut editing = v["editing"].as_bool() == Some(true)
+            && active_block.is_some()
+            && actor.role == Some(Role::Editor);
+        // The first client to open a block keeps it; a later one is told to let go.
+        if editing
+            && peers
+                .iter()
+                .any(|p| p.editing && p.active_block == active_block)
+        {
+            editing = false;
+            denied_block = active_block.clone();
+        }
+        if peers.len() < 128 && v["leave"].as_bool() != Some(true) {
             peers.push(Presence {
                 client_id: client.into(),
                 user_id: actor.id.clone(),
                 name: actor.name.clone(),
-                active_block: v["active_block"]
-                    .as_str()
-                    .filter(|s| s.len() <= 80)
-                    .map(String::from),
+                active_block,
+                editing,
                 seen: now(),
             });
         }
@@ -255,7 +274,7 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
             if actor.guest {
                 // Guests do not learn member names or IDs.
                 let name = if p.user_id.starts_with("share:") { "Guest" } else { "Member" };
-                json!({"client_id":p.client_id,"name":name,"active_block":p.active_block,"seen":p.seen})
+                json!({"client_id":p.client_id,"name":name,"active_block":p.active_block,"editing":p.editing,"seen":p.seen})
             } else {
                 json!(p)
             }
@@ -269,5 +288,7 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         view["role"] = json!(actor.role);
         view
     };
-    Ok(json!({"update":encoded,"note":note,"peers":visible,"can_edit":can_edit}))
+    Ok(
+        json!({"update":encoded,"note":note,"peers":visible,"can_edit":can_edit,"denied_block":denied_block}),
+    )
 }

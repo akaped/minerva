@@ -86,7 +86,7 @@ graph LR
 
 ## 8. Images, files and videos
 
-Use **/ → Image or file**, paste an image while editing a block, or drop images and files onto the note. Paste a link to an image and it shows in the page. Every file of the note is listed under **Files** in the toolbar.
+Use **/ → Image or file** (up to 60 MB each), paste an image while editing a block, or drop images and files onto the note. Type **/emoji** to search and insert any emoji; click the note's icon to change it the same way. Paste a link to an image and it shows in the page. Each file shows as a card with its type, size and date; a PDF opens beside the note with **Open**. Every file of the note is also listed under **Files** in the toolbar.
 
 Paste a link to an audio file (`.mp3`, `.wav`, `.ogg`...) and it becomes a player. **/ → Record audio** records from your microphone and saves the recording in the note, with a player.
 
@@ -96,6 +96,7 @@ Paste a YouTube link alone in a block and it becomes a player that keeps playing
 
 - **Share** gives other members of this server access to a note, or creates a link for anyone. Workspaces and folders are shared from their **⋯** menu.
 - Everyone editing a note at the same time sees each other's changes live.
+- A name tag beside a block shows who is on it, solid while they edit it. A block someone else is editing can't be opened until they move on, so two people never overwrite each other's line.
 - Type **@** and a name to mention someone who can open the note: pick them from the list and their name appears in the block. They get an email with the block and a link to the note, and find it in the **Mentions** widget of their Overview.
 - **/remindme** asks for a date and time and adds it to the block, like `⏰2026-11-02 09:00`. At that time you get the block by email. Remove the `⏰` to cancel.
 

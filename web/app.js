@@ -12,6 +12,7 @@ import {
 } from "./note-tabs.js";
 import { renderAIChat, renderAISettings, stopAI } from "./ai.js";
 import { renderDashboard } from "./dashboard.js";
+import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands } from "./markdown.js";
 import { Collaboration } from "./collaboration.js";
 import {
@@ -387,6 +388,134 @@ function bytes(n) {
   } while (n >= 1024 && i < units.length - 1);
   return n.toFixed(n < 10 ? 1 : 0) + " " + units[i];
 }
+// Files of the open note by attachment ID: name, type, size, upload time.
+const noteFiles = new Map();
+let noteFilesFor = null;
+async function loadNoteFiles(id = note?.id) {
+  if (!id || shareMode) return;
+  try {
+    const { attachments } = await api(`notes/${id}/attachments`);
+    for (const f of attachments) noteFiles.set(f.id, f);
+    fileCards(document);
+    // Cards drawn before the details arrived get their size and date now.
+    for (const card of $$(".file-card[data-file]")) {
+      const meta = noteFiles.get(card.dataset.file);
+      if (meta) $("small", card).textContent = fileDetails(meta.filename, meta);
+    }
+  } catch {
+    // Cards still show the file name from the link.
+  }
+}
+const FILE_KINDS = [
+  ["pdf", "PDF", "📕", /\.pdf$/i, /pdf/],
+  [
+    "image",
+    "Image",
+    "🖼️",
+    /\.(png|jpe?g|gif|webp|svg|avif|bmp|heic)$/i,
+    /^image\//,
+  ],
+  [
+    "audio",
+    "Audio",
+    "🎧",
+    /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|weba)$/i,
+    /^audio\//,
+  ],
+  ["video", "Video", "🎬", /\.(mp4|mov|mkv|webm|avi)$/i, /^video\//],
+  [
+    "archive",
+    "Archive",
+    "🗜️",
+    /\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i,
+    /zip|compressed/,
+  ],
+  [
+    "sheet",
+    "Spreadsheet",
+    "📊",
+    /\.(xlsx?|ods|csv|tsv|numbers)$/i,
+    /sheet|csv/,
+  ],
+  ["slides", "Presentation", "📽️", /\.(pptx?|odp|key)$/i, /presentation/],
+  [
+    "doc",
+    "Document",
+    "📄",
+    /\.(docx?|odt|rtf|pages)$/i,
+    /word|opendocument\.text/,
+  ],
+  ["text", "Text", "📝", /\.(txt|md|markdown|json|xml|ya?ml|log)$/i, /^text\//],
+];
+/** The kind of a file, from its name or type: [id, label, icon]. */
+function fileKind(name, media = "") {
+  const kind = FILE_KINDS.find(
+    ([, , , ext, type]) => ext.test(name) || (media && type.test(media)),
+  );
+  return kind ? kind.slice(0, 3) : ["file", "File", "📎"];
+}
+/**
+ * A block that is only a link to one of the note's files shows as a card:
+ * type icon, name, size and upload date, with Download, and Open for PDFs.
+ */
+function fileCards(root) {
+  for (const link of $$('.block-body a[href*="/api/v1/attachments/"]', root)) {
+    const id = link
+      .getAttribute("href")
+      .match(/\/api\/v1\/attachments\/([0-9a-f-]{36})$/i)?.[1];
+    const paragraph = link.closest("p");
+    if (
+      !id ||
+      link.closest(".file-card") ||
+      !paragraph ||
+      paragraph.textContent.trim() !== link.textContent.trim()
+    )
+      continue;
+    const meta = noteFiles.get(id);
+    const name = meta?.filename || link.textContent.replace(/^Download /, "");
+    const [kind, , iconChar] = fileKind(name, meta?.media_type);
+    const details = fileDetails(name, meta);
+    const card = document.createElement("div");
+    card.className = `file-card file-${kind}`;
+    card.dataset.file = id;
+    card.innerHTML = `<span class="file-icon" aria-hidden="true">${iconChar}</span><div class="file-info"><strong title="${esc(name)}">${esc(name)}</strong><small>${esc(details)}</small></div><div class="file-actions">${kind === "pdf" ? `<button type="button" class="btn primary" data-open-file="${id}">Open</button>` : ""}<a class="btn" href="/api/v1/attachments/${id}" download>Download</a></div>`;
+    paragraph.replaceWith(card);
+    $("[data-open-file]", card)?.addEventListener("click", () =>
+      openFile(id, name),
+    );
+  }
+}
+/** "PDF · 2.4 MiB · 30 Oct 2026": a file's kind, size and upload date. */
+function fileDetails(name, meta) {
+  return [
+    fileKind(name, meta?.media_type)[1],
+    meta && bytes(meta.size),
+    meta?.created_at &&
+      new Date(meta.created_at * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+/** Shows a PDF beside the note: in a tab next to it, or a browser tab. */
+function openFile(id, title) {
+  if (isPane) return paneMessage("open-file", { file: id, title });
+  if (noteTabs) return noteTabs.openFile({ file: id, title });
+  window.open(`/api/v1/attachments/${id}/preview`, "_blank", "noopener");
+}
+if (typeof MutationObserver !== "undefined")
+  new MutationObserver((changes) => {
+    for (const change of changes)
+      for (const node of change.addedNodes)
+        if (
+          node.nodeType === 1 &&
+          node.querySelector?.('a[href*="/api/v1/attachments/"]')
+        )
+          fileCards(node.closest?.("#blocks") || node);
+  }).observe(document.documentElement, { childList: true, subtree: true });
 function slugify(title) {
   return (
     title
@@ -1571,6 +1700,7 @@ async function openNote(id) {
       }
     },
   );
+  live.presence = blockPresence;
   await live.start();
   shell();
 }
@@ -1651,16 +1781,133 @@ function receiveLive(snapshot, result) {
       }
     }
   }
+  peers = result.peers.filter((p) => p.client_id !== live?.clientId);
+  // Someone else opened this block a moment earlier: they keep it.
+  const open = $(
+    `#blocks textarea[data-live-key="block:${CSS.escape(result.denied_block || "")}"]`,
+  );
+  if (result.denied_block && open) {
+    const holder = lockedBy(result.denied_block);
+    open.blur();
+    // A window in the background gets no blur event; close the block anyway.
+    if (open.isConnected) open.onblur?.();
+    toast(`${holder ? holder.name : "Someone"} is already editing this block.`);
+  }
   if ($("#presence"))
     $("#presence").innerHTML =
-      result.peers
-        .filter((p) => p.client_id !== live?.clientId)
+      peers
         .map(
           (p) =>
-            `<span class="peer" title="${esc(p.active_block ? "Editing a block" : "Viewing this note")}">${esc(p.name)}</span>`,
+            `<span class="peer" style="--peer:${peerColor(p.name)}" title="${esc(p.editing ? "Editing a block" : "Viewing this note")}">${esc(p.name)}</span>`,
         )
         .join("") || '<span class="presence-label">Only you here</span>';
+  drawPeers();
 }
+/** Collaborators in the open note, without this window. */
+let peers = [];
+let hoveredBlock = null;
+document.addEventListener("pointerover", (e) => {
+  hoveredBlock =
+    e.target.closest?.("#blocks [data-block]")?.dataset.block || null;
+});
+/** What collaborators see of this user: the block they edit or read. */
+function blockPresence() {
+  const editing = $('#blocks textarea[data-live-key^="block:"]')?.closest(
+    "[data-block]",
+  )?.dataset.block;
+  if (editing) return { active_block: editing, editing: true };
+  const focused = document.activeElement?.closest?.("#blocks [data-block]")
+    ?.dataset.block;
+  return { active_block: focused || hoveredBlock, editing: false };
+}
+/** The collaborator who has block `id` open for editing, if any. */
+function lockedBy(id) {
+  return peers.find((p) => p.editing && p.active_block === id);
+}
+/** True (after telling the user) when someone else is editing block `id`. */
+function blockLocked(id) {
+  const holder = lockedBy(id);
+  if (holder)
+    toast(`${holder.name} is editing this block. Try again when they move on.`);
+  return Boolean(holder);
+}
+const PEER_COLORS = [
+  "#5b63d3",
+  "#d0572f",
+  "#1f8a5b",
+  "#b0399a",
+  "#2b7fb8",
+  "#a8741a",
+  "#7a4fc9",
+  "#c23a4f",
+];
+function peerColor(name) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.codePointAt(0)) >>> 0;
+  return PEER_COLORS[h % PEER_COLORS.length];
+}
+/**
+ * Puts a name tag left of each block a collaborator is on, solid while they
+ * edit it and outlined while they read. Tags slide when the person moves.
+ */
+function drawPeers() {
+  const root = $("#blocks");
+  if (!root) return;
+  let layer = $(".peer-layer", root);
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.className = "peer-layer";
+    layer.setAttribute("aria-hidden", "true");
+    root.append(layer);
+  }
+  $$(".block.peer-editing", root).forEach((el) => {
+    el.classList.remove("peer-editing");
+    el.style.removeProperty("--peer");
+    $(".block-body", el)?.removeAttribute("title");
+  });
+  const base = root.getBoundingClientRect();
+  const stacked = new Map();
+  const seen = new Set();
+  for (const p of peers) {
+    const el =
+      p.active_block &&
+      $(`.block[data-block="${CSS.escape(p.active_block)}"]`, root);
+    if (!el) continue;
+    const color = peerColor(p.name);
+    if (p.editing) {
+      el.classList.add("peer-editing");
+      el.style.setProperty("--peer", color);
+      $(".block-body", el)?.setAttribute(
+        "title",
+        `${p.name} is editing this block`,
+      );
+    }
+    const rect = el.getBoundingClientRect();
+    const row = stacked.get(el) || 0;
+    stacked.set(el, row + 1);
+    let tag = layer.querySelector(`[data-peer="${CSS.escape(p.client_id)}"]`);
+    if (!tag) {
+      tag = document.createElement("span");
+      tag.className = "peer-tag";
+      tag.dataset.peer = p.client_id;
+      layer.append(tag);
+    }
+    tag.textContent = p.editing ? `✎ ${p.name}` : p.name;
+    tag.title = `${p.name} is ${p.editing ? "editing" : "reading"} this block`;
+    tag.classList.toggle("editing", p.editing);
+    tag.style.setProperty("--peer", color);
+    tag.style.top = `${rect.top - base.top + 4 + row * 22}px`;
+    // With no room in the margin (narrow windows), the tag sits at the right.
+    const inside = rect.left < tag.offsetWidth + 44;
+    tag.classList.toggle("inside", inside);
+    tag.style.left = `${(inside ? rect.right : rect.left) - base.left}px`;
+    seen.add(p.client_id);
+  }
+  for (const tag of layer.querySelectorAll("[data-peer]"))
+    if (!seen.has(tag.dataset.peer)) tag.remove();
+}
+addEventListener("resize", () => drawPeers());
+addEventListener("pagehide", () => live?.leave());
 function markDirty() {
   dirty = true;
   paneState();
@@ -1736,6 +1983,10 @@ async function flush() {
 function renderEditor() {
   // Names for mention chips, and the people the `@` picker offers.
   loadPeople().catch(() => {});
+  if (noteFilesFor !== note.id) {
+    noteFilesFor = note.id;
+    loadNoteFiles();
+  }
   const can = editable();
   $("#breadcrumb").textContent = note.title;
   const sharing = note.sharing || {};
@@ -1897,10 +2148,6 @@ function closePopover() {
   pop?.cleanup?.();
   pop?.remove();
 }
-const ICONS =
-  "📝 📌 💡 ✳ 📚 🗂 📅 ✅ 🚀 🎯 ⭐ 🔥 💼 🏠 🌱 🧪 🧠 📊 📈 🛠 🔒 🌍 🎨 🎵 📷 ✈️ 🍳 ❤️ 😀 🙂 🤝 💬 📣 🧭 ⚙️ 🐞 🔍 📦 🧾 🏁 🗓 📍 🧩 🪴 ☕ 🎉 🎓 💰 🏃 🧘 📖 ✍️ 🔖 🗒 📎 🧷 ▤ ✦ ◆ ●".split(
-    " ",
-  );
 function setNoteField(key, value) {
   live?.boundary();
   note[key] = value;
@@ -1908,26 +2155,39 @@ function setNoteField(key, value) {
   queueSave().catch(() => {});
   renderEditor();
 }
+/** The note's icon: any emoji, found by searching its name. */
 function iconPicker(anchor) {
   const pop = popover(
     anchor,
-    `<div class="icon-grid">${ICONS.map((i) => `<button data-icon="${i}" aria-label="Use ${i}">${i}</button>`).join("")}</div><form class="icon-custom"><input name="icon" maxlength="8" placeholder="Or type an emoji" aria-label="Custom icon"><button class="btn">Use</button></form>${note.icon ? '<button class="text-link" data-icon="">Remove icon</button>' : ""}`,
+    `<div class="icon-emoji"></div>${note.icon ? '<button class="text-link" data-icon="">Remove icon</button>' : ""}`,
     "Choose an icon",
   );
-  $$("[data-icon]", pop).forEach((b) =>
-    b.addEventListener("click", () => {
-      closePopover();
-      setNoteField("icon", b.dataset.icon);
-    }),
-  );
-  $(".icon-custom", pop).onsubmit = (e) => {
-    e.preventDefault();
-    const value = e.target.icon.value.trim();
-    if (!value || new TextEncoder().encode(value).length > 24) return;
+  $("[data-icon]", pop)?.addEventListener("click", () => {
     closePopover();
-    setNoteField("icon", value);
-  };
-  $("button", pop).focus();
+    setNoteField("icon", "");
+  });
+  emojiPicker($(".icon-emoji", pop), {
+    esc,
+    onPick: (char) => {
+      closePopover();
+      setNoteField("icon", char);
+    },
+  }).catch(error);
+}
+/** `/emoji`: pick an emoji and add it to the block. */
+function emojiDialog(existingId) {
+  modal.innerHTML =
+    '<h2>Insert an emoji</h2><div class="emoji-dialog"></div><footer><button class="btn" id="close-emoji">Close</button></footer>';
+  modal.showModal();
+  $("#close-emoji").onclick = () => modal.close();
+  emojiPicker($(".emoji-dialog", modal), {
+    esc,
+    onPick: async (char) => {
+      modal.close();
+      await appendToBlock(existingId, char);
+      await queueSave();
+    },
+  }).catch(error);
 }
 function coverPicker(anchor) {
   const pop = popover(
@@ -2374,6 +2634,7 @@ function renderBlocks() {
         : `<div class="canvas-card" data-card="${esc(b.id)}" style="left:${b.x}px;top:${b.y}px"><div class="canvas-handle">⠿ &nbsp; Block ${i + 1} · drag to arrange</div>${blockHTML(b, i)}</div>`,
     )
     .join("");
+  drawPeers();
   $$(".block", root).forEach((el) => {
     const id = el.dataset.block;
     action($(".task-toggle", el), "click", async () => {
@@ -2391,7 +2652,7 @@ function renderBlocks() {
     action($(".block-body", el), "click", (e) => {
       if (
         e.target.closest(
-          "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio",
+          "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio, .file-card",
         )
       )
         return;
@@ -2427,6 +2688,7 @@ function renderBlocks() {
     });
     handle?.addEventListener("pointerdown", (e) => dragBlock(e, el, id));
     action($("[data-remove]", el), "click", async () => {
+      if (blockLocked(id)) return;
       const i = note.blocks.findIndex((b) => b.id === id);
       live?.boundary();
       note.blocks.splice(i, 1);
@@ -2655,7 +2917,7 @@ function closeLinkPicker() {
 }
 function editBlock(id, caret = null) {
   const el = $(`[data-block="${CSS.escape(id)}"]`);
-  if (!el || $("textarea", el)) return;
+  if (!el || $("textarea", el) || blockLocked(id)) return;
   const b = note.blocks.find((b) => b.id === id);
   const body = $(".block-body", el);
   const index = () => note.blocks.findIndex((b) => b.id === id);
@@ -2815,6 +3077,7 @@ function editBlock(id, caret = null) {
   function mergeIntoPrevious() {
     const i = index(),
       previous = note.blocks[i - 1];
+    if (blockLocked(previous.id)) return;
     live?.boundary();
     closed = true;
     const join = previous.markdown.length;
@@ -2829,6 +3092,7 @@ function editBlock(id, caret = null) {
   function mergeNext() {
     const i = index(),
       next = note.blocks[i + 1];
+    if (blockLocked(next.id)) return;
     live?.boundary();
     const join = ta.value.length;
     ta.value += next.markdown;
@@ -2842,7 +3106,7 @@ function editBlock(id, caret = null) {
   }
   function moveTo(offset, toEnd) {
     const target = note.blocks[index() + offset];
-    if (!target) return false;
+    if (!target || blockLocked(target.id)) return false;
     closing = close(() => editBlock(target.id, toEnd ? null : 0));
     return true;
   }
@@ -3120,7 +3384,7 @@ async function recordDialog(afterId) {
   let stream, recorder, started, timer, blob;
   let chunks = [],
     size = 0;
-  modal.innerHTML = `<form method="dialog" id="record-form"><h2>Record audio</h2><p>The recording is saved with this note, with a player. Up to about 40 minutes.</p><div class="recorder"><button type="button" class="btn primary" id="record-toggle">● Start recording</button><span class="record-time" aria-live="polite">0:00</span></div><audio class="audio-player" id="record-preview" controls hidden></audio><div class="form-error" role="alert"></div><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok" id="record-save" disabled>Save to note</button></footer></form>`;
+  modal.innerHTML = `<form method="dialog" id="record-form"><h2>Record audio</h2><p>The recording is saved with this note, with a player. Up to a few hours.</p><div class="recorder"><button type="button" class="btn primary" id="record-toggle">● Start recording</button><span class="record-time" aria-live="polite">0:00</span></div><audio class="audio-player" id="record-preview" controls hidden></audio><div class="form-error" role="alert"></div><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok" id="record-save" disabled>Save to note</button></footer></form>`;
   modal.showModal();
   const form = $("#record-form"),
     toggle = $("#record-toggle"),
@@ -3147,8 +3411,8 @@ async function recordDialog(afterId) {
     recorder.ondataavailable = (e) => {
       chunks.push(e.data);
       size += e.data.size;
-      // Files hold up to 10 MiB.
-      if (size > 9.5 * 1024 * 1024) stop();
+      // Files hold up to 60 MiB.
+      if (size > 59 * 1024 * 1024) stop();
     };
     recorder.onstop = () => {
       blob = new Blob(chunks, { type: type.split(";")[0] });
@@ -3307,6 +3571,7 @@ function blockMenu(existingId, capturedSelection = "") {
     if (command[1] === "@database") return databaseEmbedDialog(existingId);
     if (command[1] === "@assign") return assignDialog(existingId);
     if (command[1] === "@record") return recordDialog(existingId);
+    if (command[1] === "@emoji") return emojiDialog(existingId);
     if (command[1] === "@remind") return reminderDialog(existingId);
     let b = note.blocks.find((b) => b.id === existingId);
     if (!b) {
@@ -3384,6 +3649,10 @@ function mediaMarkdown(text) {
 }
 async function insertAttachment(file, targetId, afterId = null) {
   if (note?.id !== targetId) return;
+  noteFiles.set(file.id, {
+    ...file,
+    created_at: Math.floor(Date.now() / 1000),
+  });
   await insertBlockAfter(attachmentMarkdown(file), afterId);
 }
 /** Adds a block after block `afterId` (or at the end) and saves. */
@@ -3410,8 +3679,8 @@ async function uploadAttachments(files, afterId = null) {
   toast("Files saved. Originals are available for download.");
 }
 async function uploadFile(file, targetId) {
-  if (!file.size || file.size > 10 * 1024 * 1024)
-    throw new Error("Files must contain 1 byte to 10 MiB.");
+  if (!file.size || file.size > 60 * 1024 * 1024)
+    throw new Error(`${file.name} is too large: files hold up to 60 MiB.`);
   const response = await fetch(
     `${shareMode ? "/api/v1/shared/attachments" : `/api/v1/notes/${targetId}/attachments`}?filename=${encodeURIComponent(file.name)}`,
     {
@@ -3435,7 +3704,7 @@ async function attachmentDialog() {
   const targetId = note.id;
   const result = await api(`notes/${targetId}/attachments`);
   if (note?.id !== targetId) return;
-  modal.innerHTML = `<h2>Note files</h2><p>Originals are stored securely on this server. 10 MiB per file · 100 MiB per note. Files remain available for note history.</p>
+  modal.innerHTML = `<h2>Note files</h2><p>Originals are stored securely on this server. 60 MiB per file · 500 MiB per note. Files remain available for note history.</p>
     ${editable() ? '<label class="btn">Upload images or files<input id="attachment-upload" type="file" multiple></label>' : ""}
     <div>${result.attachments.map((file, i) => `<div class="attachment-row"><span>${esc(file.filename)} <small>(${Math.ceil(file.size / 1024)} KiB)</small></span><a class="btn" href="/api/v1/attachments/${file.id}" download>Download</a>${editable() ? `<button class="btn" data-insert-file="${i}">Insert in note</button>` : ""}</div>`).join("") || "<p>No files yet. You can also paste an image into a block.</p>"}</div>
     <footer><button class="btn" id="close-modal">Close</button></footer>`;
@@ -6480,6 +6749,7 @@ async function startShared() {
     },
     "shared/sync",
   );
+  live.presence = blockPresence;
   await live.start();
   $("#app").innerHTML =
     `<a class="skip-link" href="#content">Skip to content</a><div class="shared-shell"><header class="shared-top"><div class="brand"><span class="brand-mark">✳</span>minerva</div><span class="badge">${note.role === "editor" ? "Anyone with this link can edit" : "View only"}</span><span class="spacer"></span>${themeSelect()}</header><main class="main"><span id="breadcrumb" hidden></span><div id="content" tabindex="-1"></div></main></div>`;

@@ -1060,9 +1060,7 @@ pub(super) fn transcription(
         ));
     };
     if bytes.is_empty() || bytes.len() > 20 * 1024 * 1024 {
-        return Err(bad(
-            "Audio must be at most 20 MiB (uploaded attachments: 10 MiB)",
-        ));
+        return Err(bad("Audio must be at most 20 MiB"));
     }
     let boundary = format!("minerva-{}", id());
     let mut body = Vec::new();
