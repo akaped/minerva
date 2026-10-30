@@ -1,6 +1,7 @@
 import "./pane-auth.js";
 import { renderServerOverview } from "./server-overview.js";
 import { renderFlashcards } from "./flashcards.js";
+import { renderReminders } from "./reminders.js";
 import { pluginDialog } from "./plugin-commands.js";
 import { createYouTubeEmbeds } from "./youtube.js";
 import {
@@ -175,6 +176,7 @@ const paths = {
   canvas: "M3 3h7v7H3z M14 5h7v10h-7z M5 14h6v7H5z",
   check: "m5 12 4 4L19 6",
   calendar: "M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5",
+  bell: "M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 21h4",
   template: "M5 4h14v5H5z M5 13h6v7H5z M14 13h5 M14 17h5",
   chevron: "m7 10 5 5 5-5",
   more: "M5 12h.5 M11.75 12h.5 M18.5 12h.5",
@@ -1263,6 +1265,7 @@ function shell() {
       ["home", "home", "Overview"],
       ["all", "note", "All notes"],
       ["journal", "calendar", "Journal"],
+      ["reminders", "bell", "Reminders"],
       ["templates", "template", "Templates"],
       ["databases", "grid", "Databases"],
       ["flashcards", "template", "Flashcards"],
@@ -1307,6 +1310,18 @@ function shell() {
   else if (view === "databases") renderDatabaseList();
   else if (view === "flashcards")
     renderFlashcards({ api, esc, data, error }).catch(error);
+  else if (view === "reminders")
+    renderReminders({
+      api,
+      esc,
+      workspaceId,
+      me: data.user.name,
+      canAdd: folders().some((f) => data.roles[f.id] === "editor"),
+      modal,
+      openNote,
+      toast,
+      error,
+    }).catch(error);
   else if (view === "sharing") renderSharing().catch(error);
   else if (view === "journal") renderJournal();
   else if (view === "account") renderAccount().catch(error);
@@ -6785,6 +6800,9 @@ function sharedUnavailable() {
     const asked = new URLSearchParams(location.search).get("workspace");
     if (asked && data.workspaces.some((x) => x.id === asked))
       workspaceId = asked;
+    // Links in reminder emails open the Reminders page.
+    if (new URLSearchParams(location.search).get("view") === "reminders")
+      view = "reminders";
     if (chatPane) {
       const [kind, id] = initialChat.split(":");
       aiScope = { kind, id };

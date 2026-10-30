@@ -10,6 +10,7 @@ mod journal;
 mod mail;
 mod mcp;
 mod plugins;
+mod reminders;
 mod removal;
 mod render;
 mod replication;
@@ -135,7 +136,7 @@ struct Data {
     #[serde(default)]
     mail_outbox: Vec<mail::Outgoing>,
     #[serde(default)]
-    reminders: Vec<mail::Reminder>,
+    reminders: Vec<reminders::Reminder>,
     #[serde(default)]
     password_resets: HashMap<String, mail::Reset>,
 }
@@ -1088,7 +1089,7 @@ fn dispatch(
         }
     }
     if parts.first() == Some(&"reminders") {
-        return Ok((mail::reminders_route(d, &u, method, &parts, &v)?, None));
+        return Ok((reminders::route(d, &u, method, &parts, &v)?, None));
     }
     if parts.first() == Some(&"databases") {
         return Ok((databases::route(d, &u, method, &parts, v)?, None));

@@ -99,6 +99,7 @@ Paste a YouTube link alone in a block and it becomes a player that keeps playing
 - A name tag beside a block shows who is on it, solid while they edit it. A block someone else is editing can't be opened until they move on, so two people never overwrite each other's line.
 - Type **@** and a name to mention someone who can open the note: pick them from the list and their name appears in the block. They get an email with the block and a link to the note, and find it in the **Mentions** widget of their Overview.
 - **/remindme** asks for a date and time and adds it to the block, like `⏰2026-11-02 09:00`. At that time you get the block by email. Remove the `⏰` to cancel.
+- **Reminders** in the sidebar lists everything coming up in the workspace: the `⏰` times in its notes, and the workspace's reminders. Add one with **New reminder**, once or repeating (“Car insurance, every year”), with a category like *car* or *health* to filter by. **Done** moves a repeating reminder to its next time. In a shared workspace, everyone sees its reminders and is emailed when one is due.
 
 My Workspace is private and cannot be shared: create a new workspace from the workspace menu for team work.
 

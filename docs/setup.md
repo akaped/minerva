@@ -169,9 +169,9 @@ With `MINERVA_SMTP_HOST` and `MINERVA_MAIL_FROM` set, the server sends email. Li
 - **Password resets.** "Forgot your password?" on the sign-in page sends a link valid for one hour. The answer is the same whether or not the address has an account. Using the link signs the account out everywhere.
 - **Access.** When someone is given access to a workspace or a folder, or their role changes.
 - **Assignments.** `/assigntouser` writes `@person@example.com` in a block. When a block gains an assignment, that person gets the block and a link to the note, if they can open it. Assigning yourself sends nothing.
-- **Reminders.** `/remindme` picks a date and time, writes `⏰2026-10-27 09:00` in the block, and emails you the block at that time. Remove the `⏰` from the block to cancel it.
+- **Reminders.** `/remindme` picks a date and time, writes `⏰2026-10-27 09:00` in the block, and emails you the block at that time. Remove the `⏰` from the block to cancel it. Reminders made on the **Reminders** page (one-off or repeating) are emailed when due to everyone in their workspace.
 
-Messages wait in an outbox stored with the data, so a restart does not lose them. Failed sends are retried with backoff for about a day. Errors are written to the server log. Without email, `@` assignments still show in notes, and `/remindme` is not offered.
+Messages wait in an outbox stored with the data, so a restart does not lose them. Failed sends are retried with backoff for about a day. Errors are written to the server log. Without email, `@` assignments still show in notes, `/remindme` is not offered, and the Reminders page still lists what is due but sends nothing.
 
 To back up: stop the server and copy the database, or use SQLite's online backup API while it runs. Do not copy only the main file from a running WAL-mode database. Restore with the server stopped. Database file access exposes private notes and password hashes, so protect the file and its backups.
 

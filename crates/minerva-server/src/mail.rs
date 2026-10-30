@@ -1,12 +1,11 @@
 //! Email: account invitations, password resets, access grants, assignments
-//! (`@person@example.com` in a note) and reminders (`⏰2026-10-27 09:00` in a
-//! note, scheduled with `/remindme`). Messages wait in an outbox saved with the
-//! rest of the data, and a background task sends them over SMTP, retrying with
-//! backoff. Without `MINERVA_SMTP_HOST` and `MINERVA_MAIL_FROM`, nothing is
-//! queued and reminders are not offered.
+//! (`@person@example.com` in a note) and due reminders (see `reminders.rs`).
+//! Messages wait in an outbox saved with the rest of the data, and a background
+//! task sends them over SMTP, retrying with backoff. Without `MINERVA_SMTP_HOST`
+//! and `MINERVA_MAIL_FROM`, nothing is queued and reminders are not emailed.
 use crate::{
-    bad, field, forbidden, hash_token, id, missing, note_access, note_role, now, persist, ApiError,
-    Data, Note, Shared,
+    bad, field, hash_token, id, missing, note_access, note_role, now, persist, ApiError, Data,
+    Note, Shared,
 };
 use lettre::{
     message::{Mailbox, MultiPart},
@@ -31,15 +30,6 @@ pub(crate) struct Outgoing {
     attempts: u32,
     #[serde(default)]
     next_try: u64,
-}
-/// A `/remindme` reminder: at `at`, the block's text is mailed to its author.
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct Reminder {
-    id: String,
-    user_id: String,
-    note_id: String,
-    block_id: String,
-    at: u64,
 }
 /// A password reset or first-password link, stored by token hash.
 #[derive(Clone, Serialize, Deserialize)]
@@ -443,119 +433,21 @@ pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<
         _ => Ok(None),
     }
 }
-/// `POST reminders {note_id, block_id, at}` schedules one; `GET reminders` lists
-/// yours; `DELETE reminders/{id}` cancels one.
-pub(crate) fn reminders_route(
-    d: &mut Data,
-    u: &User,
-    method: &str,
-    parts: &[&str],
-    v: &Value,
-) -> Result<Value, ApiError> {
-    match (method, parts) {
-        ("GET", ["reminders"]) => Ok(json!({
-            "enabled": enabled(),
-            "reminders": d.reminders.iter().filter(|r| r.user_id == u.id).map(|r| json!({"id":r.id,"note_id":r.note_id,"block_id":r.block_id,"at":r.at})).collect::<Vec<_>>(),
-        })),
-        ("POST", ["reminders"]) => {
-            if !enabled() {
-                return Err(bad(
-                    "This server cannot send email, so it cannot send reminders",
-                ));
-            }
-            let note_id = field(v, "note_id")?;
-            let block_id = field(v, "block_id")?;
-            let at = v["at"]
-                .as_u64()
-                .ok_or_else(|| bad("Choose when to be reminded"))?;
-            if at < now().saturating_sub(60) || at > now() + 5 * 365 * 86400 {
-                return Err(bad("Choose a time in the future"));
-            }
-            let n = d
-                .notes
-                .iter()
-                .find(|n| n.id == note_id)
-                .ok_or_else(missing)?;
-            note_access(d, u, n, false)?;
-            if d.reminders.iter().filter(|r| r.user_id == u.id).count() >= 500 {
-                return Err(bad("You have too many reminders scheduled"));
-            }
-            let r = Reminder {
-                id: id(),
-                user_id: u.id.clone(),
-                note_id,
-                block_id,
-                at,
-            };
-            d.reminders.push(r.clone());
-            wake().notify_one();
-            Ok(json!({"id": r.id, "at": r.at}))
-        }
-        ("DELETE", ["reminders", rid]) => {
-            let before = d.reminders.len();
-            d.reminders.retain(|r| r.id != *rid || r.user_id != u.id);
-            if before == d.reminders.len() {
-                return Err(forbidden());
-            }
-            Ok(json!({"ok":true}))
-        }
-        _ => Err(missing()),
-    }
+/// Wakes the sender, so a reminder due now goes out without waiting.
+pub(crate) fn wake_sender() {
+    wake().notify_one();
 }
-/// Queues the reminders that are due. A reminder whose block is gone, or no
-/// longer holds a `⏰` time, was removed by the person, so it is dropped.
-fn fire_reminders(d: &mut Data) -> bool {
-    let due: Vec<Reminder> = d
-        .reminders
-        .iter()
-        .filter(|r| r.at <= now())
-        .cloned()
-        .collect();
-    if due.is_empty() {
-        return false;
-    }
-    d.reminders.retain(|r| r.at > now());
-    for r in due {
-        let Some(user) = d
-            .users
-            .iter()
-            .find(|a| a.user.id == r.user_id && !a.user.disabled)
-            .map(|a| a.user.clone())
-        else {
-            continue;
-        };
-        let Some(note) = d
-            .notes
-            .iter()
-            .find(|n| n.id == r.note_id && !n.trashed)
-            .cloned()
-        else {
-            continue;
-        };
-        let Some(block) = note
-            .blocks
-            .iter()
-            .find(|b| b.id == r.block_id && b.markdown.contains('⏰'))
-        else {
-            continue;
-        };
-        if note_role(d, &user, &note).is_none() {
-            continue;
-        }
-        let text = block.markdown.clone();
-        queue(
-            d,
-            &user.email,
-            &format!("Reminder: {}", note.title),
-            &[
-                format!("Hi {},", user.name),
-                format!("You asked to be reminded of this, in “{}”:", note.title),
-            ],
-            Some(&text),
-            ("Open the note", &note_link(&note)),
-        );
-    }
-    true
+/// Queues a message whose button opens `path` on this server.
+pub(crate) fn send(
+    d: &mut Data,
+    to: &str,
+    subject: &str,
+    paragraphs: &[String],
+    quote: Option<&str>,
+    (label, path): (&str, &str),
+) -> bool {
+    let url = format!("{}{path}", base_url());
+    queue(d, to, subject, paragraphs, quote, (label, &url))
 }
 
 /// Starts the sender, when email is configured.
@@ -577,7 +469,7 @@ async fn tick(store: &Shared) {
     let pending: Vec<Outgoing> = {
         let Ok(mut s) = store.lock() else { return };
         let mut d = s.data.clone();
-        if fire_reminders(&mut d) && persist(&mut s, d).is_err() {
+        if crate::reminders::fire(&mut d) && persist(&mut s, d).is_err() {
             eprintln!("Could not save due reminders");
         }
         s.data

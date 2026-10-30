@@ -12,6 +12,7 @@ turns that section into the next version.
 
 ### Added
 
+- A **Reminders** page in the sidebar collects everything coming up in a workspace: every `⏰` time written in its notes, and the workspace's reminders, shared with everyone in it. These can happen once or repeat every so many days, weeks, months or years (“Car insurance, every year”, “Car revision, every 2 years”), and have a category (_car_, _health_, …) to filter by. Due reminders stay at the top until marked **Done**, which moves a repeating one to its next time. With email set up, everyone in the workspace gets an email when one is due. Members who can only view the workspace see its reminders but cannot change them.
 - Files in notes show as cards: an icon for the type of file, its name, size and upload date, with Download. PDFs also have **Open**, which shows the PDF in a tab beside the note.
 - **/emoji** in the editor opens an emoji picker: every emoji, searchable by name or keyword (“heart”, “pizza”, “rocket”), grouped like a phone keyboard, with recently used ones first.
 - When several people are in a note, a small name tag beside each block shows who is on it: solid while they edit the block, outlined while they read it. The tag moves with them and goes away when they leave the note.
