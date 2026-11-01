@@ -1,7 +1,10 @@
-//! Personal decks with a small, explicit spaced-repetition scheduler.
+//! Personal decks, scheduled with FSRS (`fsrs.rs`). A deck can also follow a
+//! workspace or folder: its cards are the ones written in those notes (blocks
+//! tagged `#card`, and cloze deletions), kept in step with the notes each time
+//! the deck is opened, with their review history.
 use super::*;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 struct Card {
     id: String,
     front: String,
@@ -13,6 +16,16 @@ struct Card {
     lapses: u32,
     suspended: bool,
     revision: u64,
+    /// FSRS memory, from the card's first review on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stability: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    difficulty: Option<f64>,
+    #[serde(default)]
+    last_review: u64,
+    /// For a card written in a note: `note:block` or `note:block:c<number>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    origin: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Deck {
@@ -22,6 +35,15 @@ struct Deck {
     cards: Vec<Card>,
     updated_at: u64,
     revision: u64,
+    /// The workspace or folder whose notes the deck's cards come from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<NoteSource>,
+}
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+struct NoteSource {
+    /// `workspace` or `folder` (with its subfolders).
+    kind: String,
+    id: String,
 }
 pub(super) fn initialize(db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS flashcard_decks(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_owner ON flashcard_decks(user_id);
@@ -91,42 +113,208 @@ fn card(v: &Value) -> Result<Card, ApiError> {
         back: field(v, "back", 8000, false)?,
         sources: source_list(v)?,
         due: now(),
-        interval: 0,
-        reviews: 0,
-        lapses: 0,
-        suspended: false,
-        revision: 0,
+        ..Default::default()
     })
 }
-/// Again: ten minutes; Hard: modest growth; Good/Easy: progressively longer gaps.
-fn interval(old: u64, rating: &str) -> Result<u64, ApiError> {
-    let day = 86400;
-    Ok(match rating {
-        "again" => 600,
-        "hard" => {
-            if old < day {
-                day
-            } else {
-                (old.saturating_mul(12) / 10).max(day)
-            }
-        }
-        "good" => {
-            if old < day {
-                day
-            } else {
-                old.saturating_mul(25) / 10
-            }
-        }
-        "easy" => {
-            if old < day {
-                4 * day
-            } else {
-                old.saturating_mul(35) / 10
-            }
-        }
-        _ => return Err(bad("Choose again, hard, good, or easy")),
+fn memory(c: &Card) -> Option<fsrs::Memory> {
+    match (c.stability, c.difficulty) {
+        (Some(stability), Some(difficulty)) => Some(fsrs::Memory {
+            stability,
+            difficulty,
+        }),
+        // Reviewed before FSRS: its last interval stands for its memory.
+        _ if c.reviews > 0 => fsrs::from_interval(c.interval),
+        _ => None,
     }
-    .min(365 * day))
+}
+/// Days since the card's last review; for a card reviewed before FSRS, its
+/// interval, as if reviewed when due.
+fn elapsed_days(c: &Card, at: u64) -> f64 {
+    let since = if c.last_review > 0 {
+        at.saturating_sub(c.last_review)
+    } else {
+        c.interval
+    };
+    since as f64 / 86400.0
+}
+/// The interval each rating would give the card now, in seconds.
+fn next_intervals(c: &Card, at: u64) -> Value {
+    let mut next = serde_json::Map::new();
+    for rating in ["again", "hard", "good", "easy"] {
+        let g = fsrs::grade(rating).unwrap_or(3);
+        let m = fsrs::review(memory(c), g, elapsed_days(c, at));
+        next.insert(rating.into(), json!(fsrs::interval(m, g)));
+    }
+    Value::Object(next)
+}
+/// A deck for the page: each card with the interval every rating would give it.
+fn deck_view(d: &Deck) -> Value {
+    let at = now();
+    let mut v = json!(d);
+    if let Some(cards) = v["cards"].as_array_mut() {
+        for (view, c) in cards.iter_mut().zip(&d.cards) {
+            view["next"] = next_intervals(c, at);
+        }
+    }
+    json!({"deck": v, "now": at})
+}
+
+/// Cards written in a note, as (origin, question, answer): a block tagged `#card`
+/// is a question, answered by the blocks indented under it or by what follows
+/// ` :: ` in it; a block with cloze deletions (`{{c1::…}}`) gives a card for each
+/// number, hiding that deletion.
+fn note_cards(n: &Note) -> Vec<(String, String, String)> {
+    let level = |b: &Block| b.markdown.len() - b.markdown.trim_start_matches(' ').len();
+    let line = |text: &str| -> String {
+        let text = text.trim();
+        let text = ["- [ ] ", "- [x] ", "- ", "* ", "+ "]
+            .iter()
+            .find_map(|m| text.strip_prefix(m))
+            .unwrap_or(text);
+        text.trim().to_string()
+    };
+    let mut cards = vec![];
+    for (i, b) in n.blocks.iter().enumerate() {
+        let text = line(&b.markdown);
+        let clozes = render::clozes(&text);
+        if !clozes.is_empty() {
+            let mut numbers: Vec<u32> = clozes.iter().map(|c| c.2).collect();
+            numbers.sort_unstable();
+            numbers.dedup();
+            let show = |hide: Option<u32>| {
+                let mut out = String::new();
+                let mut at = 0;
+                for &(start, end, number, answer, hint) in &clozes {
+                    out.push_str(&text[at..start]);
+                    if Some(number) == hide {
+                        out.push_str(&format!("[{}]", hint.unwrap_or("...")));
+                    } else {
+                        out.push_str(answer);
+                    }
+                    at = end;
+                }
+                out.push_str(&text[at..]);
+                out
+            };
+            for number in numbers {
+                cards.push((
+                    format!("{}:{}:c{number}", n.id, b.id),
+                    show(Some(number)),
+                    show(None),
+                ));
+            }
+            continue;
+        }
+        if !render::inline_tags(&b.markdown).iter().any(|t| t == "card") {
+            continue;
+        }
+        let question = text
+            .split_whitespace()
+            .filter(|w| !w.eq_ignore_ascii_case("#card"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let (front, back) = match question.split_once(" :: ") {
+            Some((front, back)) => (front.trim().to_string(), back.trim().to_string()),
+            None => {
+                let answer: Vec<String> = n.blocks[i + 1..]
+                    .iter()
+                    .take_while(|c| level(c) > level(b))
+                    .map(|c| line(&c.markdown))
+                    .collect();
+                (question, answer.join("\n"))
+            }
+        };
+        if !front.is_empty() && !back.trim().is_empty() {
+            cards.push((format!("{}:{}", n.id, b.id), front, back));
+        }
+    }
+    cards
+}
+/// Brings a deck that follows notes up to date with the notes `u` can read now:
+/// new cards are added, changed ones updated (keeping their reviews), and those
+/// whose block is gone or no longer readable removed. Returns whether it changed.
+fn follow_notes(d: &Data, u: &User, deck: &mut Deck) -> bool {
+    let Some(source) = &deck.source else {
+        return false;
+    };
+    let folders: HashSet<&str> = d
+        .folders
+        .iter()
+        .filter(|f| match source.kind.as_str() {
+            "workspace" => f.workspace_id == source.id,
+            _ => ancestors(d, &f.id).any(|a| a == source.id),
+        })
+        .filter(|f| role(d, u, &f.id).is_some())
+        .map(|f| f.id.as_str())
+        .collect();
+    let found: Vec<(String, String, String)> = d
+        .notes
+        .iter()
+        .filter(|n| !n.trashed && folders.contains(n.folder_id.as_str()))
+        .flat_map(|n| note_cards(n))
+        .take(2000)
+        .collect();
+    let mut changed = false;
+    let keep: HashSet<&str> = found.iter().map(|c| c.0.as_str()).collect();
+    let before = deck.cards.len();
+    deck.cards
+        .retain(|c| c.origin.as_deref().is_none_or(|o| keep.contains(o)));
+    changed |= deck.cards.len() != before;
+    for (origin, front, back) in &found {
+        let front = anki::limit(front, 4000);
+        let back = anki::limit(back, 8000);
+        let note = origin.split(':').next().unwrap_or("");
+        let full = deck.cards.len() >= 2000;
+        match deck
+            .cards
+            .iter_mut()
+            .find(|c| c.origin.as_deref() == Some(origin.as_str()))
+        {
+            Some(c) if c.front != front || c.back != back => {
+                c.front = front;
+                c.back = back;
+                c.revision += 1;
+                changed = true;
+            }
+            Some(_) => {}
+            None if !full => {
+                deck.cards.push(Card {
+                    id: id(),
+                    front,
+                    back,
+                    sources: vec![format!("#note/{note}")],
+                    due: now(),
+                    origin: Some(origin.clone()),
+                    ..Default::default()
+                });
+                changed = true;
+            }
+            None => {}
+        }
+    }
+    changed
+}
+/// The workspace or folder a new deck follows, if any; `u` must be able to read it.
+fn note_source(d: &Data, u: &User, v: &Value) -> Result<Option<NoteSource>, ApiError> {
+    if v["source"].is_null() {
+        return Ok(None);
+    }
+    let source = NoteSource {
+        kind: v["source"]["kind"].as_str().unwrap_or("").into(),
+        id: v["source"]["id"].as_str().unwrap_or("").into(),
+    };
+    let readable = match source.kind.as_str() {
+        "workspace" => d
+            .folders
+            .iter()
+            .any(|f| f.workspace_id == source.id && role(d, u, &f.id).is_some()),
+        "folder" => role(d, u, &source.id).is_some(),
+        _ => false,
+    };
+    if !readable {
+        return Err(bad("Choose a workspace or folder you can read"));
+    }
+    Ok(Some(source))
 }
 fn check_revision(expected: &Value, revision: u64) -> Result<(), ApiError> {
     if expected.as_u64() != Some(revision) {
@@ -172,7 +360,7 @@ pub(super) async fn endpoint(
             let mut stmt =
                 s.db.prepare("SELECT payload FROM flashcard_decks WHERE user_id=?1")
                     .map_err(|_| internal())?;
-            let decks = stmt
+            let mut decks = stmt
                 .query_map(params![u.id], |r| r.get::<_, String>(0))
                 .map_err(|_| internal())?
                 .map(|r| {
@@ -180,6 +368,12 @@ pub(super) async fn endpoint(
                         .and_then(|raw| serde_json::from_str::<Deck>(&raw).map_err(|_| internal()))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            drop(stmt);
+            for deck in &mut decks {
+                if follow_notes(&s.data, &u, deck) {
+                    save(&s, &u.id, deck)?;
+                }
+            }
             let rows:Vec<_>=decks.iter().map(|d|json!({"id":d.id,"name":d.name,"description":d.description,"count":d.cards.len(),"due":d.cards.iter().filter(|c|!c.suspended && c.due<=now()).count(),"updated_at":d.updated_at})).collect();
             return Ok(axum::Json(json!({"decks":rows,"now":now()})).into_response());
         }
@@ -201,7 +395,9 @@ pub(super) async fn endpoint(
                 cards: vec![],
                 updated_at: now(),
                 revision: 0,
+                source: note_source(&s.data, &u, &v)?,
             };
+            follow_notes(&s.data, &u, &mut d);
             save(&s, &u.id, &mut d)?;
             return Ok((StatusCode::CREATED, axum::Json(d)).into_response());
         }
@@ -231,9 +427,12 @@ pub(super) async fn endpoint(
         return Err(missing());
     }
     let mut d = load(&s, &u.id, parts[1])?;
+    if follow_notes(&s.data, &u, &mut d) {
+        save(&s, &u.id, &mut d)?;
+    }
     if parts.len() == 2 {
         if method == Method::GET {
-            return Ok(axum::Json(json!({"deck":d,"now":now()})).into_response());
+            return Ok(axum::Json(deck_view(&d)).into_response());
         }
         check_revision(&v["revision"], d.revision)?;
         if method == Method::DELETE {
@@ -275,21 +474,40 @@ pub(super) async fn endpoint(
             if c.suspended || c.due > now() {
                 return Err(bad("This card is not due yet"));
             }
-            let rating = v["rating"].as_str().unwrap_or("");
-            c.interval = interval(c.interval, rating)?;
-            c.due = now() + c.interval;
+            let g = fsrs::grade(v["rating"].as_str().unwrap_or(""))
+                .ok_or_else(|| bad("Choose again, hard, good, or easy"))?;
+            let at = now();
+            let m = fsrs::review(memory(c), g, elapsed_days(c, at));
+            c.stability = Some(m.stability);
+            c.difficulty = Some(m.difficulty);
+            c.interval = fsrs::interval(m, g);
+            c.due = at + c.interval;
+            c.last_review = at;
             c.reviews += 1;
-            if rating == "again" {
+            if g == 1 {
                 c.lapses += 1;
             }
             c.revision += 1;
         } else if parts.len() == 4 && method == Method::PUT {
-            c.front = field(&v, "front", 4000, false)?;
-            c.back = field(&v, "back", 8000, false)?;
-            c.sources = source_list(&v)?;
+            let front = field(&v, "front", 4000, false)?;
+            let back = field(&v, "back", 8000, false)?;
+            // A card from a note changes with the note; it can only be paused here.
+            if c.origin.is_some() && (front != c.front || back != c.back) {
+                return Err(bad("This card comes from a note: edit it there."));
+            }
+            c.front = front;
+            c.back = back;
+            if c.origin.is_none() {
+                c.sources = source_list(&v)?;
+            }
             c.suspended = v["suspended"].as_bool().unwrap_or(c.suspended);
             c.revision += 1;
         } else if parts.len() == 4 && method == Method::DELETE {
+            if c.origin.is_some() {
+                return Err(bad(
+                    "This card comes from a note: remove it there, or pause it.",
+                ));
+            }
             d.cards.remove(index);
         } else {
             return Err(missing());
@@ -298,7 +516,7 @@ pub(super) async fn endpoint(
         return Err(missing());
     }
     save(&s, &u.id, &mut d)?;
-    Ok(axum::Json(json!({"deck":d,"now":now()})).into_response())
+    Ok(axum::Json(deck_view(&d)).into_response())
 }
 
 /// `POST /api/v1/flashcards/import?name=<file>&progress=1`: an Anki package or
@@ -443,11 +661,12 @@ pub(super) async fn import(
                     reviews: c.reviews,
                     lapses: c.lapses,
                     suspended: c.suspended,
-                    revision: 0,
+                    ..Default::default()
                 })
                 .collect(),
             updated_at: now(),
             revision: 0,
+            source: None,
         };
         save(&s, &u.id, &mut deck)?;
         created.push(json!({"id":deck.id,"name":deck.name,"count":deck.cards.len()}));
@@ -628,13 +847,61 @@ async fn generate(store: Shared, headers: HeaderMap, v: Value) -> Result<Respons
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn note(blocks: &[&str]) -> Note {
+        let mut n = getting_started("f");
+        n.id = "n".into();
+        n.blocks = blocks
+            .iter()
+            .enumerate()
+            .map(|(i, m)| Block {
+                id: format!("b{i}"),
+                markdown: m.to_string(),
+                x: 0.0,
+                y: 0.0,
+            })
+            .collect();
+        n
+    }
     #[test]
-    fn intervals_are_bounded_and_ordered() {
-        assert_eq!(interval(0, "again").unwrap(), 600);
-        assert_eq!(interval(0, "good").unwrap(), 86400);
-        assert!(interval(86400, "hard").unwrap() < interval(86400, "good").unwrap());
-        assert!(interval(86400, "good").unwrap() < interval(86400, "easy").unwrap());
-        assert_eq!(interval(u64::MAX, "easy").unwrap(), 365 * 86400);
-        assert!(interval(0, "unknown").is_err());
+    fn cards_come_from_tagged_blocks_and_clozes() {
+        let n = note(&[
+            "- What is the capital of Italy? #card",
+            "  - Rome",
+            "  - Since 1871",
+            "- Unrelated",
+            "Photosynthesis :: Light into sugar #card",
+            "{{c1::Rome}} is the capital of {{c2::Italy::country}}.",
+            "A question with no answer #card",
+            "No cloze {{c0::here}} and #cards is another tag",
+        ]);
+        let cards = note_cards(&n);
+        let by = |origin: &str| cards.iter().find(|c| c.0 == origin).cloned().unwrap();
+        assert_eq!(cards.len(), 4, "{cards:?}");
+        assert_eq!(
+            by("n:b0"),
+            (
+                "n:b0".into(),
+                "What is the capital of Italy?".into(),
+                "Rome\nSince 1871".into()
+            )
+        );
+        assert_eq!(by("n:b4").1, "Photosynthesis");
+        assert_eq!(by("n:b4").2, "Light into sugar");
+        assert_eq!(by("n:b5:c1").1, "[...] is the capital of Italy.");
+        assert_eq!(by("n:b5:c2").1, "Rome is the capital of [country].");
+        assert_eq!(by("n:b5:c2").2, "Rome is the capital of Italy.");
+    }
+    #[test]
+    fn old_cards_continue_with_fsrs() {
+        let c = Card {
+            interval: 10 * 86400,
+            reviews: 3,
+            ..Default::default()
+        };
+        let next = next_intervals(&c, 0);
+        let days = |r: &str| next[r].as_u64().unwrap() / 86400;
+        assert_eq!(next["again"], 600);
+        assert!(days("hard") < days("good") && days("good") < days("easy"));
+        assert!(days("good") > 10, "a remembered card grows: {next}");
     }
 }

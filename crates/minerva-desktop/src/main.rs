@@ -1,10 +1,11 @@
 //! Minerva desktop client for Windows, macOS and Linux.
 //!
 //! A native window hosts the system webview (WebView2 on Windows, WKWebView on
-//! macOS, WebKitGTK on Linux). The app opens its own embedded server first: personal notes and
-//! offline copies of remote workspaces, kept in sync in the background. Each
-//! registered server's own web interface is also available online through the
-//! `minerva-client` gateway, while sign-in tokens stay in the OS credential store.
+//! macOS, WebKitGTK on Linux). The app opens the server that was open last, or its
+//! own embedded server: personal notes and offline copies of remote workspaces,
+//! kept in sync in the background. Each registered server's own web interface is
+//! also available online through the `minerva-client` gateway, while sign-in
+//! tokens stay in the OS credential store.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 mod bridge;
 mod chrome;
@@ -15,6 +16,8 @@ mod media;
 mod origin;
 #[cfg(target_os = "linux")]
 mod print;
+mod start;
+mod youtube;
 
 use chrome::Command;
 use http::{Request, Response, StatusCode};
@@ -79,6 +82,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let local = Arc::new(LocalServer::open(&data.join("local.db"))?);
     let worker = SyncWorker::new(local.clone(), gateway.clone());
     runtime.spawn(worker.clone().run());
+    let videos: Arc<Option<String>> = Arc::new(youtube::start(&runtime));
+    // Pages learn where video players are served (see youtube.rs).
+    let video_script = format!(
+        "window.minervaYouTube = {};",
+        serde_json::to_string(&*videos)?
+    );
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -93,9 +102,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let chrome = chrome::install(&window, proxy.clone())?;
 
+    let first = start::host(&data, &gateway, &runtime);
     let mut context = WebContext::new(Some(data.join("webview")));
     let builder = WebViewBuilder::new_with_web_context(&mut context)
-        .with_url(origin::page_url(origin::LOCAL, "/"))
+        .with_url(origin::page_url(&first, "/"))
+        .with_on_page_load_handler({
+            let data = data.clone();
+            move |event, url| {
+                if matches!(event, wry::PageLoadEvent::Finished) {
+                    start::remember(&data, &url);
+                }
+            }
+        })
         .with_asynchronous_custom_protocol(origin::SCHEME.into(), {
             let gateway = gateway.clone();
             let local = local.clone();
@@ -116,7 +134,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_navigation_handler({
             let gateway = gateway.clone();
-            move |url| allow_navigation(&gateway, &url)
+            let videos = videos.clone();
+            move |url| allow_navigation(&gateway, videos.as_deref(), &url)
         })
         .with_new_window_req_handler(|url, _| {
             open_external(&url);
@@ -150,6 +169,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .with_initialization_script(SHORTCUTS)
+        // Also in frames: notes open in note tabs, which are frames.
+        .with_initialization_script_for_main_only(&video_script, false)
         .with_devtools(cfg!(debug_assertions));
     #[cfg(windows)]
     let builder = {
@@ -314,8 +335,12 @@ fn ipc_message(
 }
 
 /// Keeps the webview on the launcher, this computer's server, and registered
-/// servers; anything else opens in the system browser.
-fn allow_navigation(gateway: &Gateway, url: &str) -> bool {
+/// servers, and lets video players load in their frames; anything else opens
+/// in the system browser.
+fn allow_navigation(gateway: &Gateway, videos: Option<&str>, url: &str) -> bool {
+    if youtube::allowed_frame(url, videos) {
+        return true;
+    }
     match origin::page_host(url) {
         Some(host) if host == origin::LAUNCHER || host == origin::LOCAL => true,
         Some(host)

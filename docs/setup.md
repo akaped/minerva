@@ -129,11 +129,11 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 - Two-factor authentication with authenticator apps (TOTP), with recovery codes and administrator reset.
 - SQLite persistence, Argon2id password hashes, seven-day revocable sessions, server-enforced authorization, sanitized Markdown HTML, request-size limits, CSRF header checks, and optimistic concurrency.
 
-Favorites belong to the note, so they are shared among its readers. Open notes synchronize automatically: edits are sent after a short debounce and active clients exchange CRDT updates every 650 ms. Presence expires after 15 seconds without a heartbeat. This is online collaboration using HTTP polling, not WebSocket transport. Pending changes retry after temporary connection loss while the page remains open; there is no durable offline queue across page reloads. Export an unsaved draft before closing the browser. History keeps up to 50 checkpoints, grouping frequent live edits into roughly 30-second intervals.
+Favorites belong to the note, so they are shared among its readers. Open notes synchronize automatically: edits are sent after a short debounce, and a WebSocket (`/api/v1/live`) tells open pages to fetch others' changes as soon as they happen, with polling every 5 seconds as a fallback (every 650 ms when the socket is unavailable, as in the desktop app). A reverse proxy must pass WebSocket upgrades for `/api/v1/live`; Caddy does this by default. Presence expires after 15 seconds without a heartbeat. Pending changes retry after temporary connection loss while the page remains open; there is no durable offline queue across page reloads. Export an unsaved draft before closing the browser. History keeps up to 50 checkpoints, grouping frequent live edits into roughly 30-second intervals.
 
 Structured records use optimistic revision checks rather than text CRDTs; concurrent edits to the same record produce a visible conflict. Local cell writes are serialized. Database views refresh every 2.5 seconds when there are no active/pending cell edits. Invalid or conflicting values remain visible until corrected or explicitly discarded with Reload records.
 
-Import preserves each Markdown source line as a block. Multiline structures such as fenced code and tables need an explicit multiline block for correct rendering. Existing canvas coordinates remain compatible in stored notes, but the canvas UI is no longer offered and further canvas work is out of scope.
+Notes come in from Markdown files and from Notion, Obsidian, Logseq and Evernote exports; see `import.md`. Existing canvas coordinates remain compatible in stored notes, but the canvas UI is no longer offered and further canvas work is out of scope.
 
 ## Configuration
 
@@ -189,7 +189,7 @@ To back up: stop the server and copy the database, or use SQLite's online backup
 - `docs/desktop.md`: desktop client build, packaging, data locations, and security model.
 - `docs/sync.md`: offline copies, the sync protocol, merge rules, and limits.
 - `docs/sharing.md`: member shares, share links, published pages, and the cross-server sharing design.
-- `TODO.md`: requested follow-up features, including images/files, contextual LLM chat, editor improvements, and public/member sharing.
+- `TODO.md`: the roadmap: what Minerva still misses compared with similar apps, and follow-ups.
 - `THIRD_PARTY_NOTICES.md`: licenses for bundled browser dependencies.
 - `CHANGELOG.md`: what changed in each version. Add your changes under **Unreleased**.
 

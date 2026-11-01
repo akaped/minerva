@@ -373,7 +373,7 @@ pub(crate) fn assignments(old: &Data, d: &mut Data, actor: Option<&User>) {
                     continue;
                 }
                 if out.len() < 20 {
-                    out.push((user, n.clone(), b.markdown.clone()));
+                    out.push((user, Note::clone(n), b.markdown.clone()));
                 }
             }
         }

@@ -99,28 +99,12 @@ pub(super) fn upload(
     } else if note.trashed {
         return Err(bad("Restore this note before adding files"));
     }
-    if body.is_empty() || body.len() > FILE_LIMIT {
-        return Err(bad("Files must contain 1 byte to 60 MiB"));
-    }
-    let used: (i64, i64) = s.db.query_row("SELECT COALESCE(SUM(length(content)),0),COALESCE(SUM(CASE WHEN note_id=?1 THEN length(content) ELSE 0 END),0) FROM attachments", [&note.id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| internal())?;
-    if used.0 + body.len() as i64 > server_quota() || used.1 + body.len() as i64 > NOTE_QUOTA {
-        return Err(bad(&format!(
-            "Attachment storage limit reached (500 MiB per note, {} GiB per server)",
-            server_quota() / (1024 * 1024 * 1024)
-        )));
-    }
     let raw = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
         .find(|(k, _)| k == "filename")
         .map(|(_, v)| v.into_owned())
         .unwrap_or_default();
-    let name = filename(&raw);
     let key = replicated.map_or_else(id, String::from);
-    let media = media_type(body);
-    s.db.execute(
-        "INSERT INTO attachments VALUES(?1,?2,?3,?4,?5,?6)",
-        params![key, note.id, name, media, now(), body],
-    )
-    .map_err(|_| internal())?;
+    let (name, media) = store(s, &note.id, &key, &raw, body)?;
     Ok((
         StatusCode::CREATED,
         axum::Json(json!({"id":key,"filename":name,"media_type":media,"size":body.len()})),
@@ -128,6 +112,34 @@ pub(super) fn upload(
         .into_response())
 }
 
+/// Stores a file for a note as attachment `key`, within the size limits and
+/// quotas; returns its cleaned file name and media type.
+pub(super) fn store(
+    s: &Store,
+    note_id: &str,
+    key: &str,
+    name: &str,
+    body: &[u8],
+) -> Result<(String, String), ApiError> {
+    if body.is_empty() || body.len() > FILE_LIMIT {
+        return Err(bad("Files must contain 1 byte to 60 MiB"));
+    }
+    let used: (i64, i64) = s.db.query_row("SELECT COALESCE(SUM(length(content)),0),COALESCE(SUM(CASE WHEN note_id=?1 THEN length(content) ELSE 0 END),0) FROM attachments", [note_id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| internal())?;
+    if used.0 + body.len() as i64 > server_quota() || used.1 + body.len() as i64 > NOTE_QUOTA {
+        return Err(bad(&format!(
+            "Attachment storage limit reached (500 MiB per note, {} GiB per server)",
+            server_quota() / (1024 * 1024 * 1024)
+        )));
+    }
+    let name = filename(name);
+    let media = media_type(body);
+    s.db.execute(
+        "INSERT INTO attachments VALUES(?1,?2,?3,?4,?5,?6)",
+        params![key, note_id, name, media, now(), body],
+    )
+    .map_err(|_| internal())?;
+    Ok((name, media.to_string()))
+}
 /// Serves one attachment after `allowed` approves its owning note.
 pub(super) fn blob(
     s: &Store,
@@ -247,21 +259,11 @@ pub(super) async fn endpoint(
 const ORPHAN_GRACE: u64 = 24 * 60 * 60;
 
 /// Attachment IDs mentioned anywhere they could be needed again: current notes,
-/// every retained history snapshot, and pinned published pages.
-fn referenced(d: &Data) -> HashSet<String> {
-    let texts = d
-        .notes
-        .iter()
-        .chain(d.history.values().flatten())
-        .flat_map(|n| {
-            n.blocks
-                .iter()
-                .map(|b| b.markdown.as_str())
-                .chain(std::iter::once(n.cover.as_str()))
-        })
-        .chain(sharing::published_text(d));
+/// every retained earlier version, and pinned published pages. Versions are read
+/// as stored JSON: the other IDs found there never name an attachment.
+fn referenced(db: &Connection, d: &Data) -> Result<HashSet<String>, ApiError> {
     let mut ids = HashSet::new();
-    for text in texts {
+    let mut scan = |text: &str| {
         for token in text.split(|c: char| !(c.is_ascii_hexdigit() || c == '-')) {
             if token.len() == 36 {
                 if let Ok(id) = Uuid::parse_str(token) {
@@ -269,8 +271,22 @@ fn referenced(d: &Data) -> HashSet<String> {
                 }
             }
         }
+    };
+    let texts = d
+        .notes
+        .iter()
+        .flat_map(|n| {
+            n.blocks
+                .iter()
+                .map(|b| b.markdown.as_str())
+                .chain(std::iter::once(n.cover.as_str()))
+        })
+        .chain(sharing::published_text(d));
+    for text in texts {
+        scan(text);
     }
-    ids
+    storage::each_version(db, scan)?;
+    Ok(ids)
 }
 struct Stored {
     id: String,
@@ -314,7 +330,7 @@ pub(super) async fn storage(
         let user = authenticate(&s.data, &headers)?;
         admin(&user)?;
         let files = stored(&s)?;
-        let references = referenced(&s.data);
+        let references = referenced(&s.db, &s.data)?;
         let cleanup = uri.path().ends_with("/cleanup");
         if cleanup {
             if method != Method::POST {

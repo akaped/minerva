@@ -205,14 +205,24 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
     iframe.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
     iframe.allowFullscreen = true;
-    const embed = new URL(`https://www.youtube-nocookie.com/embed/${video.id}`);
-    embed.search = new URLSearchParams({
-      enablejsapi: "1",
-      origin: location.origin,
-      playsinline: "1",
-      start: String(video.start),
-    });
-    iframe.src = embed.href;
+    // The desktop app serves the player from a web address of its own, which
+    // YouTube requires (see crates/minerva-desktop/src/youtube.rs).
+    const desktop =
+      typeof window.minervaYouTube === "string" ? window.minervaYouTube : null;
+    if (desktop) {
+      iframe.src = `${desktop}/youtube/${video.id}?start=${video.start}`;
+    } else {
+      const embed = new URL(
+        `https://www.youtube-nocookie.com/embed/${video.id}`,
+      );
+      embed.search = new URLSearchParams({
+        enablejsapi: "1",
+        origin: location.origin,
+        playsinline: "1",
+        start: String(video.start),
+      });
+      iframe.src = embed.href;
+    }
     portal.append(controls, iframe);
     document.body.append(portal);
     const entry = {
@@ -224,6 +234,32 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
       player: null,
     };
     players.set(block, entry);
+    const changed = (state) => {
+      entry.playing = state === 1 || state === 3;
+      if (state === 0) entry.floating = false;
+      layout();
+    };
+    const failed = () =>
+      error(
+        new Error(
+          "This video cannot be embedded. Use “Open on YouTube” instead.",
+        ),
+      );
+    if (desktop) {
+      const listen = (e) => {
+        if (e.source !== iframe.contentWindow || !e.data?.minervaYouTube)
+          return;
+        if (typeof e.data.state === "number") changed(e.data.state);
+        else if (e.data.error !== undefined) failed();
+      };
+      addEventListener("message", listen);
+      entry.player = {
+        pauseVideo: () =>
+          iframe.contentWindow?.postMessage({ minervaYouTube: "pause" }, "*"),
+        destroy: () => removeEventListener("message", listen),
+      };
+      return entry;
+    }
     // The IFrame API reports playback (to float while playing) and pauses
     // hidden tabs; the video itself plays without it.
     loadAPI()
@@ -231,17 +267,8 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
         if (players.get(block) !== entry) return;
         entry.player = new YT.Player(iframe, {
           events: {
-            onStateChange: (e) => {
-              entry.playing = e.data === 1 || e.data === 3;
-              if (e.data === 0) entry.floating = false;
-              layout();
-            },
-            onError: () =>
-              error(
-                new Error(
-                  "This video cannot be embedded. Use “Open on YouTube” instead.",
-                ),
-              ),
+            onStateChange: (e) => changed(e.data),
+            onError: failed,
           },
         });
       })

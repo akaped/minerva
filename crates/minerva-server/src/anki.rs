@@ -1033,7 +1033,7 @@ fn text_export(export: &str, file_name: &str) -> Import {
 }
 /// Separated values with double-quoted fields, which may contain the
 /// separator, newlines, and doubled quotes.
-fn csv(text: &str, separator: char) -> Vec<Vec<String>> {
+pub(super) fn csv(text: &str, separator: char) -> Vec<Vec<String>> {
     let mut records = vec![];
     let mut record = vec![];
     let mut field = String::new();

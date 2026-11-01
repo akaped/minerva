@@ -99,11 +99,13 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     for (const tab of tabs) {
       const visible = shown && (tab.key === active || tab.key === secondary);
       tab.frame.hidden = !visible;
+      tab.loader.hidden = !visible || tab.loaded;
       const right = split && tab.key === secondary;
-      Object.assign(tab.frame.style, {
-        left: right ? "50%" : "0",
-        width: split ? "50%" : "100%",
-      });
+      for (const el of [tab.frame, tab.loader])
+        Object.assign(el.style, {
+          left: right ? "50%" : "0",
+          width: split ? "50%" : "100%",
+        });
       send(tab, "visibility", { visible });
     }
   }
@@ -212,6 +214,14 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       }
     };
   }
+  /** Shows the tab `key` side by side with the tab `beside`, when both exist. */
+  function pair(beside, key) {
+    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
+      active = beside;
+      secondary = key;
+    }
+  }
+  /** Opens (or shows) a tab; `split` keeps the shown tab and adds this one beside it. */
   function open({
     id = "",
     origin = location.origin,
@@ -219,13 +229,16 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     workspace = "",
     chat = "",
     file = "",
+    split = false,
   }) {
     const key =
       origin + "|" + (chat ? `chat:${chat}` : file ? `file:${file}` : id);
+    const previous = split && shown ? active : null;
     const existing = tabs.find((t) => t.key === key);
     if (existing) {
       active = key;
       shown = true;
+      pair(previous, key);
       draw();
       return;
     }
@@ -251,6 +264,12 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     frame.allow =
       "autoplay; fullscreen; picture-in-picture; clipboard-write; microphone";
     frame.referrerPolicy = "strict-origin-when-cross-origin";
+    // Until the note is drawn, a placeholder page stands in for the frame.
+    const loader = document.createElement("div");
+    loader.className = "note-pane-loading";
+    loader.setAttribute("role", "status");
+    loader.innerHTML = `<div class="loading-sheet" aria-hidden="true"><i class="sk-icon"></i><i class="sk-title"></i><i class="sk-meta"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line short"></i></div><p><span class="loading-mark" aria-hidden="true">✳</span>Opening ${esc(title)}…</p>`;
+    frame.classList.add("loading");
     const tab = {
       key,
       id: chat || file ? "" : id,
@@ -261,14 +280,19 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       title,
       workspace,
       frame,
+      loader,
+      loaded: false,
       dirty: false,
       // A file has nothing to save and sends no "ready".
       ready: !!file,
     };
     tabs.push(tab);
-    deck.append(frame);
+    deck.append(loader, frame);
+    // A file shows when the browser has loaded it; a note says when it is drawn.
+    if (file) frame.addEventListener("load", () => loaded(tab), { once: true });
     active = key;
     shown = true;
+    pair(previous, key);
     if (!file)
       tab.timer = setTimeout(() => {
         if (!tab.ready && tabs.includes(tab))
@@ -280,25 +304,24 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       }, 15000);
     draw();
   }
+  function loaded(tab) {
+    if (tab.loaded) return;
+    tab.loaded = true;
+    clearTimeout(tab.loadTimer);
+    tab.frame.classList.remove("loading");
+    tab.loader.hidden = true;
+  }
   /** Opens (or shows) a file, such as a PDF, side by side with the tab `beside`. */
   function openFile({ file, title, beside, origin = location.origin }) {
     open({ origin, file, title: `📄 ${title}` });
-    const key = `${origin}|file:${file}`;
-    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
-      active = beside;
-      secondary = key;
-    }
+    pair(beside, `${origin}|file:${file}`);
     shown = true;
     draw();
   }
   /** Opens (or shows) an AI chat tab side by side with the tab `beside`. */
   function openChat({ scope, title, beside, origin = location.origin }) {
     open({ origin, chat: scope, title: `AI · ${title}` });
-    const key = `${origin}|chat:${scope}`;
-    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
-      active = beside;
-      secondary = key;
-    }
+    pair(beside, `${origin}|chat:${scope}`);
     shown = true;
     draw();
   }
@@ -352,7 +375,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     if (!tab) return;
     await flushTab(tab);
     clearTimeout(tab.timer);
+    clearTimeout(tab.loadTimer);
     tab.frame.remove();
+    tab.loader.remove();
     tabs = tabs.filter((t) => t !== tab);
     if (secondary === key) secondary = null;
     if (active === key) active = secondary || tabs.at(-1)?.key;
@@ -366,9 +391,12 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
     );
     const message = e.data;
     if (!tab || message?.channel !== "minerva-pane") return;
+    if (message.type === "loaded") loaded(tab);
     if (message.type === "ready") {
       tab.ready = true;
       clearTimeout(tab.timer);
+      // A page that never says it drew its note still shows after a while.
+      tab.loadTimer = setTimeout(() => loaded(tab), 8000);
       tab.queue.splice(0).forEach((deliver) => deliver());
       place();
     }
@@ -494,7 +522,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       if (!gone.length) return;
       for (const tab of gone) {
         clearTimeout(tab.timer);
+        clearTimeout(tab.loadTimer);
         tab.frame.remove();
+        tab.loader.remove();
         if (secondary === tab.key) secondary = null;
       }
       tabs = tabs.filter((t) => !gone.includes(t));
@@ -508,7 +538,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
       await Promise.all(tabs.map(flushTab));
       tabs.forEach((t) => {
         clearTimeout(t.timer);
+        clearTimeout(t.loadTimer);
         t.frame.remove();
+        t.loader.remove();
       });
       tabs = [];
       active = secondary = null;

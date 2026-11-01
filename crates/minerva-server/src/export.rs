@@ -769,7 +769,7 @@ mod tests {
     fn rewrites_note_links_and_attachments_portably() {
         let mut d = Data::default();
         let target = Uuid::new_v4().to_string();
-        d.notes.push(Note {
+        d.notes.push(Arc::new(Note {
             id: target.clone(),
             folder_id: "f".into(),
             title: "Renamed target".into(),
@@ -784,7 +784,7 @@ mod tests {
             journal: None,
             metadata: Default::default(),
             print_template: String::new(),
-        });
+        }));
         let file = Uuid::new_v4();
         let md = format!("See [Old \\[name\\]](#note/{target}) and ![chart](/api/v1/attachments/{file}/preview) or [file](/api/v1/attachments/{file}) and [web](https://example.com).");
         let out = portable(&d, &md, &|id, image| {

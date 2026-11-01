@@ -83,7 +83,11 @@ fn manage(d: &Data, u: &User, n: &Note) -> Result<(), ApiError> {
     }
 }
 fn find_note<'a>(d: &'a Data, nid: &str) -> Result<&'a Note, ApiError> {
-    d.notes.iter().find(|n| n.id == nid).ok_or_else(missing)
+    d.notes
+        .iter()
+        .find(|n| n.id == nid)
+        .map(|n| &**n)
+        .ok_or_else(missing)
 }
 fn parse_role(v: &Value) -> Result<Role, ApiError> {
     match v["role"].as_str().unwrap_or("viewer") {

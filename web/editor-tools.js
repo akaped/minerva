@@ -205,3 +205,27 @@ export function htmlToMarkdown(html) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/** Block kinds a block can be turned into, with the Markdown that starts them. */
+export const BLOCK_KINDS = [
+  ["text", "Text", ""],
+  ["h1", "Heading 1", "# "],
+  ["h2", "Heading 2", "## "],
+  ["h3", "Heading 3", "### "],
+  ["bullet", "Bulleted list", "- "],
+  ["number", "Numbered list", "1. "],
+  ["todo", "To-do", "- [ ] "],
+  ["quote", "Quote", "> "],
+];
+/**
+ * A block turned into another kind: the marker starting its first line (heading,
+ * list, task or quote) is replaced, keeping its indentation and text.
+ */
+export function turnInto(markdown, kind) {
+  const prefix = BLOCK_KINDS.find((k) => k[0] === kind)?.[2] ?? "";
+  const [first, ...rest] = markdown.split("\n");
+  const [lead, space] = first.match(
+    /^(\s*)(?:#{1,6} |> ?|- \[[ xX]\] |[-*+] |\d+[.)] )?/,
+  );
+  return [space + prefix + first.slice(lead.length), ...rest].join("\n");
+}

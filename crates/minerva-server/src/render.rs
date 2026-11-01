@@ -331,7 +331,11 @@ fn to_html(markdown: &str, links: Links) -> String {
     let mut dropped_links = 0usize;
     // Inside an image written as an audio player: its alt text is not shown.
     let mut in_audio = false;
-    for event in Parser::new_ext(markdown, pulldown_cmark::Options::all()) {
+    // Inside a link, a written address stays text: it is already linked.
+    let mut in_link = 0usize;
+    // Joined text, so an address split around `_` or `*` is seen whole.
+    let parser = Parser::new_ext(markdown, pulldown_cmark::Options::all());
+    for event in pulldown_cmark::TextMergeStream::new(parser) {
         if in_audio {
             in_audio = !matches!(event, Event::End(TagEnd::Image));
             continue;
@@ -355,7 +359,7 @@ fn to_html(markdown: &str, links: Links) -> String {
                     if i % 2 == 1 {
                         events.push(Event::InlineHtml(database_slot(part, links).into()));
                     } else {
-                        decorate(part, &mut events);
+                        decorate(part, in_link == 0, &mut events);
                     }
                 }
             }
@@ -367,7 +371,7 @@ fn to_html(markdown: &str, links: Links) -> String {
                             "<span class=\"journal-tasks\"></span>".into(),
                         ));
                     }
-                    decorate(part, &mut events);
+                    decorate(part, in_link == 0, &mut events);
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -409,12 +413,17 @@ fn to_html(markdown: &str, links: Links) -> String {
                 dropped_links += 1;
             }
             Event::End(TagEnd::Link) if dropped_links > 0 => dropped_links -= 1,
+            Event::End(TagEnd::Link) => {
+                in_link = in_link.saturating_sub(1);
+                events.push(Event::End(TagEnd::Link));
+            }
             Event::Start(Tag::Link {
                 link_type,
                 dest_url,
                 title,
                 id,
             }) => {
+                in_link += 1;
                 let dest_url = links
                     .map(&dest_url, false)
                     .map(Into::into)
@@ -439,7 +448,7 @@ fn to_html(markdown: &str, links: Links) -> String {
                     .into(),
                 ))
             }
-            Event::Text(text) => decorate(&text, &mut events),
+            Event::Text(text) => decorate(&text, in_link == 0, &mut events),
             Event::InlineMath(tex) => events.push(Event::InlineHtml(math(&tex, false).into())),
             Event::DisplayMath(tex) => events.push(Event::Html(math(&tex, true).into())),
             other => events.push(other),
@@ -463,18 +472,112 @@ pub(crate) fn is_audio(url: &str) -> bool {
     .iter()
     .any(|ext| path.ends_with(ext))
 }
-/// Splits text into `==highlights==` and inline `#tags`.
-fn decorate(text: &str, events: &mut Vec<pulldown_cmark::Event<'_>>) {
+/// Splits text into cloze deletions and `==highlights==` (both shown marked),
+/// inline `#tags`, and, when `linkify`, web addresses written as they are, which
+/// become links.
+fn decorate(text: &str, linkify: bool, events: &mut Vec<pulldown_cmark::Event<'_>>) {
+    use pulldown_cmark::Event;
+    let mut rest = text;
+    while let Some(&(start, end, _, answer, _)) = clozes(rest).first() {
+        highlights(&rest[..start], linkify, events);
+        events.push(Event::InlineHtml("<mark>".into()));
+        tags_into(answer, linkify, events);
+        events.push(Event::InlineHtml("</mark>".into()));
+        rest = &rest[end..];
+    }
+    highlights(rest, linkify, events);
+}
+/// Anki-style cloze deletions, `{{c1::answer}}` or `{{c1::answer::hint}}`, as
+/// (start, end, number, answer, hint). Flashcards follow them (`flashcards.rs`).
+pub(crate) fn clozes(text: &str) -> Vec<(usize, usize, u32, &str, Option<&str>)> {
+    let mut found = vec![];
+    let mut from = 0;
+    while let Some(open) = text[from..].find("{{c").map(|i| i + from) {
+        let rest = &text[open + 3..];
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if !(1..=3).contains(&digits) || !rest[digits..].starts_with("::") {
+            from = open + 3;
+            continue;
+        }
+        let number: u32 = rest[..digits].parse().unwrap_or(0);
+        let body = open + 3 + digits + 2;
+        let Some(close) = text[body..].find("}}").map(|i| i + body) else {
+            break;
+        };
+        let (answer, hint) = match text[body..close].split_once("::") {
+            Some((answer, hint)) => (answer, Some(hint)),
+            None => (&text[body..close], None),
+        };
+        if number > 0 && !answer.trim().is_empty() {
+            found.push((open, close + 2, number, answer, hint));
+        }
+        from = close + 2;
+    }
+    found
+}
+fn highlights(text: &str, linkify: bool, events: &mut Vec<pulldown_cmark::Event<'_>>) {
     use pulldown_cmark::Event;
     let mut rest = text;
     while let Some((before, marked, after)) = highlight_split(rest) {
-        tags_into(before, events);
+        tags_into(before, linkify, events);
         events.push(Event::InlineHtml("<mark>".into()));
-        tags_into(marked, events);
+        tags_into(marked, linkify, events);
         events.push(Event::InlineHtml("</mark>".into()));
         rest = after;
     }
-    tags_into(rest, events);
+    tags_into(rest, linkify, events);
+}
+/// `http://` and `https://` addresses in text: from the scheme to the next
+/// space, without trailing punctuation or a closing bracket that is not theirs.
+fn url_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = vec![];
+    let mut from = 0;
+    while let Some(found) = text[from..].find("http") {
+        let start = from + found;
+        from = start + 4;
+        let rest = &text[start..];
+        let scheme = if rest.starts_with("https://") {
+            8
+        } else if rest.starts_with("http://") {
+            7
+        } else {
+            continue;
+        };
+        let after_space = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|p| p.is_whitespace() || "([{<\"'".contains(p));
+        if !after_space {
+            continue;
+        }
+        let mut end = start
+            + rest
+                .find(|c: char| c.is_whitespace() || "<>\"`".contains(c))
+                .unwrap_or(rest.len());
+        loop {
+            let url = &text[start..end];
+            let Some(last) = url.chars().next_back() else {
+                break;
+            };
+            let unbalanced = |open: char, close: char| {
+                last == close && url.matches(open).count() < url.matches(close).count()
+            };
+            if ".,;:!?'\"*".contains(last)
+                || unbalanced('(', ')')
+                || unbalanced('[', ']')
+                || unbalanced('{', '}')
+            {
+                end -= last.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if end > start + scheme {
+            spans.push((start, end));
+            from = end;
+        }
+    }
+    spans
 }
 /// Finds the first `==text==` whose content does not start or end with whitespace.
 fn highlight_split(text: &str) -> Option<(&str, &str, &str)> {
@@ -557,16 +660,29 @@ fn chip_spans(text: &str) -> Vec<(usize, usize)> {
     }
     spans
 }
-fn tags_into(text: &str, events: &mut Vec<pulldown_cmark::Event<'_>>) {
-    use pulldown_cmark::Event;
-    let mut spans: Vec<(usize, usize, bool)> = tag_spans(text)
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum Span {
+    Url,
+    Tag,
+    Chip,
+}
+fn tags_into(text: &str, linkify: bool, events: &mut Vec<pulldown_cmark::Event<'_>>) {
+    use pulldown_cmark::{Event, LinkType, Tag, TagEnd};
+    let urls = if linkify { url_spans(text) } else { vec![] };
+    let mut spans: Vec<(usize, usize, Span)> = urls
         .into_iter()
-        .map(|(a, b)| (a, b, true))
-        .chain(chip_spans(text).into_iter().map(|(a, b)| (a, b, false)))
+        .map(|(a, b)| (a, b, Span::Url))
+        .chain(tag_spans(text).into_iter().map(|(a, b)| (a, b, Span::Tag)))
+        .chain(
+            chip_spans(text)
+                .into_iter()
+                .map(|(a, b)| (a, b, Span::Chip)),
+        )
         .collect();
-    spans.sort();
+    // At the same start, an address wins over a tag or chip inside it.
+    spans.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
     let mut last = 0;
-    for (start, end, tag) in spans {
+    for (start, end, kind) in spans {
         if start < last {
             continue;
         }
@@ -574,7 +690,19 @@ fn tags_into(text: &str, events: &mut Vec<pulldown_cmark::Event<'_>>) {
             events.push(Event::Text(text[last..start].to_string().into()));
         }
         let piece = &text[start..end];
-        let html = if tag {
+        if kind == Span::Url {
+            events.push(Event::Start(Tag::Link {
+                link_type: LinkType::Autolink,
+                dest_url: piece.to_string().into(),
+                title: "".into(),
+                id: "".into(),
+            }));
+            events.push(Event::Text(piece.to_string().into()));
+            events.push(Event::End(TagEnd::Link));
+            last = end;
+            continue;
+        }
+        let html = if kind == Span::Tag {
             // `data-tag` lets stylesheets style particular tags, such as severities.
             format!(
                 "<span class=\"tag\" data-tag=\"{}\">{}</span>",
@@ -1078,6 +1206,28 @@ mod audio_tests {
 }
 #[cfg(test)]
 mod chip_tests {
+    #[test]
+    fn written_addresses_become_links() {
+        let html = super::render(
+            "See https://example.com/a_(b)?q=1#top, and (http://x.org/p). Code `https://no.link` [named](https://y.org) https://y.org/page#tag",
+        );
+        assert!(
+            html.contains(r#"href="https://example.com/a_(b)?q=1#top""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(">https://example.com/a_(b)?q=1#top</a>,"),
+            "{html}"
+        );
+        assert!(html.contains(r#"href="http://x.org/p""#), "{html}");
+        assert!(html.contains("http://x.org/p</a>)."), "{html}");
+        assert!(!html.contains(r#"href="https://no.link""#), "{html}");
+        assert_eq!(html.matches(r#"href="https://y.org""#).count(), 1, "{html}");
+        assert!(html.contains(r#"href="https://y.org/page#tag""#), "{html}");
+        assert!(!html.contains("data-tag=\"tag\""), "{html}");
+        let code = super::render("```\nhttps://example.com\n```");
+        assert!(!code.contains("href="), "{code}");
+    }
     #[test]
     fn renders_mentions_and_reminders() {
         let html = super::render("Call @ana@test.it ⏰2026-10-27 09:00 #work");

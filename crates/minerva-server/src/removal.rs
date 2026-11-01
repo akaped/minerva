@@ -17,6 +17,7 @@ fn remove_notes(d: &mut Data, ids: &HashSet<String>) {
     }
     d.notes.retain(|n| !ids.contains(&n.id));
     d.history.retain(|id, _| !ids.contains(id));
+    d.versioned_at.retain(|id, _| !ids.contains(id));
     d.collaboration.retain(|id, _| !ids.contains(id));
     d.presence.retain(|id, _| !ids.contains(id));
     d.shares.retain(|s| !ids.contains(&s.note_id));

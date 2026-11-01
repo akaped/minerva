@@ -11,6 +11,7 @@ import {
   countWords,
   normalizeTag,
   htmlToMarkdown,
+  turnInto,
 } from "../editor-tools.js";
 
 const apply = (value, r) => value.slice(0, r.from) + r.text + value.slice(r.to);
@@ -129,4 +130,13 @@ test("@ opens the mention picker after a space or at the start", () => {
   assert.equal(mentionQuery("mail ana@test.it", 16), null);
   assert.equal(mentionQuery("Ask @hana@demo.local", 20), null);
   assert.equal(mentionQuery("Ask @ha now", 11), null);
+});
+
+test("blocks turn into other kinds, keeping indentation and text", () => {
+  assert.equal(turnInto("Plain", "h2"), "## Plain");
+  assert.equal(turnInto("# Title", "bullet"), "- Title");
+  assert.equal(turnInto("  - [x] done\nmore", "number"), "  1. done\nmore");
+  assert.equal(turnInto("> quoted", "todo"), "- [ ] quoted");
+  assert.equal(turnInto("12) item", "text"), "item");
+  assert.equal(turnInto("#tag stays", "quote"), "> #tag stays");
 });

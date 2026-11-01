@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitMarkdown, blockCommands } from "../markdown.js";
+import { splitMarkdown, blockCommands, highlightSnippet } from "../markdown.js";
 
 test("fenced code stays one block through paste/import, including blank lines", () => {
   assert.deepEqual(
@@ -34,4 +34,14 @@ test("quotes, callouts and display math stay one block", () => {
   ]);
   // Inline math on one line is an ordinary line.
   assert.deepEqual(splitMarkdown("$$ x $$\nnext"), ["$$ x $$", "next"]);
+});
+
+test("search snippets escape text and highlight matches", () => {
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  assert.equal(
+    highlightSnippet("a <b> \u0001match\u0002 & \u0001more\u0002…", esc),
+    "a &lt;b> <mark>match</mark> &amp; <mark>more</mark>…",
+  );
+  assert.equal(highlightSnippet("", esc), "");
+  assert.equal(highlightSnippet(undefined, esc), "");
 });

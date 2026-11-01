@@ -22,7 +22,9 @@ Minerva notes are written in Markdown, and shown formatted as soon as you leave 
 
 ## 2. The / menu
 
-In an empty block, type **/** to insert anything: headings, tasks, lists, quotes, code, tables, images and files, callouts, math, diagrams, a live database, a link to another note, an assignment or a reminder. Start typing to filter the list, for example `/table` or `/remindme`.
+In an empty block, type **/** to insert anything: headings, tasks, lists, quotes, code, tables, images and files, callouts, math, diagrams, a live database, a link to another note, an assignment or a reminder. The menu opens by the block, grouped by kind, with each Markdown shortcut beside it. Start typing to filter the list, for example `/table` or `/remindme`. **Image or file** opens a box to drop files into or click to choose them.
+
+A web address written in a block, like https://example.com, becomes a link. Paste an address over selected text to link that text.
 
 Select some text and press **Ctrl+Shift+P** for commands that work on the selection.
 
@@ -113,7 +115,7 @@ My Workspace is private and cannot be shared: create a new workspace from the wo
 
 ## 11. AI
 
-When your administrator has set up an AI provider, **Ask AI** in the toolbar opens a chat beside the note. Ask about this note, a folder or the whole workspace. Each reply is made of blocks: add one or all of them to the note, save the reply as a new note, or copy it. **AI chat** in the sidebar keeps all your conversations.
+When your administrator has set up an AI provider, **AI chat** in the sidebar answers any question: it starts with **No context**, so none of your notes are sent. Attach photos, scans, PDFs or text documents with 📎, by dropping them on the question box, or by pasting an image, and ask about them. Choose a workspace, folder or note as the context to ask about your notes. **Ask AI** in the toolbar opens a chat beside the note, about that note. Each reply is made of blocks: add one or all of them to the note, save the reply as a new note, or copy it. **AI chat** in the sidebar keeps all your conversations.
 
 ## 12. Export, print and publish
 

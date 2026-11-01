@@ -24,13 +24,13 @@ The desktop crate is not one of the workspace's default members, so `cargo build
 
 ## Using it
 
-The app opens **This computer**: personal notes and offline copies. Nothing needs to be configured. The launcher (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) lists servers. **Add a server** with its address: HTTPS is assumed, and `localhost`/`127.x` may use HTTP. The client calls `/api/v1/health`, requires API version 1, and records the server's persistent UUID. **Open** loads the server's normal web interface; sign in there as usual. Use **Minerva → Servers…** or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> on macOS) to return to the launcher. The launcher also offers **Offline…** (choose workspaces to keep on this computer; sign in first), **Sign out** (revokes the session on the server, and pauses syncing), **Rename**, and **Remove**.
+The app opens the server you had open last, or **This computer** (personal notes and offline copies) the first time, or when that server is signed out or does not answer within 3 seconds. Nothing needs to be configured. The launcher (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) lists servers. **Add a server** with its address: HTTPS is assumed, and `localhost`/`127.x` may use HTTP. The client calls `/api/v1/health`, requires API version 1, and records the server's persistent UUID. **Open** loads the server's normal web interface; sign in there as usual. Use **Minerva → Servers…** or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> on macOS) to return to the launcher. The launcher also offers **Offline…** (choose workspaces to keep on this computer; sign in first), **Sign out** (revokes the session on the server, and pauses syncing), **Rename**, and **Remove**.
 
 The workspace menu (top of the sidebar) lists every place your notes live: **This computer**, then each server you added with its workspaces. Choose a workspace to open it: one with an offline copy opens right here, any other opens that server's page. The button beside a server workspace keeps or removes its offline copy. **Add server** adds one without leaving the app; signing in still happens on the server's page. On a server's page, the menu offers **This computer** and **All servers…** to come back. The server list is given only to this computer's page, never to a server's page.
 
 Offline copies appear in This computer's workspace menu. Their top-bar badge shows the sync state: synced, offline with changes waiting, or changes to review. Click it to see every copy and resolve conflicts.
 
-Attachments download to the Downloads folder. Existing files are never overwritten; a numbered name is chosen instead. Links to other sites open in the system browser.
+The workspace you had open last opens again the next time, on whichever server it is. On a server's page this needs a server version that remembers workspaces (newer than 0.4.0). Attachments download to the Downloads folder. Existing files are never overwritten; a numbered name is chosen instead. Links to other sites open in the system browser.
 
 | Data                                           | Linux                                     | Windows                                               | macOS                                                    |
 | ---------------------------------------------- | ----------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
@@ -38,6 +38,7 @@ Attachments download to the Downloads folder. Existing files are never overwritt
 | Personal notes, offline copies, unsent changes | `~/.local/share/minerva/local.db`         | `%LOCALAPPDATA%\minerva\local.db`                     | `~/Library/Application Support/minerva/local.db`         |
 | Session tokens                                 | Secret Service, service `minerva-desktop` | Credential Manager, `connection:<id>.minerva-desktop` | Keychain, service `minerva-desktop`                      |
 | Webview storage (theme, layout)                | `~/.local/share/minerva/webview`          | `%LOCALAPPDATA%\minerva\webview`                      | `~/Library/Application Support/minerva/webview`          |
+| Server open last                               | `~/.local/share/minerva/last-server`      | `%LOCALAPPDATA%\minerva\last-server`                  | `~/Library/Application Support/minerva/last-server`      |
 
 Set `MINERVA_CREDENTIAL_STORE=memory` to keep sign-ins only until the application exits. This is for kiosks, automated tests, or systems without a credential service.
 
@@ -48,7 +49,8 @@ Set `MINERVA_CREDENTIAL_STORE=memory` to keep sign-ins only until the applicatio
 - **Server identity.** Tokens are attached only after `/health` confirms the server UUID recorded when it was added. If the UUID changes (for example after a reinstall or a redirected address), requests are refused and the launcher asks whether to trust the new server; trusting it discards the old sign-in.
 - **TLS policy.** HTTPS uses the operating system's trust store. Plain HTTP is accepted for loopback addresses, or for an address where the user explicitly allowed it. Redirects are not followed, so a token is never forwarded to a different origin.
 - **Local server.** It runs inside the app process and listens on no port. Its session token is created at each start and never reaches the page. `local.db` is not encrypted by Minerva; protect it like any other personal files, and use disk encryption.
-- **Launcher commands** (add, open, sign out, remove…) are accepted only from the launcher page. Server pages can only ask to return to the launcher. Navigation is limited to the launcher and registered servers.
+- **Launcher commands** (add, open, sign out, remove…) are accepted only from the launcher page. Server pages can only ask to return to the launcher. Navigation is limited to the launcher and registered servers, plus the frames of YouTube players.
+- **YouTube videos.** YouTube refuses to play in a page without a web address of its own, and pages here use `minerva://`. The app therefore serves one small player page per video from `http://127.0.0.1:<random port>/youtube/<id>`; it serves nothing else. Servers older than this version block that frame in note tabs: update the server too.
 
 The web interface itself is unchanged, except that the gateway adds `<meta name="minerva-server-origin">` so that MCP configuration shows the server's real URL rather than the local origin.
 

@@ -121,19 +121,49 @@ export async function renderFlashcards({ api, esc, data, error }) {
       "submit",
     );
   }
+  // Where a new deck can take its cards from: a workspace, or a folder with its
+  // subfolders.
+  const noteSources = () =>
+    data.workspaces.flatMap((w) => [
+      { kind: "workspace", id: w.id, label: `Workspace · ${w.name}` },
+      ...data.folders
+        .filter((f) => f.workspace_id === w.id)
+        .map((f) => ({
+          kind: "folder",
+          id: f.id,
+          label: `Folder · ${w.name} / ${f.name}`,
+        })),
+    ]);
   function deckForm() {
+    const sources = deck ? [] : noteSources();
+    const follow = sources.length
+      ? `<fieldset class="fc-source"><legend>Cards</legend><label><input type="radio" name="origin" value="own" checked> I’ll write or generate them here</label><label><input type="radio" name="origin" value="notes"> Follow the cards written in my notes</label><select name="source" aria-label="Notes to follow" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select><p class="hint">In a note, tag a question <code>#card</code> and indent its answer below it, or write <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> become cards too. The deck keeps up with your notes each time you open it.</p></fieldset>`
+      : "";
     shell(
-      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? "Edit deck" : "Create a deck"}</h2>${field("Deck name", "name", deck?.name || "")}${field("Description", "description", deck?.description || "", true, false)}<div class="fc-actions"><button class="btn primary">Save deck</button>${button("Cancel", "fc-cancel")}</div></form>`,
+      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? "Edit deck" : "Create a deck"}</h2>${field("Deck name", "name", deck?.name || "")}${field("Description", "description", deck?.description || "", true, false)}${follow}<div class="fc-actions"><button class="btn primary">Save deck</button>${button("Cancel", "fc-cancel")}</div></form>`,
     );
+    root
+      .querySelectorAll('[name="origin"]')
+      .forEach(
+        (radio) =>
+          (radio.onchange = () =>
+            (root.querySelector('[name="source"]').disabled =
+              radio.value !== "notes" || !radio.checked)),
+      );
     bind("fc-cancel", () => (deck ? detail() : list()));
     bind(
       "fc-deck-form",
       async (e) => {
         const form = new FormData(e.target);
+        const source =
+          form.get("origin") === "notes"
+            ? sources[Number(form.get("source"))]
+            : null;
         const body = {
           name: form.get("name"),
           description: form.get("description"),
           revision: deck?.revision,
+          ...(source ? { source: { kind: source.kind, id: source.id } } : {}),
         };
         const result = await api(
           "flashcards/decks" + (deck ? "/" + deck.id : ""),
@@ -153,7 +183,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
       (c) => !c.suspended && c.due <= dueNow(),
     ).length;
     shell(
-      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p></div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">Reveal the answer before rating your recall. Cards return when their next review is due.</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${c.suspended ? "Paused" : c.due <= dueNow() ? "Ready to study" : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">Edit</button></article>`).join("")}</div>${!deck.cards.length ? '<div class="empty">This deck is ready for its first question.</div>' : ""}`,
+      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p>${deck.source ? `<p class="hint">Follows the cards written in ${esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || "notes you can no longer open")}: tag a question <code>#card</code>, or write a cloze such as <code>{{c1::Rome}}</code>.</p>` : ""}</div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">Reveal the answer before rating your recall. Cards return when their next review is due.</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${c.suspended ? "Paused" : c.due <= dueNow() ? "Ready to study" : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews${c.origin ? " · from a note" : ""}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">Edit</button></article>`).join("")}</div>${!deck.cards.length ? '<div class="empty">This deck is ready for its first question.</div>' : ""}`,
     );
     root.querySelector("#fc-study").disabled = !due;
     bind("fc-study", () => {
@@ -200,9 +230,15 @@ export async function renderFlashcards({ api, esc, data, error }) {
       );
   }
   function cardForm(card) {
+    // A card written in a note changes there; here it can only be paused.
+    const fromNote = !!card?.origin;
     shell(
-      `<form class="fc-form" id="fc-card-form"><h2>${card ? "Edit card" : "Add a card"}</h2>${field("Question / front", "front", card?.front || "", true)}${field("Answer / back", "back", card?.back || "", true)}${field("Sources (one HTTP(S) URL or #note/id per line)", "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> Pause reviews for this card</label>` : ""}<div class="fc-actions"><button class="btn primary">Save card</button>${button("Cancel", "fc-cancel")}${card ? button("Delete card", "fc-remove") : ""}</div></form>`,
+      `<form class="fc-form" id="fc-card-form"><h2>${card ? "Edit card" : "Add a card"}</h2>${fromNote ? `<p class="hint">This card comes from a note: <a href="${esc(card.sources[0] || "#")}">open the note</a> to change it.</p>` : ""}${field("Question / front", "front", card?.front || "", true)}${field("Answer / back", "back", card?.back || "", true)}${fromNote ? "" : field("Sources (one HTTP(S) URL or #note/id per line)", "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> Pause reviews for this card</label>` : ""}<div class="fc-actions"><button class="btn primary">Save card</button>${button("Cancel", "fc-cancel")}${card && !fromNote ? button("Delete card", "fc-remove") : ""}</div></form>`,
     );
+    if (fromNote)
+      root
+        .querySelectorAll("#fc-card-form textarea")
+        .forEach((el) => (el.readOnly = true));
     bind("fc-cancel", detail);
     bind("fc-remove", async () => {
       if (!confirm("Delete this card and its review progress?")) return;
@@ -220,7 +256,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
         const value = {
           front: form.get("front"),
           back: form.get("back"),
-          sources: String(form.get("sources"))
+          sources: String(form.get("sources") ?? "")
             .split("\n")
             .map((s) => s.trim())
             .filter(Boolean),
@@ -249,7 +285,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     }
     const c = deck.cards.find((c) => c.id === queue[0]);
     shell(
-      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">QUESTION</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">ANSWER</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>How well did you remember?</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.interval, r)}</small></button>`).join("")}</div></div></article>`,
+      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">QUESTION</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">ANSWER</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>How well did you remember?</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
     );
     bind("fc-back", () => load(deck.id));
     bind("fc-reveal", () => {
@@ -397,25 +433,13 @@ export function rich(text, esc) {
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
     );
 }
-export function intervalLabel(old, rating) {
+/** How long until a card returns, from seconds: minutes, days, months or years. */
+export function intervalLabel(seconds) {
   const day = 86400;
-  const seconds = Math.min(
-    365 * day,
-    rating === "again"
-      ? 600
-      : rating === "hard"
-        ? old < day
-          ? day
-          : Math.max(day, Math.floor(old * 1.2))
-        : rating === "good"
-          ? old < day
-            ? day
-            : Math.floor(old * 2.5)
-          : old < day
-            ? 4 * day
-            : Math.floor(old * 3.5),
-  );
-  return seconds < day
-    ? "10 minutes"
-    : `${Math.round((seconds / day) * 10) / 10} days`;
+  if (!Number.isFinite(seconds)) return "";
+  if (seconds < day) return `${Math.max(1, Math.round(seconds / 60))} minutes`;
+  const days = Math.round(seconds / day);
+  if (days < 31) return days === 1 ? "1 day" : `${days} days`;
+  if (days < 365) return `${Math.round((days / 30.4) * 10) / 10} months`;
+  return `${Math.round((days / 365) * 10) / 10} years`;
 }

@@ -37,20 +37,31 @@ Generation sends selected material to the configured provider and may incur char
 
 The implementation uses the provider's documented [OpenAI web search sources](https://developers.openai.com/api/docs/guides/tools-web-search) or [Anthropic search results and citations](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool). Compatible providers can generate cards from notes and folders, but cannot use this research mode.
 
+## Cards in your notes
+
+A deck can follow a workspace, or a folder with its subfolders: choose **Follow the cards written in my notes** when you create it. Its cards are the ones written in the notes you can open there:
+
+- **A question tagged `#card`**, answered by the blocks indented under it:
+
+  ```
+  - What is the capital of Italy? #card
+    - Rome
+  ```
+
+- **`Question :: Answer #card`** in one block.
+- **Cloze deletions**, as in Anki: `{{c1::Rome}} is the capital of {{c2::Italy::country}}`. Each number becomes a card that hides that part (`[...]`, or the hint after the second `::`). In the note, the hidden parts show highlighted.
+
+The deck keeps up with your notes each time you open it: new cards appear, changed ones are updated and keep their review history, and cards whose block was deleted, or whose note you can no longer open, go away. Change such a card in its note; in the deck you can only pause it. You can still add cards of your own to the deck.
+
 ## Study and spaced repetition
 
-Choose **Study due cards**. Try to answer before choosing **Reveal answer**, then rate your recall:
+Choose **Study due cards**. Try to answer before choosing **Reveal answer**, then rate your recall: **Again**, **Hard**, **Good** or **Easy**. Each button shows when the card would come back.
 
-| Rating | Next interval                                      |
-| ------ | -------------------------------------------------- |
-| Again  | 10 minutes                                         |
-| Hard   | 1 day initially; then the previous interval × 1.2  |
-| Good   | 1 day initially; then the previous interval × 2.5  |
-| Easy   | 4 days initially; then the previous interval × 3.5 |
+Minerva schedules reviews with [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm) (version 4.5, with its default parameters), the scheduler Anki uses. Each card has a memory: its _stability_ (how many days until you would recall it with 90% probability) and its _difficulty_. Every rating updates both, taking into account how long it has been since the last review, and the card comes back when your recall is expected to drop to 90%. A new card answered Good returns after 4 days, Easy after 14; Again brings it back in 10 minutes. Intervals are capped at 10 years.
 
-Intervals are capped at 365 days. A card repeated after an Again rating starts again from the initial day intervals. Each session reviews the cards due when it starts, once each; return later for cards scheduled again. The UI shows the next interval before you rate. Cards retain review and lapse counts, and pausing a card excludes it from sessions.
+Cards reviewed before FSRS keep their schedule: on their next review, their last interval stands for their stability. Cards imported from Anki with their progress do the same.
 
-This is Minerva's simple interval scheduler, not Anki's FSRS algorithm. This first version supports question/answer cards; cloze cards are imported from Anki as question/answer pairs; media cards, shared decks, and detailed study analytics are not implemented.
+Each session reviews the cards due when it starts, once each; return later for cards scheduled again. Cards keep review and lapse counts, and pausing a card excludes it from sessions. Media cards, shared decks, and study statistics are not implemented yet.
 
 ## Limits and privacy
 

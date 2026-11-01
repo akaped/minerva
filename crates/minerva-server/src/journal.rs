@@ -164,15 +164,11 @@ fn save(d: &mut Data, updated: Note) -> Result<(), ApiError> {
         .position(|n| n.id == updated.id)
         .ok_or_else(missing)?;
     let previous = d.notes[index].clone();
-    let history = d.history.entry(updated.id.clone()).or_default();
-    history.push(previous);
-    if history.len() > 50 {
-        history.remove(0);
-    }
+    keep_version(d, previous);
     let mut updated = updated;
     updated.revision += 1;
     updated.updated_at = now();
-    d.notes[index] = updated.clone();
+    d.notes[index] = Arc::new(updated.clone());
     collaboration::replace_note(d, &updated)
 }
 
@@ -229,7 +225,7 @@ pub(super) fn route(
                 metadata: Default::default(),
                 print_template: String::new(),
             };
-            d.notes.push(note.clone());
+            d.notes.push(Arc::new(note.clone()));
             view(d, u, &note)
         }
         ("POST", ["notes", nid, "template"]) => {
@@ -260,7 +256,7 @@ pub(super) fn route(
                 .journal
                 .clone()
                 .map_or_else(|| date_field(v, "date"), Ok)?;
-            let mut updated = target.clone();
+            let mut updated = Note::clone(&target);
             updated.blocks = fill(&template, &target.title, &date);
             // Templates also carry document metadata and a PDF template.
             for (key, value) in &template.metadata {
@@ -303,7 +299,7 @@ pub(super) fn route(
                 if note_access(d, u, &n, true).is_err() {
                     continue;
                 }
-                let mut updated = n.clone();
+                let mut updated = Note::clone(&n);
                 let mut changed = false;
                 for block in &mut updated.blocks {
                     let lines: Vec<String> = block
@@ -398,7 +394,7 @@ fn open_day(d: &mut Data, u: &User, v: &Value) -> Result<Value, ApiError> {
             .unwrap_or_default(),
         journal: Some(date),
     };
-    d.notes.push(note.clone());
+    d.notes.push(Arc::new(note.clone()));
     let mut result = view(d, u, &note);
     result["created"] = json!(true);
     Ok(result)
@@ -437,8 +433,8 @@ fn scan_scope(d: &Data, u: &User, v: &Value) -> Result<(Note, Vec<String>), ApiE
         .notes
         .iter()
         .find(|n| Some(n.id.as_str()) == v["note_id"].as_str())
-        .ok_or_else(missing)?
-        .clone();
+        .map(|n| Note::clone(n))
+        .ok_or_else(missing)?;
     note_access(d, u, &context, false)?;
     let today = date_field(v, "today")?;
     let Some(folder) = workspace_of(d, &context.folder_id)
@@ -446,7 +442,7 @@ fn scan_scope(d: &Data, u: &User, v: &Value) -> Result<(Note, Vec<String>), ApiE
     else {
         return Ok((context, vec![]));
     };
-    let mut entries: Vec<&Note> = d
+    let mut entries: Vec<&Arc<Note>> = d
         .notes
         .iter()
         .filter(|n| {

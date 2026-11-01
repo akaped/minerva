@@ -40,7 +40,7 @@ pub struct Grant {
     pub user_id: String,
     pub role: Role,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Block {
     pub id: String,
     pub markdown: String,
@@ -59,7 +59,7 @@ impl Block {
         }
     }
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Note {
     pub id: String,
     pub folder_id: String,
@@ -113,7 +113,7 @@ pub enum ColumnKind {
     Select,
     Url,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Column {
     pub id: String,
     pub name: String,
@@ -121,7 +121,7 @@ pub struct Column {
     #[serde(default)]
     pub options: Vec<String>,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Record {
     pub id: String,
     pub cells: std::collections::BTreeMap<String, serde_json::Value>,
@@ -134,7 +134,7 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict_of: Option<String>,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Database {
     pub id: String,
     pub folder_id: String,

@@ -153,7 +153,14 @@ fn page(args: &Value, max: u64) -> Result<(usize, usize), ApiError> {
     }
     Ok((offset as usize, limit as usize))
 }
-fn call(d: &Data, u: &User, wid: &str, name: &str, args: &Value) -> Result<Value, ApiError> {
+fn call(
+    db: &Connection,
+    d: &Data,
+    u: &User,
+    wid: &str,
+    name: &str,
+    args: &Value,
+) -> Result<Value, ApiError> {
     if !args.is_object() {
         return Err(bad("Arguments must be an object"));
     }
@@ -164,9 +171,18 @@ fn call(d: &Data, u: &User, wid: &str, name: &str, args: &Value) -> Result<Value
         "doc_search" => {
             let q = field(args, "query")?.to_lowercase();
             let (_, limit) = page(args, 50)?;
-            let matches:Vec<_>=d.notes.iter().filter(|n|!n.trashed&&allowed(d,u,wid,&n.folder_id)).filter_map(|n|{
-                let passages:Vec<_>=n.blocks.iter().filter(|b|b.markdown.to_lowercase().contains(&q)).take(3).map(|b|json!({"block_id":b.id,"text":b.markdown.chars().take(600).collect::<String>()})).collect();
-                if !passages.is_empty()||n.title.to_lowercase().contains(&q){Some(json!({"document_id":n.id,"title":n.title,"folder_id":n.folder_id,"passages":passages}))}else{None}
+            // Ranked matches; passages are the blocks with any of the query's words.
+            let words: Vec<String> = search::words(&q).into_iter().map(str::to_string).collect();
+            let found = search::matches(
+                db,
+                d,
+                &q,
+                |n| !n.trashed && allowed(d, u, wid, &n.folder_id),
+                limit,
+            )?;
+            let matches:Vec<_>=found.into_iter().map(|(n,_)|{
+                let passages:Vec<_>=n.blocks.iter().filter(|b|{let text=b.markdown.to_lowercase();if words.is_empty(){text.contains(&q)}else{words.iter().any(|w|text.contains(w.as_str()))}}).take(3).map(|b|json!({"block_id":b.id,"text":b.markdown.chars().take(600).collect::<String>()})).collect();
+                json!({"document_id":n.id,"title":n.title,"folder_id":n.folder_id,"passages":passages})
             }).take(limit).collect();
             Ok(json!({"matches":matches,"search_type":"keyword"}))
         }
@@ -281,7 +297,7 @@ pub(super) async fn endpoint(
             "tools/list"=>tools(),
             "tools/call"=>{
                 let name=req["params"]["name"].as_str().unwrap_or("");let args=req["params"].get("arguments").cloned().unwrap_or(json!({}));
-                match call(&s.data,&u,&wid,name,&args){Ok(result)=>json!({"content":[{"type":"text","text":result.to_string()}],"isError":false}),Err(e)=>json!({"content":[{"type":"text","text":e.1}],"isError":true})}
+                match call(&s.db,&s.data,&u,&wid,name,&args){Ok(result)=>json!({"content":[{"type":"text","text":result.to_string()}],"isError":false}),Err(e)=>json!({"content":[{"type":"text","text":e.1}],"isError":true})}
             }
             _=>return Ok(axum::Json(rpc_error(id,-32601,"Method not found")).into_response()),
         };

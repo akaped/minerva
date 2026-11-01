@@ -947,6 +947,130 @@ p {
   color: inherit;
   padding: 2px 7px;
 }
+/* Live preview: the field's text is transparent above a layer that shows the
+   same characters with Markdown markers dimmed. Both wrap and space text the
+   same way; styles never change letter widths. */
+.live-preview-wrap {
+  position: relative;
+}
+.live-preview-wrap > textarea {
+  display: block;
+}
+.live-preview {
+  position: absolute;
+  inset: 0;
+  padding: 2px 7px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  pointer-events: none;
+  font: inherit;
+  color: inherit;
+}
+#blocks .block textarea.live-preview-field {
+  position: relative;
+  color: transparent;
+  caret-color: currentColor;
+  -webkit-text-fill-color: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+#blocks .block .live-preview-field::selection {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.lp-mark {
+  color: var(--muted);
+  opacity: 0.75;
+}
+.lp-bold {
+  /* Bold without wider letters. */
+  text-shadow:
+    0.35px 0 0 currentColor,
+    -0.35px 0 0 currentColor;
+}
+.lp-italic {
+  color: color-mix(in srgb, currentColor 75%, var(--accent));
+}
+.lp-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.lp-code {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.lp-strike {
+  text-decoration: line-through;
+}
+.lp-highlight {
+  border-radius: 2px;
+  background: #fff1a8;
+}
+[data-theme="dark"] .lp-highlight {
+  background: #6b5a1a;
+}
+/* A heading block is edited at its heading's size. */
+.block-body.lp-h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.block-body.lp-h2 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.block-body.lp-h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+/* Whole blocks selected together, and what can be done with them. */
+.block.block-selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.block-selection-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 8px;
+  transform: translateX(-50%);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 34px #27355230;
+  font-size: 13px;
+}
+.block-selection-bar strong {
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.block-selection-bar button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.block-selection-bar button:hover,
+.block-selection-bar button:focus-visible {
+  background: var(--soft);
+}
+.block-selection-bar .danger {
+  color: #c4313f;
+}
+[data-theme="dark"] .block-selection-bar {
+  background: #1d2432;
+  border-color: #343e53;
+}
 /* Blocks read as one page: the handle shows only on hover, never while text is
    selected, and is never part of a selection. */
 .block-controls {
@@ -1315,6 +1439,64 @@ dialog footer {
 .search-result small {
   color: #9aa4b3;
   margin-left: auto;
+}
+/* Ctrl+K search: the chosen result, its text around the matches, and the keys. */
+.search-result[aria-selected="true"] {
+  background: var(--soft);
+}
+.search-icon {
+  flex-shrink: 0;
+}
+.search-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.search-title {
+  font-weight: 550;
+}
+.search-snippet {
+  color: var(--muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.search-snippet mark {
+  padding: 0 1px;
+  border-radius: 3px;
+}
+.search-result small {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-heading {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.search-hint {
+  display: flex;
+  gap: 14px;
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.search-hint kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .search-hint {
+    display: none;
+  }
 }
 .history-row {
   padding: 15px 0;
@@ -2818,6 +3000,89 @@ button.doc-icon:hover {
 .format-highlight {
   background: #fff1a8 !important;
 }
+.format-bar .format-ai {
+  padding: 0 8px;
+  color: var(--accent);
+  font-weight: 600;
+}
+/* AI on selected text: the actions, then the suggestion to keep or discard. */
+.ai-assist {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 7;
+  width: min(420px, 100%);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 34px #27355228;
+  font-size: 13px;
+}
+.ai-assist-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.ai-assist-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-align: left;
+}
+.ai-assist-actions button:hover,
+.ai-assist-actions button:focus-visible {
+  background: var(--soft);
+}
+.ai-assist-actions small,
+.ai-assist-status {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-assist-options {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.ai-assist-options label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ai-assist-result {
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--soft);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.ai-assist-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ai-assist-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 4px;
+}
+@media (max-width: 760px) {
+  .ai-assist-actions {
+    grid-template-columns: 1fr;
+  }
+}
 .link-picker {
   position: absolute;
   left: 12px;
@@ -2932,6 +3197,7 @@ body.focus-mode #blocks:focus-within .block:not(:focus-within) {
 }
 [data-theme="dark"] .popover,
 [data-theme="dark"] .format-bar,
+[data-theme="dark"] .ai-assist,
 [data-theme="dark"] .link-picker {
   background: #1d2432;
   border-color: #343e53;
@@ -4725,6 +4991,18 @@ dialog:has(#metadata-form) {
 .fc-card-row small {
   color: var(--subtle);
 }
+.fc-source {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.fc-source label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .fc-form {
   max-width: 700px;
   display: grid;
@@ -5761,7 +6039,7 @@ body.note-tab-shown .sidebar .tree-row.active {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 8px 8px 8px 14px;
+  padding: 8px 8px 8px 6px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface, #fff);
@@ -5892,21 +6170,31 @@ html.editor-pane.chat-pane body {
   gap: 8px;
   width: min(360px, 82vw);
 }
-.emoji-dialog .emoji-picker {
+.emoji-dialog .emoji-picker,
+.popover .emoji-picker {
   width: 100%;
+  min-width: 0;
+}
+/* A popover with a picker is wide enough for ten emoji a row. */
+.popover:has(.emoji-picker) {
+  width: min(400px, 92vw);
 }
 .emoji-search {
   width: 100%;
 }
 .emoji-tabs {
-  display: flex;
-  justify-content: space-between;
+  /* Every group's tab fits the picker's width. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 4px;
 }
 .emoji-tabs button {
-  padding: 4px;
+  min-width: 0;
+  padding: 4px 0;
+  overflow: hidden;
   border-radius: 6px;
   font-size: 18px;
   line-height: 1;
@@ -5932,6 +6220,9 @@ html.editor-pane.chat-pane body {
   grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
 }
 .emoji-set button {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
   height: 36px;
   border-radius: 8px;
   font-size: 22px;
@@ -6196,4 +6487,363 @@ html.editor-pane.chat-pane body {
   .reminder-actions {
     grid-column: 2;
   }
+}
+/* More of the sidebar below the fold: its bottom edge fades out. */
+.sidebar-scroll.more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+}
+/* A folder just created flashes once where it landed in the tree. */
+.tree-row.just-added {
+  animation: just-added 1.6s ease-out;
+}
+@keyframes just-added {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+/* A note tab still loading: a sketch of a page with a soft shimmer, in place
+   of the blank frame. */
+.note-pane-frame.loading {
+  visibility: hidden;
+}
+.note-pane-loading {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface, #fff);
+  border-right: 1px solid var(--line);
+}
+.note-pane-loading[hidden] {
+  display: none;
+}
+.loading-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 96px 50px 0;
+}
+.loading-sheet i {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--line) 0%,
+    color-mix(in srgb, var(--line) 40%, transparent) 50%,
+    var(--line) 100%
+  );
+  background-size: 200% 100%;
+  animation: sheet-shimmer 1.4s ease-in-out infinite;
+}
+.loading-sheet .sk-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+}
+.loading-sheet .sk-title {
+  width: 55%;
+  height: 30px;
+  margin-bottom: 4px;
+}
+.loading-sheet .sk-meta {
+  width: 35%;
+  height: 10px;
+  margin-bottom: 18px;
+}
+.loading-sheet .sk-line.short {
+  width: 60%;
+}
+.note-pane-loading p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 40px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.loading-mark {
+  color: var(--accent);
+  font-size: 18px;
+  animation: mark-spin 2.4s linear infinite;
+}
+@keyframes sheet-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes mark-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-sheet i,
+  .loading-mark {
+    animation: none;
+  }
+}
+/* AI chat: files attached to the next question, and the paper clip. */
+.chat-attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.chat-attach:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--accent);
+}
+.chat-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.chat-files[hidden] {
+  display: none;
+}
+.chat-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  font-size: 12px;
+}
+.chat-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-file small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chat-file button {
+  padding: 0 5px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+.chat-file.small {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.chat-question-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-composer.dropping .chat-input {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: var(--soft);
+}
+/* The / menu: a popover by the block, grouped, each type with an icon, a
+   short description and its Markdown shortcut. */
+dialog.command-menu {
+  position: fixed;
+  margin: 0;
+  width: min(380px, calc(100vw - 16px));
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 12px 40px #1d284b2e,
+    0 2px 6px #1d284b14;
+}
+dialog.command-menu::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
+.command-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.command-menu-search span {
+  color: var(--accent);
+  font-weight: 700;
+}
+.command-menu-search input {
+  flex: 1;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  outline: 0;
+  box-shadow: none;
+}
+dialog.command-menu #command-results {
+  max-height: min(360px, 55vh);
+  margin: 0;
+  padding: 4px 6px 6px;
+}
+.command-group {
+  margin: 10px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+.command-item.command-selected {
+  outline: 0;
+  background: var(--soft);
+  color: inherit;
+}
+.command-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.command-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  font-size: 13px;
+  font-weight: 600;
+}
+.command-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.command-text strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.command-text small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-item kbd,
+.command-menu-hint kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.command-empty {
+  margin: 14px 10px;
+}
+dialog.command-menu .command-menu-hint {
+  justify-content: flex-start;
+  gap: 14px;
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.command-menu-hint kbd {
+  margin-right: 3px;
+}
+/* Files dialog: a large drop area, then the note's files. */
+.file-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 14px 0 6px;
+  padding: 26px 16px;
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.file-drop:hover,
+.file-drop.dropping {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+.file-drop:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.file-drop strong {
+  font-size: 14px;
+}
+.file-drop-icon {
+  font-size: 26px;
+  color: var(--accent);
+}
+.file-drop small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.file-list-heading {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.file-list {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.file-list-empty {
+  margin: 4px 0 0;
+}
+.import-help {
+  font-size: 12px;
+  color: var(--muted);
+}
+.import-help ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.import-help li {
+  margin: 3px 0;
 }

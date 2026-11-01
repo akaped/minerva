@@ -168,15 +168,21 @@ fn record_entity(workspace: &str, db: &Database, r: &Record) -> Entity {
         fields,
     }
 }
-fn entities(d: &Data) -> Vec<Entity> {
+/// Every entity, except the notes and databases (with their records) in `skip`.
+fn entities(d: &Data, skip: &HashSet<String>) -> Vec<Entity> {
     let mut out: Vec<Entity> = d
         .workspaces
         .iter()
         .map(|w| workspace_entity(d, w))
         .collect();
     out.extend(d.folders.iter().map(folder_entity));
-    out.extend(d.notes.iter().filter_map(|n| note_entity(d, n)));
-    for db in &d.databases {
+    out.extend(
+        d.notes
+            .iter()
+            .filter(|n| !skip.contains(&n.id))
+            .filter_map(|n| note_entity(d, n)),
+    );
+    for db in d.databases.iter().filter(|db| !skip.contains(&db.id)) {
         if let Some(e) = database_entity(d, db) {
             out.extend(db.rows.iter().map(|r| record_entity(&e.workspace, db, r)));
             out.push(e);
@@ -257,12 +263,38 @@ pub(super) struct Change {
 /// explicitly, and returns the change-log rows.
 pub(super) fn track(old: &Data, new: &mut Data) -> Result<Vec<Change>, ApiError> {
     collaboration::ensure(new)?;
-    let mut before: HashMap<String, Entity> = entities(old)
+    // Notes and databases that did not change cannot have changed fields; skipping
+    // them keeps a small change from rebuilding every entity.
+    let unchanged = {
+        let notes: HashMap<&str, &Arc<Note>> =
+            old.notes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let databases: HashMap<&str, &Database> =
+            old.databases.iter().map(|b| (b.id.as_str(), b)).collect();
+        let same_note = |n: &Arc<Note>| {
+            notes
+                .get(n.id.as_str())
+                .is_some_and(|o| storage::shared(o, n))
+                && old.collaboration.get(&n.id) == new.collaboration.get(&n.id)
+        };
+        let same_database = |b: &Database| databases.get(b.id.as_str()) == Some(&b);
+        new.notes
+            .iter()
+            .filter(|n| same_note(n))
+            .map(|n| n.id.clone())
+            .chain(
+                new.databases
+                    .iter()
+                    .filter(|b| same_database(b))
+                    .map(|b| b.id.clone()),
+            )
+            .collect::<HashSet<String>>()
+    };
+    let mut before: HashMap<String, Entity> = entities(old, &unchanged)
         .into_iter()
         .map(|e| (key(e.kind, &e.id), e))
         .collect();
     let mut changes = vec![];
-    for e in entities(new) {
+    for e in entities(new, &unchanged) {
         let k = key(e.kind, &e.id);
         let previous = before.remove(&k).map(|p| p.fields).unwrap_or_default();
         let mut changed: Vec<String> = e
@@ -758,7 +790,7 @@ fn apply_note(
         if crdt.len() > 2_500_000 {
             return Err(bad("Collaborative document reached its storage limit"));
         }
-        d.notes.push(Note {
+        d.notes.push(Arc::new(Note {
             id: id.into(),
             folder_id: folder,
             title: "Untitled".into(),
@@ -773,8 +805,8 @@ fn apply_note(
             journal: string(fields, "journal").filter(|j| databases::valid_date(j)),
             metadata: normalize_metadata(fields.get("metadata").unwrap_or(&Value::Null))?,
             print_template: template(fields, upstream)?,
-        });
-        d.collaboration.insert(id.into(), crdt.into());
+        }));
+        d.collaboration.insert(id.into(), Arc::new(crdt.into()));
         if let Err(error) = sync_text(d, "") {
             d.notes.retain(|n| n.id != id);
             d.collaboration.remove(id);
@@ -807,7 +839,7 @@ fn apply_note(
     if let Some(update) = crdt {
         sync_text(d, update)?;
     }
-    let n = d.notes.iter_mut().find(|n| n.id == id).unwrap();
+    let n = Arc::make_mut(d.notes.iter_mut().find(|n| n.id == id).unwrap());
     if let Some(target) = target {
         n.folder_id = target;
         n.updated_at = now();

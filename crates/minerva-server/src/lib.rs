@@ -6,7 +6,10 @@ mod collaboration;
 mod databases;
 mod export;
 mod flashcards;
+mod fsrs;
+mod import;
 mod journal;
+mod live;
 mod mail;
 mod mcp;
 mod plugins;
@@ -14,9 +17,11 @@ mod reminders;
 mod removal;
 mod render;
 mod replication;
+mod search;
 mod server_plugins;
 mod sharing;
 mod sites;
+mod storage;
 mod twofactor;
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -60,7 +65,7 @@ struct Account {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     dashboard: Option<Value>,
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Session {
     user_id: String,
     expires: u64,
@@ -81,11 +86,19 @@ struct Data {
     /// Access to every folder of a workspace, including folders added later.
     #[serde(default)]
     workspace_grants: Vec<WorkspaceGrant>,
-    notes: Vec<Note>,
-    history: HashMap<String, Vec<Note>>,
+    notes: Vec<Arc<Note>>,
+    /// Earlier versions of notes added by the current request, until `persist`
+    /// saves them; saved versions stay in SQLite (see `storage.rs`).
+    #[serde(skip)]
+    history: HashMap<String, Vec<Arc<Note>>>,
+    /// When each note's newest earlier version was taken (memory only).
+    #[serde(skip)]
+    versioned_at: HashMap<String, u64>,
     sessions: HashMap<String, Session>,
     #[serde(default)]
-    collaboration: HashMap<String, String>,
+    /// Each note's live editing (Yjs) state, shared between copies of `Data` like
+    /// `history`.
+    collaboration: HashMap<String, Arc<String>>,
     #[serde(skip)]
     presence: HashMap<String, Vec<collaboration::Presence>>,
     /// Pending second-factor sign-ins, by challenge hash (memory only).
@@ -139,13 +152,25 @@ struct Data {
     reminders: Vec<reminders::Reminder>,
     #[serde(default)]
     password_resets: HashMap<String, mail::Reset>,
+    /// Inline tags of each note, worked out once per version of the note (memory
+    /// only; shared by every copy of `Data`).
+    #[serde(skip)]
+    tag_cache: TagCache,
 }
+/// A note's version (held weakly) and its inline tags.
+type CachedTags = (std::sync::Weak<Note>, Vec<String>);
+#[derive(Clone, Default)]
+struct TagCache(Arc<Mutex<HashMap<String, CachedTags>>>);
 pub struct Store {
     db: Connection,
     data: Data,
+    /// `data`'s row in the `settings` table as last saved (see `storage.rs`).
+    saved: String,
     attempts: Limiter,
     ai: ai::Runtime,
     plugin_tasks: HashMap<String, tokio::task::AbortHandle>,
+    /// IDs of notes that changed, for open pages (see `live.rs`).
+    events: tokio::sync::broadcast::Sender<String>,
 }
 pub type Shared = Arc<Mutex<Store>>;
 fn now() -> u64 {
@@ -211,36 +236,31 @@ impl Store {
         initial: impl FnOnce() -> Result<Data, ApiError>,
     ) -> Result<Shared, Box<dyn std::error::Error>> {
         let db = Connection::open(path)?;
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);")?;
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")?;
+        storage::initialize(&db)?;
         attachments::initialize(&db)?;
         replication::initialize(&db)?;
         let ai = ai::initialize(&db, path)?;
         server_plugins::initialize(&db)?;
         flashcards::initialize(&db)?;
-        let raw: Option<String> = db
-            .query_row("SELECT payload FROM state WHERE id=1", [], |r| r.get(0))
-            .optional()?;
-        let mut data = match raw {
-            Some(raw) => serde_json::from_str(&raw)?,
-            None => initial().map_err(|e| e.1)?,
-        };
-        ensure_personal(&mut data);
-        // Databases from before replication get a change-log row and field clocks
-        // for every entity, so a replica's first pull receives everything.
-        if replication::is_empty(&db)? {
-            let changes = replication::track(&Data::default(), &mut data).map_err(|e| e.1)?;
-            replication::log(&db, &changes, false)?;
-        }
-        db.execute(
-            "INSERT OR REPLACE INTO state VALUES(1, ?1)",
-            [serde_json::to_string(&data)?],
-        )?;
+        let (data, saved) = storage::open(&db, initial, |data| {
+            ensure_personal(data);
+            // Databases from before replication get a change-log row and field clocks
+            // for every entity, so a replica's first pull receives everything.
+            if replication::is_empty(&db)? {
+                let changes = replication::track(&Data::default(), data).map_err(|e| e.1)?;
+                replication::log(&db, &changes, false)?;
+            }
+            Ok(())
+        })?;
         Ok(Arc::new(Mutex::new(Self {
             db,
             data,
+            saved,
             attempts: Limiter::default(),
             ai,
             plugin_tasks: HashMap::new(),
+            events: live::channel(),
         })))
     }
 }
@@ -296,7 +316,7 @@ fn create_personal(d: &mut Data, user_id: &str) -> String {
         name: "General".into(),
         parent_id: None,
     };
-    d.notes.push(getting_started(&folder.id));
+    d.notes.push(Arc::new(getting_started(&folder.id)));
     d.folders.push(folder);
     if let Some(a) = d.users.iter_mut().find(|a| a.user.id == user_id) {
         a.default_workspace = Some(w.id.clone());
@@ -449,7 +469,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         }],
         workspaces: if local { vec![workspace] } else { vec![] },
         folders: if local { vec![folder] } else { vec![] },
-        notes: if local { vec![note] } else { vec![] },
+        notes: if local { vec![Arc::new(note)] } else { vec![] },
         local,
         ..Default::default()
     })
@@ -663,6 +683,51 @@ fn normalize_tags(tags: &[String]) -> Result<Vec<String>, ApiError> {
     }
     Ok(normalized)
 }
+/// Keeps `note` as an earlier version of itself; the newest
+/// `storage::KEPT_VERSIONS` are kept.
+fn keep_version(d: &mut Data, note: Arc<Note>) {
+    d.versioned_at.insert(note.id.clone(), note.updated_at);
+    d.history.entry(note.id.clone()).or_default().push(note);
+}
+/// `inline_tags`, from the cache while the note has not changed. A cached entry
+/// holds a weak reference, so its note's address cannot be reused while cached.
+fn cached_inline_tags(d: &Data, n: &Arc<Note>) -> Vec<String> {
+    let mut cache = d.tag_cache.0.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((note, tags)) = cache.get(&n.id) {
+        if std::ptr::eq(note.as_ptr(), Arc::as_ptr(n)) {
+            return tags.clone();
+        }
+    }
+    if cache.len() > 2 * d.notes.len() + 64 {
+        cache.retain(|_, (note, _)| note.strong_count() > 0);
+    }
+    let tags = inline_tags(n);
+    cache.insert(n.id.clone(), (Arc::downgrade(n), tags.clone()));
+    tags
+}
+/// A note's details for lists: everything but its blocks.
+fn note_summary(n: &Note) -> Value {
+    let mut v = json!({
+        "id": n.id,
+        "folder_id": n.folder_id,
+        "title": n.title,
+        "icon": n.icon,
+        "revision": n.revision,
+        "updated_at": n.updated_at,
+        "favorite": n.favorite,
+        "trashed": n.trashed,
+        "cover": n.cover,
+        "tags": n.tags,
+        "journal": n.journal,
+    });
+    if !n.metadata.is_empty() {
+        v["metadata"] = json!(n.metadata);
+    }
+    if !n.print_template.is_empty() {
+        v["print_template"] = json!(n.print_template);
+    }
+    v
+}
 fn inline_tags(n: &Note) -> Vec<String> {
     let mut tags: Vec<String> = vec![];
     for b in &n.blocks {
@@ -679,8 +744,9 @@ fn inline_tags(n: &Note) -> Vec<String> {
 fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
     let upstream = std::mem::take(&mut d.upstream);
     let changes = replication::track(&s.data, &mut d)?;
-    let payload = serde_json::to_string(&d).map_err(|_| internal())?;
-    if payload != serde_json::to_string(&s.data).map_err(|_| internal())? {
+    let tx = s.db.unchecked_transaction().map_err(|_| internal())?;
+    let (changed, saved) = storage::write(&tx, &s.data, &mut d, &s.saved)?;
+    if changed {
         // Attachments of permanently deleted notes go in the same transaction.
         let kept: HashSet<&str> = d.notes.iter().map(|n| n.id.as_str()).collect();
         let removed: Vec<&str> = s
@@ -690,9 +756,6 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
             .map(|n| n.id.as_str())
             .filter(|id| !kept.contains(id))
             .collect();
-        let tx = s.db.unchecked_transaction().map_err(|_| internal())?;
-        tx.execute("UPDATE state SET payload=?1 WHERE id=1", params![payload])
-            .map_err(|_| internal())?;
         for id in removed {
             tx.execute("DELETE FROM attachments WHERE note_id=?1", [id])
                 .map_err(|_| internal())?;
@@ -720,8 +783,15 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
             }
         }
         tx.commit().map_err(|_| internal())?;
+        s.saved = saved;
     }
+    d.history.clear();
+    let changed = live::changed_notes(&s.data, &d);
     s.data = d;
+    for id in changed {
+        // No page listening is fine.
+        let _ = s.events.send(id);
+    }
     Ok(())
 }
 fn admin(u: &User) -> Result<(), ApiError> {
@@ -848,7 +918,8 @@ pub(crate) fn embed_origins() -> String {
 }
 async fn editor_pane() -> Response {
     let origins = embed_origins();
-    let policy = format!("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com 'self'; frame-ancestors 'self' {origins}; base-uri 'none'; form-action 'self'");
+    // Video frames: YouTube, or the desktop app's player page on 127.0.0.1.
+    let policy = format!("default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com http://127.0.0.1:* 'self'; frame-ancestors 'self' {origins}; base-uri 'none'; form-action 'self'");
     (
         [("content-security-policy", policy)],
         axum::response::Html(include_str!("../../../web/index.html")),
@@ -882,6 +953,8 @@ pub fn app(store: Shared) -> Router {
         .route("/p/{*path}", get(sharing::moved))
         .route("/preview/{note_id}", get(sharing::preview))
         .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
+        .route("/api/v1/live", get(live::endpoint))
+        .route("/api/v1/import", axum::routing::post(import::endpoint).layer(DefaultBodyLimit::max(import::IMPORT_LIMIT)))
         .route("/api/v1/admin/overview", get(administration::overview))
         .route("/api/v1/admin/storage", any(attachments::storage))
         .route("/api/v1/admin/storage/cleanup", any(attachments::storage))
@@ -892,7 +965,8 @@ pub fn app(store: Shared) -> Router {
         // Anki packages can be large; their media is not kept.
         .route("/api/v1/flashcards/import", any(flashcards::import).layer(DefaultBodyLimit::max(100 * 1024 * 1024)))
         .route("/api/v1/flashcards/{*path}", any(flashcards::endpoint))
-        .route("/api/v1/ai/{*path}", any(ai::endpoint))
+        // Questions may carry images and documents (see ai.rs `uploads`).
+        .route("/api/v1/ai/{*path}", any(ai::endpoint).layer(DefaultBodyLimit::max(30 * 1024 * 1024)))
         .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
         .route("/api/v1/{*path}", any(api))
         .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint))
@@ -943,9 +1017,11 @@ async fn api(
                     .map(|v| (v, None))
             })
         } else {
+            let store = &mut *s;
             dispatch(
+                &store.db,
                 &mut d,
-                &mut s.attempts,
+                &mut store.attempts,
                 method.as_str(),
                 path,
                 &headers,
@@ -1008,6 +1084,7 @@ fn dummy_hash() -> &'static str {
     DUMMY.get_or_init(|| password_hash("not-a-real-account-password").unwrap_or_default())
 }
 fn dispatch(
+    db: &Connection,
     d: &mut Data,
     attempts: &mut Limiter,
     method: &str,
@@ -1165,15 +1242,15 @@ fn dispatch(
                         || folders.iter().any(|f| f.workspace_id == w.id)
                 })
                 .collect();
+            let readable: HashSet<&str> = folders.iter().map(|f| f.id.as_str()).collect();
             let notes: Vec<_> = d
                 .notes
                 .iter()
-                .filter(|n| role(d, &u, &n.folder_id).is_some())
+                .filter(|n| readable.contains(n.folder_id.as_str()))
                 .map(|n| {
-                    let mut v = serde_json::to_value(n).unwrap();
-                    v.as_object_mut().unwrap().remove("blocks");
+                    let mut v = note_summary(n);
                     v["sharing"] = sharing::summary(d, &n.id);
-                    v["inline_tags"] = json!(inline_tags(n));
+                    v["inline_tags"] = json!(cached_inline_tags(d, n));
                     v
                 })
                 .collect();
@@ -1205,15 +1282,35 @@ fn dispatch(
             if query.len() > 200 {
                 return Err(bad("Search query is too long"));
             }
-            // `#tag` searches tags (note tags and inline tags) by prefix.
-            let tag = query.strip_prefix('#').map(str::to_string);
-            let matches: Vec<_> = d.notes.iter()
-                .filter(|n| !n.trashed && note_role(d, &u, n).is_some())
-                .filter(|n| match &tag {
-                    Some(tag) => n.tags.iter().chain(inline_tags(n).iter()).any(|t| t.starts_with(tag.as_str())),
-                    None => n.title.to_lowercase().contains(&query) || n.blocks.iter().any(|b| b.markdown.to_lowercase().contains(&query)),
-                })
-                .take(50).map(|n| json!({"id": n.id, "title": n.title, "icon": n.icon, "folder_id": n.folder_id})).collect();
+            // `#tag` searches tags (note tags and inline tags) by prefix; anything
+            // else searches titles, text and tags, best matches first.
+            let workspace = v["workspace_id"].as_str();
+            let keep = |n: &Note| {
+                !n.trashed
+                    && note_role(d, &u, n).is_some()
+                    && workspace.is_none_or(|w| {
+                        d.folders
+                            .iter()
+                            .any(|f| f.id == n.folder_id && f.workspace_id == w)
+                    })
+            };
+            let found = match query.strip_prefix('#') {
+                Some(tag) => d
+                    .notes
+                    .iter()
+                    .filter(|n| {
+                        keep(n)
+                            && n.tags
+                                .iter()
+                                .chain(cached_inline_tags(d, n).iter())
+                                .any(|t| t.starts_with(tag))
+                    })
+                    .take(50)
+                    .map(|n| (&**n, String::new()))
+                    .collect(),
+                None => search::matches(db, d, &query, keep, 50)?,
+            };
+            let matches: Vec<_> = found.into_iter().map(|(n, snippet)| json!({"id": n.id, "title": n.title, "icon": n.icon, "folder_id": n.folder_id, "updated_at": n.updated_at, "snippet": snippet})).collect();
             json!(matches)
         }
         ("POST", ["workspaces"]) => {
@@ -1319,7 +1416,7 @@ fn dispatch(
             if workspace(&n.folder_id) != workspace(&target) {
                 return Err(bad("Notes can only move within their workspace"));
             }
-            let n = d.notes.iter_mut().find(|n| n.id == *nid).unwrap();
+            let n = Arc::make_mut(d.notes.iter_mut().find(|n| n.id == *nid).unwrap());
             n.folder_id = target;
             n.updated_at = now();
             let mut view = note_view(n);
@@ -1349,7 +1446,7 @@ fn dispatch(
                 metadata: Default::default(),
                 print_template: String::new(),
             };
-            d.notes.push(n.clone());
+            d.notes.push(Arc::new(n.clone()));
             note_view(&n)
         }
         ("GET", ["notes", nid]) => {
@@ -1404,12 +1501,8 @@ fn dispatch(
                 return Err(bad("Invalid cover"));
             }
             let tags = normalize_tags(&save.tags)?;
-            let history = d.history.entry(n.id.clone()).or_default();
-            history.push(n.clone());
-            if history.len() > 50 {
-                history.remove(0);
-            }
-            let n = d.notes.iter_mut().find(|n| n.id == *nid).unwrap();
+            keep_version(d, n.clone());
+            let n = Arc::make_mut(d.notes.iter_mut().find(|n| n.id == *nid).unwrap());
             n.title = save.title;
             n.icon = save.icon;
             n.blocks = save.blocks;
@@ -1439,7 +1532,7 @@ fn dispatch(
             if !template.is_empty() && plugins::get(plugins::Kind::PdfPrints, &template).is_none() {
                 return Err(bad("That PDF template is not installed"));
             }
-            let n = d.notes.iter_mut().find(|n| n.id == *nid).unwrap();
+            let n = Arc::make_mut(d.notes.iter_mut().find(|n| n.id == *nid).unwrap());
             n.metadata = metadata;
             n.print_template = template;
             json!({"metadata": n.metadata, "print_template": n.print_template})
@@ -1449,7 +1542,7 @@ fn dispatch(
             // Past revisions may hold text removed before the note was shared, so
             // they stay with folder members rather than individual share recipients.
             access(d, &u, &n.folder_id, false)?;
-            json!(d.history.get(*nid).cloned().unwrap_or_default())
+            json!(storage::versions(db, nid)?)
         }
         ("POST", ["render"]) => {
             // One block, or a list of blocks (an AI reply) in one request.
@@ -1796,4 +1889,23 @@ fn dispatch(
         _ => return Err(missing()),
     };
     Ok((result, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// Fails when `Note` gains a field that `note_summary` leaves out.
+    #[test]
+    fn note_summary_is_the_note_without_blocks() {
+        let plain = getting_started("folder");
+        let mut detailed = plain.clone();
+        detailed.metadata.insert("author".into(), "Ada".into());
+        detailed.print_template = "01-standard".into();
+        detailed.journal = Some("2026-11-01".into());
+        for n in [plain, detailed] {
+            let mut full = serde_json::to_value(&n).unwrap();
+            full.as_object_mut().unwrap().remove("blocks");
+            assert_eq!(note_summary(&n), full);
+        }
+    }
 }

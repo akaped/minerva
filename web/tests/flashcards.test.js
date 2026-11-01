@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rich } from "../flashcards.js";
+import { rich, intervalLabel } from "../flashcards.js";
 
 const esc = (s) =>
   String(s).replace(
@@ -39,4 +39,13 @@ test("card text shows pictures and links, and nothing else as markup", () => {
     );
     assert.doesNotMatch(html, /href="javascript|"\s*onmouseover/i, hostile);
   }
+});
+
+test("intervals read as minutes, days, months or years", () => {
+  assert.equal(intervalLabel(600), "10 minutes");
+  assert.equal(intervalLabel(86400), "1 day");
+  assert.equal(intervalLabel(4 * 86400), "4 days");
+  assert.equal(intervalLabel(91 * 86400), "3 months");
+  assert.equal(intervalLabel(730 * 86400), "2 years");
+  assert.equal(intervalLabel(undefined), "");
 });

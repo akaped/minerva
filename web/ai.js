@@ -25,7 +25,7 @@ export async function renderAISettings({ api, esc, data, error }) {
   $("#breadcrumb").textContent = "AI providers";
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">IN-APP INTELLIGENCE</div><div class="page-heading"><div><h1>AI providers</h1><p class="subtitle">Choose the models your server can use for contextual chat.</p></div>${data.user.admin ? '<button class="btn primary" id="add-provider">+ Add provider</button>' : ""}</div>
-    <div class="panel ai-notice"><h2>Your context, your choice</h2><p>Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Uploaded image and file contents are not sent. Provider usage may incur API charges.</p><p>API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.</p></div>
+    <div class="panel ai-notice"><h2>Your context, your choice</h2><p>Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Files attached to a question are sent with that question only, and are not stored. With “No context”, no notes are sent. Provider usage may incur API charges.</p><p>API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.</p></div>
     <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? " · web search on" : ""} · answers up to ${Number(p.max_tokens || 4096).toLocaleString()} tokens</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">Edit</button><button class="btn danger" data-remove-provider="${p.id}">Remove provider</button></div>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
   // Adds a provider, or edits `existing`. The stored key is never shown: an
   // empty key field keeps it, and pointing it at another server needs it again.
@@ -156,6 +156,8 @@ export async function renderAIChat({
         },
       ]
     : [
+        // A plain question by default: nothing from the notes is sent.
+        { kind: "none", id: "", label: "No context · just ask" },
         {
           kind: "workspace",
           id: workspaceId,
@@ -185,7 +187,7 @@ export async function renderAIChat({
   );
   $("#breadcrumb").textContent = "AI chat";
   $("#content").innerHTML =
-    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">History</button><button class="btn" id="ai-settings">Providers</button></div></div>` : '<div class="eyebrow">ANSWERS FROM YOUR KNOWLEDGE</div><div class="page-heading"><div><h1>Ask your workspace</h1><p class="subtitle">A focused conversation, with sources you can open.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><details class="ai-disclosure"><summary>What is sent to the model?</summary><p>Only permitted text from this context is sent to the selected provider, together with recent conversation. Context is capped; source coverage appears with each answer. Replies may be inaccurate.</p></details><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Summarize a project, compare ideas, or ask about a note.</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">Your question</label><div class="chat-input"><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? "Ask about this note…" : "Ask a question about this context…"}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="Send (Enter)" aria-label="Send" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Enter to send · Shift+Enter for a new line" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button></div></form></section></div></section>`;
+    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">History</button><button class="btn" id="ai-settings">Providers</button></div></div>` : '<div class="eyebrow">ANSWERS, FROM ANYTHING YOU SHARE</div><div class="page-heading"><div><h1>Ask anything</h1><p class="subtitle">A plain question, or one about your notes. Attach photos, scans and documents to have them read.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><details class="ai-disclosure"><summary>What is sent to the model?</summary><p>Your question, the recent conversation, and any files you attach go to the selected provider. With a context, the permitted notes and records from it go too; with no context, none do. Context is capped; source coverage appears with each answer. Attached files are sent with that question only and are not stored. Replies may be inaccurate.</p></details><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Ask a question, read a photo or a PDF, or pick a context to ask about your notes.</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">Your question</label><div id="chat-files" class="chat-files" hidden></div><div class="chat-input"><button type="button" class="chat-attach" id="chat-attach" title="Attach images or documents" aria-label="Attach images or documents" ${providers.length ? "" : "disabled"}>${CLIP}</button><input type="file" id="chat-file-input" multiple accept="${ACCEPT}" hidden><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? "Ask about this note…" : "Ask anything…"}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="Send (Enter)" aria-label="Send" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Enter to send · Shift+Enter for a new line · drop images or documents here" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button></div></form></section></div></section>`;
   $("#ai-settings").onclick = configure;
   // Beside a note, past conversations open on demand.
   const historyToggle = $("#ai-history-toggle");
@@ -215,6 +217,7 @@ export async function renderAIChat({
   // What a conversation is about, by name, wherever it is.
   const scopeLabel = (scope) => {
     const find = (list, id) => (list || []).find((x) => x.id === id);
+    if (scope.kind === "none") return "No context";
     if (scope.kind === "workspace")
       return `Workspace · ${find(data.workspaces, scope.id)?.name || "unavailable"}`;
     if (scope.kind === "folder")
@@ -359,7 +362,7 @@ export async function renderAIChat({
       chat?.turns
         .map(
           (t) =>
-            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
+            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}${filesHTML(t.files)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
         )
         .join("") ||
       '<div class="empty"><h3>A new conversation</h3><p>Ask a question to get started.</p></div>';
@@ -470,10 +473,74 @@ export async function renderAIChat({
   function reset() {
     if (running) return;
     chat = null;
+    const kind = scope()?.kind;
+    $("#chat-question").placeholder = docked
+      ? "Ask about this note…"
+      : kind === "none"
+        ? "Ask anything…"
+        : "Ask a question about this context…";
     drawTurns();
     drawHistory();
     $("#chat-status").textContent = "New conversation · ready";
   }
+  // Files for the next question: chosen with 📎, dropped on the composer, or
+  // pasted (images).
+  let files = [];
+  const drawFiles = () => {
+    const box = $("#chat-files");
+    box.hidden = !files.length;
+    box.innerHTML = files
+      .map(
+        (f, i) =>
+          `<span class="chat-file">${fileIcon(f)}<span class="chat-file-name">${esc(f.name)}</span><small>${size(f.size)}</small><button type="button" data-unattach="${i}" aria-label="Remove ${esc(f.name)}">×</button></span>`,
+      )
+      .join("");
+    $$("[data-unattach]", box).forEach(
+      (b) =>
+        (b.onclick = () => {
+          files.splice(Number(b.dataset.unattach), 1);
+          drawFiles();
+        }),
+    );
+  };
+  const attach = (list) => {
+    for (const f of list) {
+      const problem = attachmentProblem(f, files);
+      if (problem) {
+        $("#chat-status").textContent = problem;
+        continue;
+      }
+      files.push(f);
+    }
+    drawFiles();
+  };
+  $("#chat-attach").onclick = () => $("#chat-file-input").click();
+  $("#chat-file-input").onchange = (e) => {
+    attach([...e.target.files]);
+    e.target.value = "";
+  };
+  const composer = $("#chat-form");
+  composer.addEventListener("dragover", (e) => {
+    if (![...e.dataTransfer.types].includes("Files")) return;
+    e.preventDefault();
+    composer.classList.add("dropping");
+  });
+  composer.addEventListener("dragleave", (e) => {
+    if (!composer.contains(e.relatedTarget))
+      composer.classList.remove("dropping");
+  });
+  composer.addEventListener("drop", (e) => {
+    composer.classList.remove("dropping");
+    if (!e.dataTransfer.files.length) return;
+    e.preventDefault();
+    attach([...e.dataTransfer.files]);
+  });
+  questionBox.addEventListener("paste", (e) => {
+    const pasted = [...e.clipboardData.files];
+    if (!pasted.length) return;
+    e.preventDefault();
+    attach(pasted);
+  });
   $("#new-chat").onclick = reset;
   $("#chat-scope").onchange = reset;
   $("#stop-chat").onclick = () => controller?.abort();
@@ -482,11 +549,23 @@ export async function renderAIChat({
     if (running || !scope()) return;
     const question = $("#chat-question").value.trim();
     if (!question) return;
+    const sending = files;
+    let attachments;
+    try {
+      attachments = await Promise.all(sending.map(readAttachment));
+    } catch (err) {
+      $("#chat-status").textContent = err.message;
+      return;
+    }
     running = true;
     controller = new AbortController();
-    ["send-chat", "chat-scope", "chat-provider", "new-chat"].forEach(
-      (id) => ($("#" + id).disabled = true),
-    );
+    [
+      "send-chat",
+      "chat-scope",
+      "chat-provider",
+      "new-chat",
+      "chat-attach",
+    ].forEach((id) => ($("#" + id).disabled = true));
     $("#stop-chat").disabled = false;
     $("#chat-status").textContent = "Preparing context…";
     const messages = $("#chat-messages");
@@ -494,11 +573,13 @@ export async function renderAIChat({
     const turn = document.createElement("article");
     turn.className = "chat-turn";
     const chosen = providers.find((p) => p.id === $("#chat-provider").value);
-    turn.innerHTML = `<p class="chat-question">${esc(question)}</p><div class="chat-reply">${replyMeta(chosen?.name, chosen?.model)}<div class="chat-answer chat-pending"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chat-pending-text">Reading your notes…</span></div><div class="chat-sources"></div><small class="chat-usage"></small></div>`;
+    turn.innerHTML = `<p class="chat-question">${esc(question)}${filesHTML(sending.map((f) => f.name))}</p><div class="chat-reply">${replyMeta(chosen?.name, chosen?.model)}<div class="chat-answer chat-pending"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chat-pending-text">Reading your notes…</span></div><div class="chat-sources"></div><small class="chat-usage"></small></div>`;
     messages.append(turn);
     turn.scrollIntoView({ block: "start", behavior: "smooth" });
     // The question is on its way: the box is free for the next one.
     $("#chat-question").value = "";
+    files = [];
+    drawFiles();
     fit();
     let complete = false;
     // The reply is shown formatted while it streams, redrawn a few times a
@@ -542,6 +623,7 @@ export async function renderAIChat({
         },
         body: JSON.stringify({
           message: question,
+          attachments,
           provider_id: $("#chat-provider").value,
           revision: chat.turns.length,
         }),
@@ -619,17 +701,80 @@ export async function renderAIChat({
         turn.classList.add("chat-incomplete");
         // Not answered: the question goes back in the box to try again.
         if (!$("#chat-question").value) $("#chat-question").value = question;
+        if (!files.length) {
+          files = sending;
+          drawFiles();
+        }
       }
     } finally {
       if (epoch === generation) {
         running = false;
         controller = null;
-        ["send-chat", "chat-scope", "chat-provider", "new-chat"].forEach(
-          (id) => ($("#" + id).disabled = false),
-        );
+        [
+          "send-chat",
+          "chat-scope",
+          "chat-provider",
+          "new-chat",
+          "chat-attach",
+        ].forEach((id) => ($("#" + id).disabled = false));
         $("#stop-chat").disabled = true;
       }
     }
   };
   drawHistory();
+}
+
+const CLIP =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>';
+/** Text documents are read here and sent as text. */
+const TEXT_TYPES =
+  /\.(txt|md|markdown|csv|tsv|json|xml|html?|ya?ml|log|ini|toml|js|ts|py|rs|go|java|c|h|cpp|cs|rb|php|sh|sql|css)$/i;
+const ACCEPT =
+  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.pdf,text/*,.md,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.toml,.ini,.js,.ts,.py,.rs,.go,.java,.c,.h,.cpp,.cs,.rb,.php,.sh,.sql,.css";
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const isText = (f) => f.type.startsWith("text/") || TEXT_TYPES.test(f.name);
+const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+const size = (bytes) =>
+  bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+function fileIcon(f) {
+  return `<span class="chat-file-icon" aria-hidden="true">${IMAGE_TYPES.includes(f.type) ? "🖼" : isPdf(f) ? "📕" : "📄"}</span>`;
+}
+/** Why `file` cannot be attached next to `files`, or null. */
+export function attachmentProblem(file, files) {
+  if (files.length >= 6) return "Attach up to 6 files to one question.";
+  if (!IMAGE_TYPES.includes(file.type) && !isPdf(file) && !isText(file))
+    return `“${file.name}” cannot be read: attach images (PNG, JPEG, GIF, WebP), PDFs, or text documents.`;
+  if (file.size > 15 * 1024 * 1024)
+    return `“${file.name}” is larger than 15 MB.`;
+  const total = files.reduce((n, f) => n + f.size, file.size);
+  if (total > 20 * 1024 * 1024)
+    return "Attachments can be up to 20 MB together.";
+  return null;
+}
+/** A file as the chat API takes it: text documents as text, others as base64. */
+async function readAttachment(file) {
+  if (isText(file)) return { name: file.name, text: await file.text() };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 32768)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  return { name: file.name, data: btoa(binary) };
+}
+function filesHTML(names) {
+  if (!names?.length) return "";
+  const esc = (t) =>
+    t.replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+  return `<span class="chat-question-files">${names.map((n) => `<span class="chat-file small">📎 ${esc(n)}</span>`).join("")}</span>`;
 }

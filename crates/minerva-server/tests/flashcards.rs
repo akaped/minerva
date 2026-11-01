@@ -82,8 +82,11 @@ async fn decks_reviews_persistence_and_isolation() {
         json!({"revision":card["revision"],"rating":"good"}),
     )
     .await;
+    // FSRS: a first "good" answer comes back after 4 days, as the card said it would.
+    assert_eq!(card["next"]["good"], 4 * 86400);
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(r2["deck"]["cards"][0]["interval"], 86400);
+    assert_eq!(r2["deck"]["cards"][0]["interval"], 4 * 86400);
+    assert!(r2["deck"]["cards"][0]["stability"].as_f64().unwrap() > 3.0);
     assert_eq!(
         call(
             &r,
@@ -259,4 +262,119 @@ async fn generation_uses_authorized_notes_and_real_search_sources() {
         StatusCode::BAD_REQUEST
     );
     server.abort();
+}
+
+/// A deck that follows a folder: cards written in its notes, kept in step with them.
+#[tokio::test]
+async fn decks_follow_cards_written_in_notes() {
+    let path = std::env::temp_dir().join(format!("minerva-notecards-{}.db", uuid::Uuid::new_v4()));
+    let r = app(Store::open(path.to_str().unwrap(), "admin@test.local", common::PASSWORD).unwrap());
+    let root = login(&r, "admin@test.local").await;
+    let token = common::member(&r, &root, "owner@test.local").await;
+    let other = common::member(&r, &root, "other@test.local").await;
+    let (_, boot) = call(&r, "GET", "bootstrap", &token, json!({})).await;
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, n) = call(
+        &r,
+        "POST",
+        "notes",
+        &token,
+        json!({"folder_id":folder,"title":"Geography"}),
+    )
+    .await;
+    let note_route = format!("notes/{}", n["id"].as_str().unwrap());
+    let mut save = n.clone();
+    save["blocks"] = json!([
+        {"id":"q","markdown":"- Capital of Italy? #card"},
+        {"id":"a","markdown":"  - Rome"},
+        {"id":"c","markdown":"{{c1::Paris}} is in {{c2::France}}."},
+    ]);
+    call(&r, "PUT", &note_route, &token, save).await;
+
+    // Only folders one can read.
+    let (status, _) = call(
+        &r,
+        "POST",
+        "flashcards/decks",
+        &other,
+        json!({"name":"Peek","source":{"kind":"folder","id":folder}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, d) = call(
+        &r,
+        "POST",
+        "flashcards/decks",
+        &token,
+        json!({"name":"Geography","source":{"kind":"folder","id":folder}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let route = format!("flashcards/decks/{}", d["id"].as_str().unwrap());
+    let (_, deck) = call(&r, "GET", &route, &token, json!({})).await;
+    let fronts = |deck: &Value| {
+        let mut f: Vec<String> = deck["deck"]["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["front"].as_str().unwrap().to_string())
+            .collect();
+        f.sort();
+        f
+    };
+    assert_eq!(
+        fronts(&deck),
+        [
+            "Capital of Italy?",
+            "Paris is in [...].",
+            "[...] is in France."
+        ]
+    );
+
+    // A review is kept when the note changes; cards of removed blocks go away.
+    let card = deck["deck"]["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["front"] == "Capital of Italy?")
+        .unwrap()
+        .clone();
+    let card_route = format!("{route}/cards/{}", card["id"].as_str().unwrap());
+    let (status, _) = call(
+        &r,
+        "POST",
+        &format!("{card_route}/review"),
+        &token,
+        json!({"revision":card["revision"],"rating":"easy"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &r,
+        "PUT",
+        &card_route,
+        &token,
+        json!({"revision":card["revision"].as_u64().unwrap() + 1,"front":"Changed","back":"Rome"}),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "edited in the note, not here"
+    );
+    let (_, mut n) = call(&r, "GET", &note_route, &token, json!({})).await;
+    n["blocks"] = json!([
+        {"id":"q","markdown":"- Capital of Italy (city)? #card"},
+        {"id":"a","markdown":"  - Rome"},
+    ]);
+    call(&r, "PUT", &note_route, &token, n).await;
+    let (_, deck) = call(&r, "GET", &route, &token, json!({})).await;
+    let cards = deck["deck"]["cards"].as_array().unwrap();
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0]["front"], "Capital of Italy (city)?");
+    assert_eq!(cards[0]["id"], card["id"]);
+    assert_eq!(cards[0]["reviews"], 1);
 }

@@ -25,7 +25,7 @@ You read something worth remembering. A conversation sparks an idea. A video fin
 
 - **Free and open source.** Minerva is released under the MIT License. Use it, study it, change it, share it.
 - **Yours to run.** Keep it on your own computer, or host it on your own server for your family, class, or team. There is no account to create with us and no subscription.
-- **Your notes stay yours.** Export everything to Markdown, a ZIP for Obsidian or Joplin, HTML, or PDF, whenever you like.
+- **Your notes stay yours.** Bring them in from Notion, Obsidian, Logseq or Evernote, and export everything to Markdown, a ZIP for Obsidian or Joplin, HTML, or PDF, whenever you like.
 - **Built in the open.** The roadmap, the design decisions, and the discussions are public, and anyone can take part.
 
 > **Early access:** Minerva is usable every day and improving quickly. We welcome people who try it, tell us what gets in the way, and help make it better. It is not yet hardened for large organizations.
@@ -34,7 +34,7 @@ You read something worth remembering. A conversation sparks an idea. A video fin
 
 ### Write the way you think
 
-Every paragraph is a block you can move, nest, and rearrange. Mix notes with checklists, tables, images, code, diagrams, equations, callouts, and YouTube videos that play right in the page. Start from a template, or keep a daily journal where unfinished tasks follow you to the next day. When you need quiet, switch to focus mode.
+Every paragraph is a block you can move, nest, and rearrange. Mix notes with checklists, tables, images, code, diagrams, equations, callouts, and YouTube videos that play right in the page. Start from a template, or keep a daily journal where unfinished tasks follow you to the next day. While you type, Markdown shows styled in place; select several blocks to turn them into a list or move them together, or select text and press Ctrl+J to have AI improve, shorten, translate or continue it. When you need quiet, switch to focus mode.
 
 ### Connect what you know
 
@@ -62,7 +62,7 @@ You stay in charge: preview the result, edit it, and keep only what’s useful. 
 
 ### Remember what you learn
 
-Create personal flashcard decks and test yourself with spaced-repetition reviews. Write your own cards, or ask AI to draft them from a note, a folder, or web research on a topic. Check the sources, edit the questions and answers, and save only the cards you want. [Flashcards guide →](docs/flashcards.md)
+Create personal flashcard decks and test yourself with spaced-repetition reviews scheduled by FSRS, the algorithm Anki uses. Write cards right in your notes, as a question tagged `#card` or a cloze such as `{{c1::Rome}} is the capital of Italy`, and a deck can follow them. Write your own cards, or ask AI to draft them from a note, a folder, or web research on a topic. Check the sources, edit the questions and answers, and save only the cards you want. [Flashcards guide →](docs/flashcards.md)
 
 ### Think together
 

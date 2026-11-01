@@ -18,10 +18,22 @@ pub(super) struct Presence {
     editing: bool,
     seen: u64,
 }
+impl Presence {
+    /// Who is where, without the time last seen: a change here is worth telling
+    /// the others about (see `live.rs`).
+    pub(super) fn identity(&self) -> (String, String, Option<String>, bool) {
+        (
+            self.client_id.clone(),
+            self.user_id.clone(),
+            self.active_block.clone(),
+            self.editing,
+        )
+    }
+}
 fn load(d: &Data, note: &Note) -> Result<Doc, ApiError> {
     let doc = Doc::new();
     if let Some(raw) = d.collaboration.get(&note.id) {
-        let bytes = STANDARD.decode(raw).map_err(|_| internal())?;
+        let bytes = STANDARD.decode(raw.as_bytes()).map_err(|_| internal())?;
         doc.transact_mut()
             .apply_update(Update::decode_v1(&bytes).map_err(|_| internal())?)
             .map_err(|_| internal())?;
@@ -66,9 +78,11 @@ pub(super) fn replace_note(d: &mut Data, note: &Note) -> Result<(), ApiError> {
     replace(&doc, note);
     d.collaboration.insert(
         note.id.clone(),
-        STANDARD.encode(
-            doc.transact()
-                .encode_state_as_update_v1(&StateVector::default()),
+        Arc::new(
+            STANDARD.encode(
+                doc.transact()
+                    .encode_state_as_update_v1(&StateVector::default()),
+            ),
         ),
     );
     Ok(())
@@ -76,7 +90,7 @@ pub(super) fn replace_note(d: &mut Data, note: &Note) -> Result<(), ApiError> {
 /// Gives every note a stored CRDT document, so replicas share one history instead
 /// of each deriving its own from the snapshot, which would duplicate text on merge.
 pub(super) fn ensure(d: &mut Data) -> Result<(), ApiError> {
-    let missing: Vec<Note> = d
+    let missing: Vec<Arc<Note>> = d
         .notes
         .iter()
         .filter(|n| !d.collaboration.contains_key(&n.id))
@@ -217,19 +231,16 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         || merged.cover != original.cover
         || merged.tags != original.tags;
     if changed {
-        let history = d.history.entry(nid.into()).or_default();
         // Keep meaningful checkpoints rather than burning history on every keystroke.
-        if history.last().is_none_or(|n| n.updated_at + 30 < now()) {
-            history.push(original.clone());
-            if history.len() > 50 {
-                history.remove(0);
-            }
+        if d.versioned_at.get(nid).is_none_or(|at| at + 30 < now()) {
+            keep_version(d, original.clone());
         }
         merged.revision += 1;
         merged.updated_at = now();
-        *d.notes.iter_mut().find(|n| n.id == nid).unwrap() = merged.clone();
+        *d.notes.iter_mut().find(|n| n.id == nid).unwrap() = Arc::new(merged.clone());
     }
-    d.collaboration.insert(nid.into(), encoded.clone());
+    d.collaboration
+        .insert(nid.into(), Arc::new(encoded.clone()));
     let peers = d.presence.entry(nid.into()).or_default();
     peers.retain(|p| p.seen + 10 > now());
     let mut denied_block = None;

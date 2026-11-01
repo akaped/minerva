@@ -33,6 +33,74 @@ export function replaceText(text, value) {
   if (value.length - start - end)
     text.insert(start, value.slice(start, value.length - end));
 }
+/**
+ * One WebSocket per page (`/api/v1/live`) that says when a watched note changed
+ * on the server, so it syncs at once. Pages served without http(s) (the desktop
+ * app) and share links have none, and poll instead.
+ */
+class LiveSignals {
+  constructor() {
+    this.listeners = new Map();
+    this.socket = null;
+    this.connected = false;
+    this.retry = 1000;
+  }
+  get available() {
+    return (
+      typeof WebSocket !== "undefined" &&
+      /^https?:$/.test(globalThis.location?.protocol || "")
+    );
+  }
+  watch(id, onSignal) {
+    if (!this.available) return () => {};
+    if (!this.listeners.has(id)) this.listeners.set(id, new Set());
+    this.listeners.get(id).add(onSignal);
+    this.connect();
+    this.send();
+    return () => {
+      this.listeners.get(id)?.delete(onSignal);
+      if (!this.listeners.get(id)?.size) this.listeners.delete(id);
+      this.send();
+    };
+  }
+  send() {
+    if (this.connected)
+      this.socket.send(JSON.stringify({ watch: [...this.listeners.keys()] }));
+  }
+  connect() {
+    if (this.socket || !this.listeners.size) return;
+    const url = new URL("/api/v1/live", location.href);
+    url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(url);
+    this.socket = socket;
+    socket.onopen = () => {
+      this.connected = true;
+      this.retry = 1000;
+      this.send();
+      // Changes made while disconnected arrive now.
+      for (const listeners of this.listeners.values())
+        for (const signal of listeners) signal();
+    };
+    socket.onmessage = (event) => {
+      let id;
+      try {
+        id = JSON.parse(event.data).note;
+      } catch {
+        return;
+      }
+      for (const signal of this.listeners.get(id) || []) signal();
+    };
+    socket.onclose = () => {
+      this.socket = null;
+      this.connected = false;
+      if (!this.listeners.size) return;
+      setTimeout(() => this.connect(), this.retry);
+      this.retry = Math.min(this.retry * 2, 30000);
+    };
+  }
+}
+const signals = new LiveSignals();
+
 export class Collaboration {
   constructor(
     noteId,
@@ -86,7 +154,31 @@ export class Collaboration {
       { trackedOrigins: new Set(["local"]), captureTimeout: 600 },
     );
     this.ready = true;
-    this.timer = setInterval(() => this.sync().catch(() => {}), 650);
+    // Signals say when others changed the note; polling stays as a fallback,
+    // slow while signals arrive.
+    if (this.syncPath === "notes/" + this.id + "/sync")
+      this.unwatch = signals.watch(this.id, () => this.sync().catch(() => {}));
+    const poll = () => {
+      if (this.closed) return;
+      this.timer = setTimeout(
+        () =>
+          this.sync()
+            .finally(poll)
+            .catch(() => {}),
+        signals.connected ? 5000 : 650,
+      );
+    };
+    poll();
+    // Moving to another block shows at once for the others.
+    this.moved = () => {
+      clearTimeout(this.presenceTimer);
+      this.presenceTimer = setTimeout(() => {
+        if (JSON.stringify(this.presence()) !== this.sentPresence)
+          this.sync().catch(() => {});
+      }, 120);
+    };
+    document.addEventListener?.("focusin", this.moved);
+    document.addEventListener?.("focusout", this.moved);
     return this;
   }
   snapshot() {
@@ -142,10 +234,12 @@ export class Collaboration {
     const updates = this.pending.splice(0);
     this.sending = (async () => {
       try {
+        const presence = this.presence();
+        this.sentPresence = JSON.stringify(presence);
         const result = await this.api(this.syncPath, "POST", {
           update: updates.length ? encode(Y.mergeUpdates(updates)) : "",
           client_id: this.clientId,
-          ...this.presence(),
+          ...presence,
         });
         if (this.closed) return;
         const focused = document.activeElement,
@@ -261,7 +355,11 @@ export class Collaboration {
   destroy() {
     this.leave();
     this.closed = true;
-    clearInterval(this.timer);
+    this.unwatch?.();
+    document.removeEventListener?.("focusin", this.moved);
+    document.removeEventListener?.("focusout", this.moved);
+    clearTimeout(this.timer);
+    clearTimeout(this.presenceTimer);
     clearTimeout(this.debounce);
     this.doc.destroy();
   }

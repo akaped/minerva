@@ -96,3 +96,13 @@ export const blockCommands = [
     "todo carry over open tasks journal daily",
   ],
 ];
+
+/**
+ * Search snippets mark matches with U+0001…U+0002 around plain text: escape the
+ * text with `escape`, then turn the markers into highlights.
+ */
+export function highlightSnippet(snippet, escape) {
+  return escape(snippet || "")
+    .replace(/\u0001/g, "<mark>")
+    .replace(/\u0002/g, "</mark>");
+}
