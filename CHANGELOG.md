@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
 ### Added
 
 - A **Reminders** page in the sidebar collects everything coming up in a workspace: every `⏰` time written in its notes, and the workspace's reminders, shared with everyone in it. These can happen once or repeat every so many days, weeks, months or years (“Car insurance, every year”, “Car revision, every 2 years”), and have a category (_car_, _health_, …) to filter by. Due reminders stay at the top until marked **Done**, which moves a repeating one to its next time. With email set up, everyone in the workspace gets an email when one is due. Members who can only view the workspace see its reminders but cannot change them.
