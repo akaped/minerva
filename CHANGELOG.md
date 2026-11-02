@@ -10,6 +10,16 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Changed
+
+- A picture from a note's files shows a slim bar above it on hover, with its name, size, upload date and **Download**, instead of a download card below it. New pictures are added without the card; in existing notes the card under a picture is hidden.
+
+### Fixed
+
+- The cursor is visible again while writing in a block (it had become transparent with the live preview, in the desktop app).
+- A task being edited shows its Markdown (`- [ ]`) without the checkbox beside it, and the text and the cursor line up again.
+- The desktop release builds for macOS again: GitHub retired the macOS 14 machines the release used, so 0.5.0 was published without desktop packages.
+
 ## [0.5.0] - 2026-11-01
 
 ### Added

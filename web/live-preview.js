@@ -97,6 +97,9 @@ export function attachPreview(ta, esc) {
   ta.replaceWith(wrap);
   wrap.append(layer, ta);
   ta.classList.add("live-preview-field");
+  // The field's text is transparent, and so would be a `currentColor` cursor:
+  // the cursor takes the block's own text colour.
+  ta.style.caretColor = getComputedStyle(wrap).color;
   let shown = null;
   const body = wrap.closest(".block-body");
   const draw = () => {

@@ -403,6 +403,8 @@ async function loadNoteFiles(id = note?.id) {
     const { attachments } = await api(`notes/${id}/attachments`);
     for (const f of attachments) noteFiles.set(f.id, f);
     fileCards(document);
+    imageBars(document);
+    for (const frame of $$(".image-frame[data-image]")) drawImageBar(frame);
     // Cards drawn before the details arrived get their size and date now.
     for (const card of $$(".file-card[data-file]")) {
       const meta = noteFiles.get(card.dataset.file);
@@ -477,6 +479,15 @@ function fileCards(root) {
       paragraph.textContent.trim() !== link.textContent.trim()
     )
       continue;
+    // Older notes have a download card right below each uploaded picture; the
+    // picture's own bar has Download now, so the card stays out of sight.
+    const block = paragraph.closest(".block");
+    if (
+      block?.previousElementSibling?.querySelector(
+        `img[src*="/api/v1/attachments/${id}"]`,
+      )
+    )
+      block.classList.add("image-download-block");
     const meta = noteFiles.get(id);
     const name = meta?.filename || link.textContent.replace(/^Download /, "");
     const [kind, , iconChar] = fileKind(name, meta?.media_type);
@@ -490,6 +501,45 @@ function fileCards(root) {
       openFile(id, name),
     );
   }
+}
+/**
+ * A picture from the note's files shows a slim bar above it on hover: its name,
+ * size and upload date, and Download.
+ */
+function imageBars(root) {
+  for (const img of $$('.block-body img[src*="/api/v1/attachments/"]', root)) {
+    const id = img
+      .getAttribute("src")
+      .match(/\/api\/v1\/attachments\/([0-9a-f-]{36})/i)?.[1];
+    if (!id || img.closest(".image-frame")) continue;
+    const frame = document.createElement("span");
+    frame.className = "image-frame";
+    frame.dataset.image = id;
+    img.replaceWith(frame);
+    frame.append(img);
+    const bar = document.createElement("span");
+    bar.className = "image-bar";
+    frame.prepend(bar);
+    drawImageBar(frame);
+  }
+}
+function drawImageBar(frame) {
+  const id = frame.dataset.image;
+  const meta = noteFiles.get(id);
+  const name = meta?.filename || $("img", frame)?.alt || "Image";
+  const details = [
+    meta && bytes(meta.size),
+    meta?.created_at &&
+      new Date(meta.created_at * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  $(".image-bar", frame).innerHTML =
+    `<span class="image-name" title="${esc(name)}">${esc(name)}</span>${details ? `<span class="image-meta">${esc(details)}</span>` : ""}<a href="/api/v1/attachments/${id}" download>Download</a>`;
 }
 /** "PDF · 2.4 MiB · 30 Oct 2026": a file's kind, size and upload date. */
 function fileDetails(name, meta) {
@@ -518,9 +568,13 @@ if (typeof MutationObserver !== "undefined")
       for (const node of change.addedNodes)
         if (
           node.nodeType === 1 &&
-          node.querySelector?.('a[href*="/api/v1/attachments/"]')
-        )
+          node.querySelector?.(
+            '[href*="/api/v1/attachments/"], [src*="/api/v1/attachments/"]',
+          )
+        ) {
           fileCards(node.closest?.("#blocks") || node);
+          imageBars(node.closest?.("#blocks") || node);
+        }
   }).observe(document.documentElement, { childList: true, subtree: true });
 function slugify(title) {
   return (
@@ -4110,8 +4164,9 @@ function blockMenu(existingId, capturedSelection = "") {
 function attachmentMarkdown(file) {
   const label = file.filename.replace(/[\\[\]!*_`<>]/g, "_");
   const url = `/api/v1/attachments/${file.id}`;
+  // A picture's bar (on hover) has its details and Download.
   if (file.media_type.startsWith("image/"))
-    return `![${label}](${url}/preview)\n\n[Download ${label}](${url})`;
+    return `![${label}](${url}/preview)`;
   // The "audio" title shows a player (the address has no file extension).
   if (file.media_type.startsWith("audio/"))
     return `![${label}](${url}/preview "audio")\n\n[Download ${label}](${url})`;

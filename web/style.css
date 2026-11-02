@@ -970,7 +970,8 @@ p {
 #blocks .block textarea.live-preview-field {
   position: relative;
   color: transparent;
-  caret-color: currentColor;
+  /* Set from the block's text colour when the field opens (live-preview.js). */
+  caret-color: var(--ink, #263249);
   -webkit-text-fill-color: transparent;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -6846,4 +6847,78 @@ dialog.command-menu .command-menu-hint {
 }
 .import-help li {
   margin: 3px 0;
+}
+
+/* A task being edited shows its Markdown (`- [ ]`), not its checkbox. */
+.block:has(textarea) > .task-toggle {
+  display: none;
+}
+/* Pictures from the note's files: a slim bar with their details on hover. */
+.image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.image-frame > img {
+  display: block;
+}
+.image-bar {
+  /* Just above the picture, as wide as it needs, so a small picture still
+     shows the whole name; it belongs to the picture, so it stays while hovered. */
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 3;
+  width: max-content;
+  max-width: min(560px, 90vw);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #10151f 72%, transparent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.image-frame:hover .image-bar,
+.image-frame:focus-within .image-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.image-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.image-meta {
+  flex-shrink: 0;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.image-bar a {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 9px;
+  border-radius: 6px;
+  background: #ffffff26;
+  color: #fff;
+  text-decoration: none;
+}
+.image-bar a:hover {
+  background: #ffffff40;
+}
+@media (hover: none) {
+  .image-bar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+/* The download card older notes have under a picture: the picture's bar replaces it. */
+.block.image-download-block:not(:has(textarea)) {
+  display: none;
 }
