@@ -251,6 +251,12 @@ pub(crate) fn indentation(markdown: &str) -> (usize, String) {
 /// Stands in for `[[uncompleted_journal_tasks]]` while parsing (a private-use
 /// character cannot be typed as Markdown syntax).
 const TASKS_SENTINEL: &str = "\u{E000}journal-tasks\u{E000}";
+/// `[[toc]]`: a table of contents of the note's headings. Rendering leaves a
+/// slot: the app fills it, and exports and published pages put in the headings
+/// (`fill_contents`).
+pub(crate) const CONTENTS: &str = "[[toc]]";
+const CONTENTS_SENTINEL: &str = "\u{E000}toc\u{E000}";
+pub(crate) const CONTENTS_SLOT: &str = "<span class=\"note-toc\"></span>";
 /// `[[database:{id}]]` or `[[database:{id}:board]]` embeds a live database view.
 /// While parsing it becomes `\u{E001}{id}[:view]\u{E001}`.
 pub(crate) const DATABASE_EMBED: &str = "[[database:";
@@ -292,7 +298,9 @@ pub(crate) fn replace_database_embeds(
 }
 /// Restores the original syntax where markers must stay literal (code).
 fn restore(text: &str) -> String {
-    let text = text.replace(TASKS_SENTINEL, crate::journal::UNFINISHED_TASKS);
+    let text = text
+        .replace(TASKS_SENTINEL, crate::journal::UNFINISHED_TASKS)
+        .replace(CONTENTS_SENTINEL, CONTENTS);
     if !text.contains(DB_MARK) {
         return text;
     }
@@ -322,7 +330,9 @@ fn database_slot(body: &str, links: Links) -> String {
     }
 }
 fn to_html(markdown: &str, links: Links) -> String {
-    let markdown = &markdown.replace(crate::journal::UNFINISHED_TASKS, TASKS_SENTINEL);
+    let markdown = &markdown
+        .replace(crate::journal::UNFINISHED_TASKS, TASKS_SENTINEL)
+        .replace(CONTENTS, CONTENTS_SENTINEL);
     let markdown = &*replace_database_embeds(markdown, |body| format!("{DB_MARK}{body}{DB_MARK}"));
     use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
     let mut events = Vec::new();
@@ -361,6 +371,14 @@ fn to_html(markdown: &str, links: Links) -> String {
                     } else {
                         decorate(part, in_link == 0, &mut events);
                     }
+                }
+            }
+            Event::Text(text) if text.contains(CONTENTS_SENTINEL) => {
+                for (i, part) in text.split(CONTENTS_SENTINEL).enumerate() {
+                    if i > 0 {
+                        events.push(Event::InlineHtml(CONTENTS_SLOT.into()));
+                    }
+                    decorate(part, in_link == 0, &mut events);
                 }
             }
             // The live task list is filled in by the app for signed-in readers.
@@ -983,6 +1001,7 @@ fn clean(html: &str) -> String {
                                     | "audio-player"
                                     | "math-error"
                                     | "journal-tasks"
+                                    | "note-toc"
                                     | "task-marker"
                             )
                     })
@@ -1244,5 +1263,25 @@ mod chip_tests {
             "{html}"
         );
         assert!(html.contains(r#"class="tag""#), "{html}");
+    }
+    #[test]
+    fn table_of_contents_slot() {
+        use crate::render::{render, render_for, Links, CONTENTS_SLOT};
+        assert!(render("[[toc]]").contains(CONTENTS_SLOT));
+        assert!(render_for("[[toc]]", Links::Public("p")).contains(CONTENTS_SLOT));
+        let code = render("```\n[[toc]]\n```");
+        assert!(
+            code.contains("[[toc]]") && !code.contains(CONTENTS_SLOT),
+            "{code}"
+        );
+        let page =
+            format!("<div>{CONTENTS_SLOT}</div><h2>Plan</h2><p>x</p><h3>Step <b>one</b></h3>");
+        let filled = crate::export::fill_contents(&page);
+        assert!(filled.contains("<h2 id=\"sec-1\">Plan</h2>"), "{filled}");
+        assert!(
+            filled.contains("<a href=\"#sec-2\">Step one</a>"),
+            "{filled}"
+        );
+        assert!(!filled.contains(CONTENTS_SLOT));
     }
 }

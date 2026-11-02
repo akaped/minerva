@@ -776,6 +776,7 @@ fn article(
         .iter()
         .map(|html| format!("<div class=\"block\">{html}</div>\n"))
         .collect();
+    let content = export::fill_contents(&content);
     format!(
         r#"{banner}<header class="site"><a href="/{base}/">{site}</a></header>
 {cover}<main class="post">

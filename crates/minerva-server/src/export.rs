@@ -332,6 +332,22 @@ fn fact_value(values: &HashMap<String, String>, key: &str) -> String {
     }
 }
 /// Adds IDs to headings and lists them, for the table of contents.
+/// Puts the note's headings into its `[[toc]]` slots, numbering the headings so
+/// the entries link to them.
+pub(crate) fn fill_contents(html: &str) -> String {
+    if !html.contains(render::CONTENTS_SLOT) {
+        return html.to_string();
+    }
+    let (numbered, toc) = number_headings(html);
+    numbered.replace(render::CONTENTS_SLOT, &contents_nav(&toc))
+}
+fn contents_nav(toc: &str) -> String {
+    let list = toc.strip_prefix("<h2>Contents</h2>").unwrap_or(toc);
+    if list.is_empty() {
+        return String::new();
+    }
+    format!("<nav class=\"note-toc\"><p class=\"note-toc-title\">Contents</p>{list}</nav>")
+}
 fn number_headings(html: &str) -> (String, String) {
     let mut out = String::with_capacity(html.len());
     let mut toc = String::new();
@@ -574,8 +590,9 @@ fn document(
         })
         .collect();
     let mut toc = String::new();
-    if template.is_some() {
+    if template.is_some() || body.contains(render::CONTENTS_SLOT) {
         (body, toc) = number_headings(&body);
+        body = body.replace(render::CONTENTS_SLOT, &contents_nav(&toc));
     }
     let mut cover = String::new();
     if options.cover && !n.cover.is_empty() {

@@ -444,3 +444,39 @@ merror {
 .md-indent-5 ul {
   list-style-type: square;
 }
+
+/* Table of contents block ([[toc]]). */
+.note-toc {
+  display: block;
+  margin: 6px 0;
+  padding: 10px 14px;
+  border-left: 3px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.note-toc-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.note-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.note-toc li {
+  margin: 2px 0;
+}
+.note-toc .toc-2 {
+  padding-left: 16px;
+}
+.note-toc .toc-3 {
+  padding-left: 32px;
+}
+.note-toc a {
+  text-decoration: none;
+}
+.note-toc a:hover {
+  text-decoration: underline;
+}

@@ -14,6 +14,7 @@ mod live;
 mod mail;
 mod mcp;
 mod plugins;
+mod previews;
 mod reminders;
 mod removal;
 mod render;
@@ -960,6 +961,7 @@ pub fn app(store: Shared) -> Router {
         .route("/preview/{note_id}", get(sharing::preview))
         .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
         .route("/api/v1/live", get(live::endpoint))
+        .route("/api/v1/link-preview", get(previews::endpoint))
         .route("/api/v1/import", axum::routing::post(import::endpoint).layer(DefaultBodyLimit::max(import::IMPORT_LIMIT)))
         .route("/api/v1/admin/overview", get(administration::overview))
         .route("/api/v1/admin/storage", any(attachments::storage))

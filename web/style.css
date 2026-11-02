@@ -7338,3 +7338,143 @@ body.comments-open .note-pane {
     width: 100%;
   }
 }
+
+/* Folding: an arrow beside blocks with nested blocks; a folded one hides them
+   and says how many. */
+.block-fold {
+  position: absolute;
+  right: 100%;
+  top: 7px;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+  opacity: 0;
+  transform: rotate(90deg);
+  transition:
+    transform 0.12s,
+    opacity 0.12s;
+}
+.block:hover > .block-fold,
+.block-fold:focus-visible {
+  opacity: 0.8;
+}
+.block.folded > .block-fold {
+  opacity: 1;
+  transform: none;
+}
+.block-fold:hover {
+  background: var(--soft);
+  color: inherit;
+}
+.block.has-children > .block-controls {
+  right: calc(100% + 18px);
+}
+.block.fold-hidden {
+  display: none;
+}
+.fold-count {
+  margin: 0 0 2px 7px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.fold-count:hover {
+  color: inherit;
+}
+
+/* Table of contents block ([[toc]]). */
+.note-toc {
+  display: block;
+  margin: 6px 0;
+  padding: 10px 14px;
+  border-left: 3px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.note-toc-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.note-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.note-toc li {
+  margin: 2px 0;
+}
+.note-toc .toc-2 {
+  padding-left: 16px;
+}
+.note-toc .toc-3 {
+  padding-left: 32px;
+}
+.note-toc a {
+  text-decoration: none;
+}
+.note-toc a:hover {
+  text-decoration: underline;
+}
+
+/* Link preview card: a block that is just a web address. */
+.link-card {
+  display: flex;
+  max-width: 560px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+  background: var(--surface, #fff);
+}
+.link-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+.link-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.link-card-text strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-card-text span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.link-card-text small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.link-card img {
+  flex-shrink: 0;
+  width: 150px;
+  max-height: 110px;
+  object-fit: cover;
+}
+@media (max-width: 760px) {
+  .link-card img {
+    width: 96px;
+  }
+}

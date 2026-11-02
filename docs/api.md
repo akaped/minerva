@@ -252,3 +252,7 @@ Administrators see `two_factor` in `GET /admin` users and can reset it with `PAT
 - `DELETE /notes/{id}/comments/{thread}/{comment}`: the comment's author; deleting the first comment deletes the thread.
 
 People mentioned as `@person@example.com` who can open the note, and the thread's earlier participants, are emailed (when email is set up), never the author. Comments are deleted with their note, and a change signals open pages through `/api/v1/live`.
+
+## Link previews
+
+`GET /link-preview?url=…` returns `{url, title, description, site, image}` for a public web page, from its Open Graph tags or its title and description; signed-in members only. The server resolves the address itself and refuses private, loopback, link-local and other special networks, other ports than 80 and 443, and other schemes; it connects to the address it checked, checks each of up to 3 redirects the same way, reads up to 1 MB of HTML within 5 seconds, and keeps answers for a day.

@@ -20,6 +20,14 @@ import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import {
+  subtreeEnd,
+  hasChildren,
+  hiddenBlocks,
+  foldedAbove,
+  loadFolded,
+  saveFolded,
+} from "./folding.js";
+import {
   toggleWrap,
   linkSelection,
   noteLink,
@@ -2312,6 +2320,30 @@ function iconPicker(anchor) {
     },
   }).catch(error);
 }
+/**
+ * `/toggle`: the block becomes a heading line (its text, or "Toggle") with an
+ * indented block under it to write in; the arrow beside it folds them.
+ */
+async function insertToggle(existingId) {
+  let b = note.blocks.find((x) => x.id === existingId);
+  live?.boundary();
+  if (!b) {
+    b = newBlock("");
+    note.blocks.push(b);
+    note.rendered.push("");
+  }
+  const level = indentLevel(b.markdown);
+  if (!b.markdown.trim()) b.markdown = "  ".repeat(level) + "**Toggle**";
+  const child = newBlock("  ".repeat(Math.min(level + 1, 3)));
+  const i = note.blocks.indexOf(b);
+  note.blocks.splice(i + 1, 0, child);
+  note.rendered.splice(i + 1, 0, "");
+  note.rendered[i] = await renderMarkdown(b.markdown);
+  markDirty();
+  renderBlocks();
+  editBlock(child.id);
+  await queueSave();
+}
 /** `/emoji`: pick an emoji and add it to the block. */
 function emojiDialog(existingId) {
   modal.innerHTML =
@@ -2995,6 +3027,157 @@ function bindMediaDrop(root) {
     } else insertBlockAfter(md, after).catch(error);
   };
 }
+// Folded blocks of the open note (see folding.js), and the blocks they hide.
+let folded = new Set(),
+  foldedFor = null,
+  foldHidden = new Set();
+/**
+ * Shows each block's fold arrow and hides what folded blocks hold, in place:
+ * a block being edited stays open.
+ */
+function drawFolding() {
+  if (!note) return;
+  if (foldedFor !== note.id) {
+    folded = loadFolded(note.id);
+    foldedFor = note.id;
+  }
+  foldHidden = hiddenBlocks(note.blocks, folded, indentLevel);
+  note.blocks.forEach((b, i) => {
+    const el = $(`#blocks [data-block="${CSS.escape(b.id)}"]`);
+    if (!el) return;
+    const parent = hasChildren(note.blocks, i, indentLevel);
+    const isFolded = parent && folded.has(b.id);
+    el.classList.toggle("fold-hidden", foldHidden.has(b.id));
+    el.classList.toggle("has-children", parent);
+    el.classList.toggle("folded", isFolded);
+    let arrow = $(":scope > .block-fold", el);
+    if (parent && !arrow) {
+      arrow = document.createElement("button");
+      arrow.type = "button";
+      arrow.className = "block-fold";
+      arrow.dataset.fold = b.id;
+      arrow.textContent = "▸";
+      el.prepend(arrow);
+    }
+    if (!parent) arrow?.remove();
+    if (arrow) {
+      const label = isFolded ? "Show nested blocks" : "Hide nested blocks";
+      arrow.setAttribute("aria-expanded", String(!isFolded));
+      arrow.setAttribute("aria-label", label);
+      arrow.title = `${label} (Ctrl+${isFolded ? "↓" : "↑"})`;
+    }
+    let count = $(":scope > .fold-count", el);
+    if (isFolded) {
+      if (!count) {
+        count = document.createElement("button");
+        count.type = "button";
+        count.className = "fold-count";
+        count.dataset.fold = b.id;
+        el.append(count);
+      }
+      const n = subtreeEnd(note.blocks, i, indentLevel) - i - 1;
+      count.textContent = `${n} hidden`;
+    } else count?.remove();
+  });
+}
+/** Folds or unfolds block `id`; `fold` forces one way. */
+function toggleFold(id, fold = !folded.has(id)) {
+  const i = note.blocks.findIndex((b) => b.id === id);
+  if (i < 0 || !hasChildren(note.blocks, i, indentLevel)) return false;
+  if (fold === folded.has(id)) return false;
+  if (fold) folded.add(id);
+  else folded.delete(id);
+  saveFolded(note.id, folded, note.blocks);
+  drawFolding();
+  announce(fold ? "Nested blocks hidden" : "Nested blocks shown");
+  return true;
+}
+/** Unfolds whatever hides block `id`. */
+function revealBlock(id) {
+  if (!foldHidden.has(id)) return;
+  for (const above of foldedAbove(note.blocks, id, folded, indentLevel))
+    folded.delete(above);
+  saveFolded(note.id, folded, note.blocks);
+  drawFolding();
+}
+// Link previews by address: a promise of the page's details, or null.
+const previews = new Map();
+/**
+ * A block that is just a web address shows a card: the page's title,
+ * description, site and picture (`/api/v1/link-preview`). Videos, pictures,
+ * audio and the note's files keep their own display; without details, the
+ * plain link stays.
+ */
+function linkCards() {
+  if (!note || shareMode) return;
+  for (const b of note.blocks) {
+    const url = b.markdown.trim();
+    if (!/^https?:\/\/\S+$/.test(url) || url.length > 2048) continue;
+    if (
+      IMAGE_LINK.test(url) ||
+      AUDIO_LINK.test(url) ||
+      url.includes("/api/v1/attachments/")
+    )
+      continue;
+    const body = $(`#blocks [data-block="${CSS.escape(b.id)}"] .block-body`);
+    if (
+      !body ||
+      body.querySelector(".link-card, .youtube-card, img, audio, iframe")
+    )
+      continue;
+    if (!previews.has(url))
+      previews.set(
+        url,
+        api("link-preview?url=" + encodeURIComponent(url)).catch(() => null),
+      );
+    previews.get(url).then((p) => {
+      if (!p?.title || !body.isConnected || body.querySelector(".link-card"))
+        return;
+      if (b.markdown.trim() !== url) return;
+      body.innerHTML = `<a class="link-card" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span class="link-card-text"><strong>${esc(p.title)}</strong>${p.description ? `<span>${esc(p.description)}</span>` : ""}<small>${esc(p.site || "")}</small></span>${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</a>`;
+    });
+  }
+}
+/** `[[toc]]` blocks list the note's headings; each scrolls to its heading. */
+function fillContents() {
+  const slots = $$("#blocks .note-toc");
+  if (!slots.length || !note) return;
+  const headings = note.blocks
+    .map((b) => {
+      const m = b.markdown.trimStart().match(/^(#{1,3}) +(.+)/);
+      if (!m) return null;
+      const text = m[2]
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/[*_`~=]/g, "")
+        .replace(/(^|\s)#[\w/-]+/g, "")
+        .trim();
+      return { id: b.id, level: m[1].length, text };
+    })
+    .filter((h) => h?.text);
+  const html = headings.length
+    ? `<p class="note-toc-title">Contents</p><ol>${headings.map((h) => `<li class="toc-${h.level}"><a href="#" data-toc-block="${esc(h.id)}">${esc(h.text)}</a></li>`).join("")}</ol>`
+    : '<p class="note-toc-title">Contents</p><p class="hint">Headings (#, ##, ###) in this note will be listed here.</p>';
+  for (const slot of slots) slot.innerHTML = html;
+}
+document.addEventListener("click", (e) => {
+  const entry = e.target.closest?.("#blocks [data-toc-block]");
+  if (!entry || !note) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const id = entry.dataset.tocBlock;
+  revealBlock(id);
+  const block = $(`[data-block="${CSS.escape(id)}"]`);
+  block?.scrollIntoView({ block: "start", behavior: "smooth" });
+  block?.classList.add("comment-flash");
+  setTimeout(() => block?.classList.remove("comment-flash"), 1500);
+});
+document.addEventListener("click", (e) => {
+  const fold = e.target.closest?.("#blocks [data-fold]");
+  if (fold && note) {
+    e.stopPropagation();
+    toggleFold(fold.dataset.fold);
+  }
+});
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
   setTimeout(() => !shareMode && comments.drawBadges(), 0);
@@ -3008,6 +3191,9 @@ function renderBlocks() {
     )
     .join("");
   drawPeers();
+  drawFolding();
+  fillContents();
+  linkCards();
   $$(".block", root).forEach((el) => {
     const id = el.dataset.block;
     action($(".task-toggle", el), "click", async () => {
@@ -3336,6 +3522,7 @@ function closeLinkPicker() {
   linkPicker = null;
 }
 function editBlock(id, caret = null) {
+  revealBlock(id);
   const el = $(`[data-block="${CSS.escape(id)}"]`);
   if (!el || $("textarea", el) || blockLocked(id)) return;
   const b = note.blocks.find((b) => b.id === id);
@@ -3377,6 +3564,11 @@ function editBlock(id, caret = null) {
     }
     note.rendered[i] = rendered;
     body.innerHTML = rendered || emptyBlockHTML();
+    // Indenting while typing may have given blocks children or taken them away,
+    // and a heading may have changed.
+    drawFolding();
+    fillContents();
+    linkCards();
     if (then) await then(i);
     markDirty();
     queueSave().catch(() => {});
@@ -3407,8 +3599,12 @@ function editBlock(id, caret = null) {
     ta.value = ta.value.slice(0, start);
     closing = close(async (i) => {
       const fresh = newBlock(after);
-      note.blocks.splice(i + 1, 0, fresh);
-      note.rendered.splice(i + 1, 0, renderedCache.get(after) ?? "");
+      // After a folded block, the new one goes after what it hides.
+      const at = folded.has(id)
+        ? subtreeEnd(note.blocks, i, indentLevel)
+        : i + 1;
+      note.blocks.splice(at, 0, fresh);
+      note.rendered.splice(at, 0, renderedCache.get(after) ?? "");
       markDirty();
       renderBlocks();
       editBlock(fresh.id, prefix.length);
@@ -3528,7 +3724,10 @@ function editBlock(id, caret = null) {
     announce("Merged with the next block");
   }
   function moveTo(offset, toEnd) {
-    const target = note.blocks[index() + offset];
+    // Blocks hidden in a folded block are skipped.
+    let at = index() + offset;
+    while (note.blocks[at] && foldHidden.has(note.blocks[at].id)) at += offset;
+    const target = note.blocks[at];
     if (!target || blockLocked(target.id)) return false;
     closing = close(() => editBlock(target.id, toEnd ? null : 0));
     return true;
@@ -3634,6 +3833,14 @@ function editBlock(id, caret = null) {
       ta.blur();
       if (target) selectBlockRange(id, target);
       else selectBlockRange(order[0], order.at(-1));
+      return;
+    }
+    if (
+      (shortcut === "arrowup" || shortcut === "arrowdown") &&
+      !e.shiftKey &&
+      toggleFold(id, shortcut === "arrowup")
+    ) {
+      e.preventDefault();
       return;
     }
     if (shortcut === "j" && !e.shiftKey && !shareMode) {
@@ -4108,6 +4315,7 @@ function blockMenu(existingId, capturedSelection = "") {
     if (command[1] === "@assign") return assignDialog(existingId);
     if (command[1] === "@record") return recordDialog(existingId);
     if (command[1] === "@emoji") return emojiDialog(existingId);
+    if (command[1] === "@toggle") return insertToggle(existingId);
     if (command[1] === "@remind") return reminderDialog(existingId);
     let b = note.blocks.find((b) => b.id === existingId);
     if (!b) {

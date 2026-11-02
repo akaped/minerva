@@ -83,6 +83,8 @@ export const blockCommands = [
   ],
   ["Highlight", "==highlighted text==", "marker mark color"],
   ["Emoji", "@emoji", "/emoji smiley icon face symbol"],
+  ["Toggle", "@toggle", "collapse fold expand details accordion nested"],
+  ["Table of contents", "[[toc]]", "toc outline headings contents index"],
   ["Link to note", "[[", "wiki backlink mention reference recall"],
   [
     "Assign to someone",
