@@ -3,6 +3,7 @@ mod ai;
 mod anki;
 mod attachments;
 mod collaboration;
+mod comments;
 mod databases;
 mod export;
 mod flashcards;
@@ -156,6 +157,10 @@ struct Data {
     /// only; shared by every copy of `Data`).
     #[serde(skip)]
     tag_cache: TagCache,
+    /// Bumped when a note's comments change, so open pages hear about it
+    /// (memory only; comments are kept in their own table, see `comments.rs`).
+    #[serde(skip)]
+    comment_activity: HashMap<String, u64>,
 }
 /// A note's version (held weakly) and its inline tags.
 type CachedTags = (std::sync::Weak<Note>, Vec<String>);
@@ -238,6 +243,7 @@ impl Store {
         let db = Connection::open(path)?;
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")?;
         storage::initialize(&db)?;
+        comments::initialize(&db)?;
         attachments::initialize(&db)?;
         replication::initialize(&db)?;
         let ai = ai::initialize(&db, path)?;
@@ -1170,6 +1176,9 @@ fn dispatch(
     }
     if parts.first() == Some(&"databases") {
         return Ok((databases::route(d, &u, method, &parts, v)?, None));
+    }
+    if let Some(result) = comments::route(db, d, &u, method, &parts, &v)? {
+        return Ok((result, None));
     }
     if method == "DELETE"
         && matches!(parts.as_slice(), [_, _])

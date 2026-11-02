@@ -299,4 +299,33 @@ async fn the_server_emails_people() {
     assert!(mail[4].1.contains("Send the invoices"));
     let (_, list) = call(&r, "GET", "reminders", &ada_token, json!({})).await;
     assert!(list["reminders"].as_array().unwrap().is_empty());
+
+    // A comment emails the people it mentions; a reply, the thread's earlier
+    // participants. Nobody hears about their own comment.
+    let (status, thread) = call(
+        &r,
+        "POST",
+        &format!("notes/{nid}/comments"),
+        &admin,
+        json!({"block_id":"b1","quote":"invoices","text":"Can you check these, @ada@test.local?"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{thread}");
+    let mail = wait_for(&inbox, 6).await;
+    assert_eq!(mail.len(), 6);
+    assert_eq!(mail[5].0, "ada@test.local");
+    assert!(mail[5].1.contains("Can you check these"), "{}", mail[5].1);
+    let tid = thread["id"].as_str().unwrap();
+    call(
+        &r,
+        "POST",
+        &format!("notes/{nid}/comments/{tid}/replies"),
+        &ada_token,
+        json!({"text":"Done, all paid."}),
+    )
+    .await;
+    let mail = wait_for(&inbox, 7).await;
+    assert_eq!(mail.len(), 7);
+    assert_eq!(mail[6].0, "owner@test.local");
+    assert!(mail[6].1.contains("Done, all paid."));
 }

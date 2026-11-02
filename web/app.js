@@ -17,7 +17,8 @@ import { attachPreview } from "./live-preview.js";
 import { renderDashboard } from "./dashboard.js";
 import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
-import { Collaboration } from "./collaboration.js";
+import { Collaboration, watchNote } from "./collaboration.js";
+import { createComments } from "./comments.js";
 import {
   toggleWrap,
   linkSelection,
@@ -154,6 +155,7 @@ let live = null,
 function stopLive() {
   live?.destroy();
   live = null;
+  comments?.detach();
 }
 const paths = {
   home: "m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",
@@ -1812,6 +1814,7 @@ async function openNote(id, { split = false } = {}) {
   dirty = false;
   conflict = false;
   mode = "document";
+  comments.attach(id);
   live = new Collaboration(
     id,
     api,
@@ -2133,7 +2136,7 @@ function renderEditor() {
         : "";
   const tools = shareMode
     ? `<button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="export">${icon("download")}Export</button>`
-    : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
+    : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="comments-toggle" aria-pressed="false" title="Comments on this note">💬 Comments <span class="comments-count"></span></button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
   $("#content").innerHTML =
     `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can ? "readonly" : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div><div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
   renderBlocks();
@@ -2176,6 +2179,7 @@ function renderEditor() {
   action($("#history"), "click", history);
   action($("#attachments"), "click", attachmentDialog);
   action($("#ask-note"), "click", () => askAI({ kind: "note", id: note.id }));
+  action($("#comments-toggle"), "click", () => comments.toggle());
   action($("#add-block"), "click", async () => {
     await flush();
     if (!editable()) return;
@@ -2602,7 +2606,7 @@ function emptyBlockHTML() {
 function blockHTML(b, i) {
   const position = `block ${i + 1} of ${note.blocks.length}`;
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? `role="button" aria-label="Edit ${position}"` : `role="group" aria-label="${position[0].toUpperCase() + position.slice(1)}"`}>${note.rendered?.[i] || emptyBlockHTML()}</div></div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? `role="button" aria-label="Edit ${position}"` : `role="group" aria-label="${position[0].toUpperCase() + position.slice(1)}"`}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="Comment on this block" aria-label="Comment on this block">💬</button>`}</div>`;
 }
 /** Moves the block at `i` to index `j` and saves. */
 async function moveBlock(i, j) {
@@ -2993,6 +2997,7 @@ function bindMediaDrop(root) {
 }
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
+  setTimeout(() => !shareMode && comments.drawBadges(), 0);
   const root = $("#blocks");
   bindMediaDrop(root);
   root.innerHTML = note.blocks
@@ -3135,6 +3140,17 @@ function applyFormat(ta, format) {
         );
   replaceRange(ta, change);
 }
+// Comments on the open note (not on share links, whose guests are not members).
+var comments = createComments({
+  api,
+  esc,
+  error,
+  announce,
+  me: () => data?.user?.id,
+  canResolveAll: () => !!note && data.roles?.[note.folder_id] === "editor",
+  note: () => note,
+  watch: watchNote,
+});
 const writingAssist = createWritingAssist({
   api,
   esc,
@@ -3173,13 +3189,18 @@ function updateFormatBar(ta) {
   bar.className = "format-bar";
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Format selection");
-  bar.innerHTML = `<button data-format="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-format="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-format="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button><button data-format="code" title="Inline code (Ctrl+E)"><code>&lt;/&gt;</code></button><button data-format="link" title="Link (Ctrl+K)">🔗</button><button data-format="highlight" class="format-highlight" title="Highlight (Ctrl+Shift+H)">🖍</button>${shareMode ? "" : '<button data-ai class="format-ai" title="AI: improve, translate, continue (Ctrl+J)">✦ AI</button>'}`;
+  bar.innerHTML = `<button data-format="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-format="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-format="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button><button data-format="code" title="Inline code (Ctrl+E)"><code>&lt;/&gt;</code></button><button data-format="link" title="Link (Ctrl+K)">🔗</button><button data-format="highlight" class="format-highlight" title="Highlight (Ctrl+Shift+H)">🖍</button>${shareMode ? "" : '<button data-ai class="format-ai" title="AI: improve, translate, continue (Ctrl+J)">✦ AI</button><button data-comment-selection title="Comment on the selected text">💬</button>'}`;
   $$("button", bar).forEach((b) => {
     b.setAttribute("aria-label", b.title);
     // Keep the textarea focused and its selection intact.
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", () => {
       if (b.dataset.ai !== undefined) return openWritingAssist(ta);
+      if (b.dataset.commentSelection !== undefined)
+        return comments.start(
+          ta.closest("[data-block]")?.dataset.block,
+          ta.value.slice(ta.selectionStart, ta.selectionEnd),
+        );
       applyFormat(ta, b.dataset.format);
       updateFormatBar(ta);
     });
@@ -6716,6 +6737,10 @@ function openCellPicker(el) {
   document.addEventListener("mousedown", close, true);
   document.addEventListener("keydown", close, true);
 }
+document.addEventListener("click", (e) => {
+  const block = e.target.closest?.("[data-comment-block]");
+  if (block && note) comments.start(block.dataset.commentBlock);
+});
 document.addEventListener("click", (e) => {
   const picker = e.target.closest?.(".cell-picker");
   if (picker && !picker.disabled) openCellPicker(picker);

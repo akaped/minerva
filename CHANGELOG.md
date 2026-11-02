@@ -12,6 +12,7 @@ turns that section into the next version.
 
 ### Added
 
+- **Comments** on notes: on a block (hover it and choose 💬), on selected text (💬 in the selection toolbar), or on the whole note. Threads have replies and can be resolved and reopened; the **Comments** panel lists open and resolved ones, and blocks with open threads show a count. Anyone who can read a note can comment; editors and a thread's author resolve it. `@person@example.com` in a comment, offered from the people who can open the note, emails them, and replies email the thread's earlier participants. Comments appear for others as soon as they are written.
 - **Calendar view** for databases: records on a month calendar by any date property, or by when they were created or last edited. Open a record by clicking it, or add one on a day with **+**.
 - **New database properties:** **Multi-select** (several options), **Person** (someone who can open the database), **Relation** (records of another database in the workspace, chosen from a searchable list and shown by name), and **Created time** and **Last edited time**, kept automatically. Filtering and sorting use what the cells show, such as people's and related records' names, and notes and exports show them by name too.
 

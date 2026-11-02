@@ -5,7 +5,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 ## Next
 
 - [ ] **Databases**: rollups (counts, sums and lists through a relation) and formulas; records that open as pages; the calendar view in notes' embedded databases; reminders and journal dates on the same calendar; boards grouped by person or multi-select.
-- [ ] **Comments**: on a block or a selection, with replies, resolve, `@mentions` and email (reuse `mail.rs`), delivered live through the change feed (`live.rs`).
 - [ ] **Toggle blocks and folding** of nested blocks; then a table-of-contents block and link preview cards.
 - [ ] **MCP write tools** (create a note, append blocks, add a database record) with write-scoped credentials, and personal API tokens. Then a small `minerva` CLI over the API: search, append, backup.
 
@@ -33,6 +32,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 - [ ] **Editor**: evaluate a rich-text block editor (ProseMirror/Tiptap bound to the existing Yjs documents, still storing Markdown) against the textarea + live preview approach, for selection inside a block that spans formatting and for IME and accessibility.
 - [ ] **Editor**: a click on a block right after a heading block closes can land elsewhere, because the closing heading changes height between mouse down and up. Keep the block's height until the click completes.
+- [ ] **Comments**: in desktop offline copies (they are not replicated yet) and for share-link guests with edit access; editing a comment; comments in the Mentions dashboard widget; highlighting the quoted text in the block.
 - [ ] **Live signals for the desktop app and share links**: `minerva://` pages cannot open the WebSocket, and guests are not signed in. Relay signals through the desktop gateway, and give guests a share-scoped socket; until then both poll.
 - [ ] **Delta sync**: `POST /notes/{id}/sync` returns the full CRDT state each time; send only what the client lacks (Yjs state vectors).
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).

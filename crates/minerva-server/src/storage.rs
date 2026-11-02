@@ -359,9 +359,11 @@ pub(super) fn write(
         trim_versions(db, id)?;
     }
     for id in &notes.gone {
-        db.prepare_cached("DELETE FROM note_versions WHERE note_id=?1")
-            .and_then(|mut s| s.execute([id]))
-            .map_err(|_| internal())?;
+        for table in ["note_versions", "comments"] {
+            db.prepare_cached(&format!("DELETE FROM {table} WHERE note_id=?1"))
+                .and_then(|mut s| s.execute([id]))
+                .map_err(|_| internal())?;
+        }
     }
     let databases = diff(
         old.databases.iter().map(|b| (b.id.as_str(), b)),

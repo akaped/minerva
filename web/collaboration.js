@@ -100,6 +100,10 @@ class LiveSignals {
   }
 }
 const signals = new LiveSignals();
+/** Calls `onChange` when note `id` changes on the server; returns a stop function. */
+export function watchNote(id, onChange) {
+  return signals.watch(id, onChange);
+}
 
 export class Collaboration {
   constructor(

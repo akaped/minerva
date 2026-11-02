@@ -144,6 +144,17 @@ async fn readers_hear_when_a_watched_note_changes() {
     )
     .await;
     assert_eq!(signal(&mut reader).await, None);
+
+    // A new comment is a change too.
+    http(
+        &base,
+        "POST",
+        &format!("notes/{id}/comments"),
+        &owner,
+        json!({"text":"Looks good"}),
+    )
+    .await;
+    assert_eq!(signal(&mut reader).await, Some(json!({"note": id})));
 }
 
 /// `common::member`, over HTTP: an account with its own workspace.

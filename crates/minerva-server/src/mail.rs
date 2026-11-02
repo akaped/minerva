@@ -394,6 +394,21 @@ pub(crate) fn assignments(old: &Data, d: &mut Data, actor: Option<&User>) {
     }
 }
 
+/// Tells `to` about a comment in a note: one that mentions them, or a reply in a
+/// thread they took part in.
+pub(crate) fn comment(d: &mut Data, by: &User, to: &User, note: &Note, text: &str) {
+    queue(
+        d,
+        &to.email,
+        &format!("{} commented on “{}”", by.name, note.title),
+        &[
+            format!("Hi {},", to.name),
+            format!("{} commented on “{}”:", by.name, note.title),
+        ],
+        Some(text),
+        ("Open the note", &note_link(note)),
+    );
+}
 /// `GET notes/{id}/people`: the members who can open a note, for the `@`
 /// picker; `GET mentions`: notes that mention you, newest first.
 pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<Value>, ApiError> {

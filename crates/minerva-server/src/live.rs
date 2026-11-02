@@ -51,6 +51,11 @@ pub(super) fn changed_notes(old: &Data, new: &Data) -> Vec<String> {
         v.sort();
         v
     };
+    for (id, n) in &new.comment_activity {
+        if old.comment_activity.get(id) != Some(n) {
+            changed.insert(id);
+        }
+    }
     for id in old.presence.keys().chain(new.presence.keys()) {
         if people(old, id) != people(new, id) {
             changed.insert(id);
