@@ -7481,3 +7481,24 @@ body.comments-open .note-pane {
 .panel + .panel {
   margin-top: 20px;
 }
+.start-notice {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--ink, inherit);
+  box-shadow: 0 4px 25px #28314b20;
+  font-size: 13px;
+}
+.start-notice span {
+  flex: 1;
+}

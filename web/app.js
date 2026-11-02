@@ -19,6 +19,7 @@ import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
+import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import {
   subtreeEnd,
   hasChildren,
@@ -768,6 +769,24 @@ async function api(path, method = "GET", body) {
   // A note tab tells the window around it, which redraws its sidebar.
   if (isPane && changesSidebar(path, method, body, v)) paneMessage("changed");
   return v;
+}
+/** Why the desktop app opened this computer instead of the server open last. */
+function showStartNotice() {
+  const notice = startNotice(location.search);
+  window.history.replaceState(window.history.state, "", withoutNotice(location.href));
+  if (!notice) return;
+  const bar = document.createElement("div");
+  bar.className = "start-notice";
+  bar.setAttribute("role", "status");
+  bar.innerHTML = `<span>${esc(notice.text)}</span>${notice.retry ? '<button class="btn" data-start="retry">Try again</button>' : ""}<button class="btn" data-start="servers">Servers</button><button class="icon-button" data-start="close" aria-label="Dismiss">×</button>`;
+  bar.onclick = (e) => {
+    const choice = e.target.closest("[data-start]")?.dataset.start;
+    if (choice === "retry") location.href = serverPage(location, notice.server);
+    else if (choice === "servers")
+      window.ipc?.postMessage('{"cmd":"show_servers"}');
+    if (choice) bar.remove();
+  };
+  document.body.append(bar);
 }
 function toast(s) {
   $("#toast").textContent = s;
@@ -8024,6 +8043,7 @@ function sharedUnavailable() {
       document.documentElement.classList.add("chat-pane");
     }
     shell();
+    if (localMode) showStartNotice();
     firstSignIn();
     const requested =
       initialNote ||

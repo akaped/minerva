@@ -102,10 +102,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let chrome = chrome::install(&window, proxy.clone())?;
 
-    let first = start::host(&data, &gateway, &runtime);
+    let first = start::page(&data, &gateway, &runtime);
     let mut context = WebContext::new(Some(data.join("webview")));
     let builder = WebViewBuilder::new_with_web_context(&mut context)
-        .with_url(origin::page_url(&first, "/"))
+        .with_url(first)
         .with_on_page_load_handler({
             let data = data.clone();
             move |event, url| {

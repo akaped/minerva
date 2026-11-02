@@ -12,6 +12,8 @@ turns that section into the next version.
 
 ### Added
 
+- **Desktop:** when the server you had open last cannot be shown at startup (it does not answer, cannot be reached, signed you out, or another server answers at its address), the app still opens this computer, and now says why, with **Try again** and **Servers**.
+
 - **MCP write access:** a credential can now be created with **Read and write** access (read only stays the default). Its AI tool can then create notes from Markdown, add blocks to a note, and add or update database records, always within your edit permissions. Nothing is deleted: notes keep their previous version in history, and open editors show the change at once.
 - **Personal API tokens** (MCP connections → Personal API tokens) for scripts: named, expiring after up to a year, revocable, acting as you but unable to change your password, second factor or tokens. The API gains `markdown` when creating a note and `POST /notes/{id}/append`.
 - **`minerva-cli`**, a small command line over the API: `search`, `folders`, `new` (Markdown from an argument or standard input), `append`, and `backup` (every note as Markdown or a zip with its files, every database as JSON).

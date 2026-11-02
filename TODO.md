@@ -39,4 +39,3 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Search**: index database records and attachment text (PDFs); search filters (folder, tag, date) in the Ctrl+K dialog.
 - [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
 - [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
-- [ ] **Desktop**: when the server opened last does not answer at startup, say so on the local page instead of silently opening this computer.
