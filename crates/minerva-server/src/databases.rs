@@ -20,8 +20,11 @@ pub(super) fn validate_columns(cols: &[Column]) -> Result<(), ApiError> {
         if unique.len() != c.options.len() {
             return Err(bad("Duplicate select option"));
         }
-        if c.kind == ColumnKind::Select && c.options.is_empty() {
+        if matches!(c.kind, ColumnKind::Select | ColumnKind::MultiSelect) && c.options.is_empty() {
             return Err(bad("Select properties require options"));
+        }
+        if (c.kind == ColumnKind::Relation) != c.target.is_some() {
+            return Err(bad("A relation needs the database it links to"));
         }
     }
     Ok(())
@@ -72,7 +75,62 @@ pub(super) fn cell_valid(c: &Column, value: &Value) -> bool {
                 && !s.chars().any(char::is_whitespace)
                 && url::Url::parse(s).is_ok_and(|u| u.host_str().is_some())
         }),
+        ColumnKind::MultiSelect => value.as_array().is_some_and(|items| {
+            let mut seen = HashSet::new();
+            items.iter().all(|v| {
+                v.as_str()
+                    .is_some_and(|s| c.options.iter().any(|o| o == s) && seen.insert(s))
+            })
+        }),
+        ColumnKind::Person => value.as_str().is_some_and(id_like),
+        ColumnKind::Relation => value.as_array().is_some_and(|items| {
+            let mut seen = HashSet::new();
+            items.len() <= 100
+                && items
+                    .iter()
+                    .all(|v| v.as_str().is_some_and(|s| id_like(s) && seen.insert(s)))
+        }),
+        // Kept by the server from the record itself.
+        ColumnKind::Created | ColumnKind::Edited => false,
     }
+}
+fn id_like(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 80 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+/// Relations must link to a database in the same workspace that the person can read.
+fn validate_targets(d: &Data, u: &User, folder: &str, cols: &[Column]) -> Result<(), ApiError> {
+    let workspace = |f: &str| {
+        d.folders
+            .iter()
+            .find(|x| x.id == f)
+            .map(|x| &x.workspace_id)
+    };
+    for c in cols.iter().filter(|c| c.kind == ColumnKind::Relation) {
+        let target = c.target.as_deref().unwrap_or("");
+        let db = d
+            .databases
+            .iter()
+            .find(|db| db.id == target)
+            .ok_or_else(|| bad("The related database does not exist"))?;
+        if workspace(&db.folder_id) != workspace(folder)
+            || access(d, u, &db.folder_id, false).is_err()
+        {
+            return Err(bad(
+                "A relation links to a database of this workspace that you can open",
+            ));
+        }
+    }
+    Ok(())
+}
+/// A record's name: its first column's text.
+pub(super) fn record_title(db: &Database, r: &Record) -> String {
+    db.columns
+        .first()
+        .and_then(|c| r.cells.get(&c.id))
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("Untitled")
+        .to_string()
 }
 fn validate_cells(cols: &[Column], cells: &BTreeMap<String, Value>) -> Result<(), ApiError> {
     for (key, value) in cells {
@@ -86,23 +144,83 @@ fn validate_cells(cols: &[Column], cells: &BTreeMap<String, Value>) -> Result<()
     }
     Ok(())
 }
-/// A Markdown table of a database's current records, for exports.
-pub(super) fn markdown_table(db: &Database) -> String {
-    let cell = |c: &Column, v: Option<&Value>| -> String {
-        let text = match (&c.kind, v) {
-            (_, None | Some(Value::Null)) => String::new(),
-            (ColumnKind::Checkbox, Some(Value::Bool(b))) => (if *b { "☑" } else { "☐" }).into(),
-            (_, Some(Value::String(s))) => s.clone(),
-            (_, Some(other)) => other.to_string(),
-        };
-        text.replace('|', "\\|").replace(['\n', '\r'], " ")
+/// A Markdown table of a database's current records, for exports read by `u`:
+/// people by name, and linked records by name when `u` can open their database.
+pub(super) fn markdown_table(d: &Data, u: &User, db: &Database) -> String {
+    let date = |at: u64| {
+        let days = (at / 86400) as i64;
+        // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe + era * 400 + i64::from(month <= 2);
+        format!("{year:04}-{month:02}-{day:02}")
     };
+    let row_cell = |c: &Column, r: &Record| -> String {
+        match c.kind {
+            ColumnKind::Created => date(if r.created_at > 0 {
+                r.created_at
+            } else {
+                r.updated_at
+            }),
+            ColumnKind::Edited => date(r.updated_at),
+            ColumnKind::Person => r
+                .cells
+                .get(&c.id)
+                .and_then(Value::as_str)
+                .and_then(|id| d.users.iter().find(|a| a.user.id == id))
+                .map(|a| a.user.name.clone())
+                .unwrap_or_default(),
+            ColumnKind::Relation => {
+                let target = d
+                    .databases
+                    .iter()
+                    .find(|t| Some(&t.id) == c.target.as_ref())
+                    .filter(|t| access(d, u, &t.folder_id, false).is_ok());
+                r.cells
+                    .get(&c.id)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|id| {
+                        let t = target?;
+                        t.rows
+                            .iter()
+                            .find(|x| Some(x.id.as_str()) == id.as_str())
+                            .map(|x| record_title(t, x))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+            ColumnKind::MultiSelect => r
+                .cells
+                .get(&c.id)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+            _ => match r.cells.get(&c.id) {
+                None | Some(Value::Null) => String::new(),
+                Some(Value::Bool(b)) => (if *b { "☑" } else { "☐" }).into(),
+                Some(Value::String(s)) => s.clone(),
+                Some(other) => other.to_string(),
+            },
+        }
+    };
+    let cell = |text: String| text.replace('|', "\\|").replace(['\n', '\r'], " ");
     let mut out = format!("**{}**\n\n", db.name.replace(['*', '\n'], ""));
     out.push_str(&format!(
         "| {} |\n",
         db.columns
             .iter()
-            .map(|c| cell(c, Some(&json!(c.name))))
+            .map(|c| cell(c.name.clone()))
             .collect::<Vec<_>>()
             .join(" | ")
     ));
@@ -112,7 +230,7 @@ pub(super) fn markdown_table(db: &Database) -> String {
             "| {} |\n",
             db.columns
                 .iter()
-                .map(|c| cell(c, row.cells.get(&c.id)))
+                .map(|c| cell(row_cell(c, row)))
                 .collect::<Vec<_>>()
                 .join(" | ")
         ));
@@ -138,16 +256,19 @@ pub(super) fn route(
                     name: "Name".into(),
                     kind: ColumnKind::Text,
                     options: vec![],
+                    target: None,
                 },
                 Column {
                     id: id(),
                     name: "Status".into(),
                     kind: ColumnKind::Select,
                     options: vec!["To do".into(), "In progress".into(), "Done".into()],
+                    target: None,
                 },
             ]
         };
         validate_columns(&cols)?;
+        validate_targets(d, u, &folder_id, &cols)?;
         let db = Database {
             id: id(),
             folder_id,
@@ -167,6 +288,18 @@ pub(super) fn route(
         .find(|db| db.id == *did)
         .ok_or_else(missing)?;
     access(d, u, &db.folder_id, method != "GET")?;
+    // The people a person property can name: members who can open the database.
+    if method == "GET" && parts.len() == 3 && parts[2] == "people" {
+        let folder = db.folder_id.clone();
+        let mut people: Vec<Value> = d
+            .users
+            .iter()
+            .filter(|a| !a.user.disabled && !a.user.admin && role(d, &a.user, &folder).is_some())
+            .map(|a| json!({"id": a.user.id, "name": a.user.name}))
+            .collect();
+        people.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase());
+        return Ok(json!(people));
+    }
     if method == "DELETE" && parts.len() == 2 {
         // Notes that embed the database show that it was deleted.
         d.databases.retain(|db| db.id != *did);
@@ -198,12 +331,39 @@ pub(super) fn route(
                 db.columns.clone()
             };
             validate_columns(&columns)?;
+            // Relations that are new or changed must link to a database the person
+            // can open; one they cannot open does not block other edits.
+            let folder = db.folder_id.clone();
+            let changed: Vec<Column> = columns
+                .iter()
+                .filter(|c| {
+                    !db.columns
+                        .iter()
+                        .any(|o| o.id == c.id && o.target == c.target)
+                })
+                .cloned()
+                .collect();
+            validate_targets(d, u, &folder, &changed)?;
+            let db = d.databases.iter_mut().find(|db| db.id == *did).unwrap();
             if v.get("name").is_some() {
                 db.name = field(&v, "name")?;
             }
             // Removing a property, a select option, or changing a property's type
             // clears the values that no longer fit, rather than refusing the change.
             for row in &mut db.rows {
+                // A multi-select keeps the options that remain.
+                for c in columns.iter().filter(|c| c.kind == ColumnKind::MultiSelect) {
+                    if let Some(Value::Array(items)) = row.cells.get_mut(&c.id) {
+                        let before = items.len();
+                        items.retain(|v| {
+                            v.as_str().is_some_and(|s| c.options.iter().any(|o| o == s))
+                        });
+                        if items.len() != before {
+                            row.revision += 1;
+                            row.updated_at = now();
+                        }
+                    }
+                }
                 let before = row.cells.len();
                 row.cells.retain(|key, value| {
                     columns
@@ -233,6 +393,7 @@ pub(super) fn route(
                 cells,
                 revision: 1,
                 updated_at: now(),
+                created_at: now(),
                 archived: false,
                 conflict_of: None,
             };

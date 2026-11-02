@@ -112,6 +112,16 @@ pub enum ColumnKind {
     Date,
     Select,
     Url,
+    /// Several of the column's options.
+    MultiSelect,
+    /// A member's user ID.
+    Person,
+    /// When the record was created, and last changed: kept by the server, never
+    /// written to cells.
+    Created,
+    Edited,
+    /// Records of the database named by the column's `target`, by ID.
+    Relation,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Column {
@@ -120,6 +130,9 @@ pub struct Column {
     pub kind: ColumnKind,
     #[serde(default)]
     pub options: Vec<String>,
+    /// For a relation, the database whose records it links to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Record {
@@ -127,6 +140,9 @@ pub struct Record {
     pub cells: std::collections::BTreeMap<String, serde_json::Value>,
     pub revision: u64,
     pub updated_at: u64,
+    /// When the record was created; 0 for records from before this was kept.
+    #[serde(default)]
+    pub created_at: u64,
     #[serde(default)]
     pub archived: bool,
     /// Set on an archived copy that keeps the losing values of a concurrent offline

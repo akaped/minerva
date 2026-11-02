@@ -10,6 +10,11 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Added
+
+- **Calendar view** for databases: records on a month calendar by any date property, or by when they were created or last edited. Open a record by clicking it, or add one on a day with **+**.
+- **New database properties:** **Multi-select** (several options), **Person** (someone who can open the database), **Relation** (records of another database in the workspace, chosen from a searchable list and shown by name), and **Created time** and **Last edited time**, kept automatically. Filtering and sorting use what the cells show, such as people's and related records' names, and notes and exports show them by name too.
+
 ## [0.5.1] - 2026-11-02
 
 ### Changed

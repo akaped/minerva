@@ -6478,6 +6478,7 @@ async function openDatabase(id) {
   note = null;
   view = "databases";
   activeDatabase = await api("databases/" + id);
+  await loadDatabaseContext(activeDatabase);
   dbFilter = "";
   dbSort = null;
   showArchived = false;
@@ -6506,6 +6507,7 @@ async function openDatabase(id) {
         !dbSaves.size &&
         JSON.stringify(activeDatabase) !== JSON.stringify(fresh)
       ) {
+        await loadDatabaseContext(fresh);
         activeDatabase = fresh;
         renderDatabase();
       }
@@ -6515,18 +6517,306 @@ async function openDatabase(id) {
     }
   }, 2500);
 }
-function cellInput(col, value, key, disabled = false) {
+// Properties a database can have, in the property dialogs.
+const DB_KINDS = [
+  ["text", "Text"],
+  ["number", "Number"],
+  ["checkbox", "Checkbox"],
+  ["date", "Date"],
+  ["select", "Select"],
+  ["multi_select", "Multi-select"],
+  ["url", "URL"],
+  ["person", "Person"],
+  ["relation", "Relation"],
+  ["created", "Created time"],
+  ["edited", "Last edited time"],
+];
+// Kept by the server from the record itself: shown, never written.
+const COMPUTED = new Set(["created", "edited"]);
+// The people and related databases a database's cells refer to, by its ID.
+const dbContext = new Map();
+async function loadDatabaseContext(db) {
+  const targets = [
+    ...new Set(
+      db.columns.filter((c) => c.kind === "relation").map((c) => c.target),
+    ),
+  ];
+  const [people, related] = await Promise.all([
+    db.columns.some((c) => c.kind === "person")
+      ? api(`databases/${db.id}/people`).catch(() => [])
+      : [],
+    Promise.all(targets.map((id) => api("databases/" + id).catch(() => null))),
+  ]);
+  dbContext.set(db.id, {
+    people,
+    targets: new Map(targets.map((id, i) => [id, related[i]])),
+  });
+}
+const contextOf = (db) =>
+  dbContext.get(db?.id) || { people: [], targets: new Map() };
+/** A database that is on screen, by ID: the open one or one shown in a note. */
+function shownDatabase(id) {
+  return activeDatabase?.id === id ? activeDatabase : embedCache.get(id)?.db;
+}
+function dayLabel(at) {
+  return at
+    ? new Date(at * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+}
+/** A cell as readable text: names of people and related records, dates. */
+function cellText(col, row, db) {
+  const v = row.cells[col.id];
+  const ctx = contextOf(db);
+  switch (col.kind) {
+    case "created":
+      return dayLabel(row.created_at || row.updated_at);
+    case "edited":
+      return dayLabel(row.updated_at);
+    case "checkbox":
+      return v ? "☑" : "☐";
+    case "multi_select":
+      return (v || []).join(", ");
+    case "person":
+      return v ? ctx.people.find((p) => p.id === v)?.name || "Someone" : "";
+    case "relation":
+      return relatedTitles(col, v, db).join(", ");
+    default:
+      return v == null ? "" : String(v);
+  }
+}
+function relatedTitles(col, ids, db) {
+  const target = contextOf(db).targets.get(col.target);
+  return (ids || [])
+    .map((id) => {
+      const r = target?.rows.find((x) => x.id === id);
+      return r ? embedRecordTitle(target, r) : null;
+    })
+    .filter(Boolean);
+}
+function pickerChips(col, value, db) {
+  const labels =
+    col.kind === "relation" ? relatedTitles(col, value, db) : value || [];
+  return labels.length
+    ? labels.map((l) => `<span class="chip">${esc(l)}</span>`).join("")
+    : '<span class="chip-empty">—</span>';
+}
+function cellInput(col, value, key, disabled = false, { db, row } = {}) {
+  if (COMPUTED.has(col.kind))
+    return `<span class="cell-computed">${esc(row ? cellText(col, row, db) : "") || "—"}</span>`;
   const attr = `data-cell="${esc(key)}" aria-label="${esc(col.name)}" ${disabled ? "disabled" : ""}`;
   if (col.kind === "checkbox")
     return `<input type="checkbox" ${attr} ${value === true ? "checked" : ""}>`;
   if (col.kind === "select")
     return `<select ${attr}><option value="">—</option>${col.options.map((o) => `<option ${value === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  if (col.kind === "person") {
+    const people = contextOf(db).people;
+    const unknown =
+      value && !people.some((p) => p.id === value)
+        ? `<option value="${esc(value)}" selected>Someone</option>`
+        : "";
+    return `<select ${attr}><option value="">—</option>${unknown}${people.map((p) => `<option value="${esc(p.id)}" ${value === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`;
+  }
+  if (col.kind === "multi_select" || col.kind === "relation")
+    return `<button type="button" class="cell-picker" ${attr} data-db="${esc(db?.id || "")}" data-value="${esc(JSON.stringify(value || []))}">${pickerChips(col, value, db)}</button>`;
   return `<input ${attr} type="${{ number: "number", date: "date", url: "url" }[col.kind] || "text"}" ${col.kind === "number" ? 'step="any"' : ""} value="${esc(value ?? "")}" placeholder="—">`;
 }
 function parseCell(col, el) {
   if (col.kind === "checkbox") return el.checked;
+  if (col.kind === "multi_select" || col.kind === "relation") {
+    const list = JSON.parse(el.dataset.value || "[]");
+    return list.length ? list : null;
+  }
   if (el.value === "") return null;
   return col.kind === "number" ? Number(el.value) : el.value;
+}
+/** When a cell's editor saves: at once for choices, on leaving for typing. */
+function cellEvent(col) {
+  return ["checkbox", "select", "person", "multi_select", "relation"].includes(
+    col.kind,
+  )
+    ? "change"
+    : "blur";
+}
+/**
+ * Choosing several options, or records of the related database (with search):
+ * a small checklist below the cell. Each change updates the cell and saves it
+ * like any other cell (`change`).
+ */
+function openCellPicker(el) {
+  $(".cell-picker-pop")?.remove();
+  const db = shownDatabase(el.dataset.db);
+  const col = db?.columns.find(
+    (c) => c.id === el.dataset.cell.split(":").pop(),
+  );
+  if (!col) return;
+  const target = contextOf(db).targets.get(col.target);
+  if (col.kind === "relation" && !target)
+    return toast("The related database cannot be opened.");
+  const choices =
+    col.kind === "relation"
+      ? target.rows
+          .filter((r) => !r.archived)
+          .map((r) => ({ value: r.id, label: embedRecordTitle(target, r) }))
+      : col.options.map((o) => ({ value: o, label: o }));
+  const pop = document.createElement("div");
+  pop.className = "cell-picker-pop";
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", col.name);
+  pop.innerHTML = `${choices.length > 8 ? '<input type="search" class="cell-picker-search" placeholder="Search…" aria-label="Search">' : ""}<div class="cell-picker-list"></div>`;
+  (el.closest("dialog") || document.body).append(pop);
+  const r = el.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + "px";
+  pop.style.top = Math.min(r.bottom + 4, innerHeight - 320) + "px";
+  const chosen = () => JSON.parse(el.dataset.value || "[]");
+  const draw = (query = "") => {
+    const q = query.toLowerCase();
+    $(".cell-picker-list", pop).innerHTML =
+      choices
+        .filter((c) => c.label.toLowerCase().includes(q))
+        .slice(0, 200)
+        .map(
+          (c) =>
+            `<label><input type="checkbox" value="${esc(c.value)}" ${chosen().includes(c.value) ? "checked" : ""}>${esc(c.label)}</label>`,
+        )
+        .join("") || '<p class="hint">Nothing to choose.</p>';
+    $$("input[type=checkbox]", pop).forEach((box) =>
+      box.addEventListener("change", () => {
+        const now = chosen().filter((v) => v !== box.value);
+        if (box.checked) now.push(box.value);
+        // Options keep their order; related records the order they were picked.
+        const value =
+          col.kind === "multi_select"
+            ? col.options.filter((o) => now.includes(o))
+            : now;
+        el.dataset.value = JSON.stringify(value);
+        el.innerHTML = pickerChips(col, value, db);
+        el.dispatchEvent(new Event("change"));
+      }),
+    );
+  };
+  draw();
+  $(".cell-picker-search", pop)?.addEventListener("input", (e) =>
+    draw(e.target.value),
+  );
+  ($(".cell-picker-search", pop) || $("input", pop))?.focus();
+  const close = (e) => {
+    if (e.type === "keydown" && e.key !== "Escape") return;
+    if (e.type === "mousedown" && (pop.contains(e.target) || e.target === el))
+      return;
+    if (e.type === "keydown") e.stopPropagation();
+    pop.remove();
+    document.removeEventListener("mousedown", close, true);
+    document.removeEventListener("keydown", close, true);
+    el.focus();
+  };
+  document.addEventListener("mousedown", close, true);
+  document.addEventListener("keydown", close, true);
+}
+document.addEventListener("click", (e) => {
+  const picker = e.target.closest?.(".cell-picker");
+  if (picker && !picker.disabled) openCellPicker(picker);
+});
+/** A property's settings: options for choices, the database for a relation. */
+function propertyFields(db, col = {}) {
+  const ws = data.folders.find((f) => f.id === db.folder_id)?.workspace_id;
+  const related = (data.databases || []).filter(
+    (d) => data.folders.find((f) => f.id === d.folder_id)?.workspace_id === ws,
+  );
+  return `<label>Name<input name="name" required maxlength="100" value="${esc(col.name || "")}" placeholder="e.g. Due date"></label><label>Type<select name="kind" id="property-kind">${DB_KINDS.map(([k, l]) => `<option value="${k}" ${k === (col.kind || "text") ? "selected" : ""}>${l}</option>`).join("")}</select></label><label data-for="select multi_select">Options (one per line)<textarea name="options" placeholder="Low&#10;Medium&#10;High">${esc((col.options || []).join("\n"))}</textarea></label><label data-for="relation">Links to records of<select name="target">${related.map((d) => `<option value="${d.id}" ${d.id === col.target ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>`;
+}
+function bindPropertyFields() {
+  const kind = $("#property-kind", modal);
+  const show = () =>
+    $$("[data-for]", modal).forEach(
+      (el) => (el.hidden = !el.dataset.for.split(" ").includes(kind.value)),
+    );
+  kind.addEventListener("change", show);
+  show();
+}
+/** The column a property dialog describes. */
+function propertyColumn(v, base = {}) {
+  const options = ["select", "multi_select"].includes(v.kind)
+    ? v.options
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : [];
+  if (["select", "multi_select"].includes(v.kind) && !options.length)
+    throw new Error("Add at least one option.");
+  if (v.kind === "relation" && !v.target)
+    throw new Error("Choose the database this property links to.");
+  const col = {
+    id: base.id || crypto.randomUUID(),
+    name: v.name.trim(),
+    kind: v.kind,
+    options,
+  };
+  if (v.kind === "relation") col.target = v.target;
+  return col;
+}
+// Calendar view: the month shown, and the date property it places records by.
+let dbMonth = null,
+  dbCalendarColumn = null;
+function isoDay(at) {
+  const d = new Date(at * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function calendarHTML(db, rows, edit) {
+  const cols = db.columns.filter((c) =>
+    ["date", "created", "edited"].includes(c.kind),
+  );
+  const col = cols.find((c) => c.id === dbCalendarColumn) || cols[0];
+  const today = isoDay(Date.now() / 1000);
+  dbMonth ||= today.slice(0, 7);
+  const [y, m] = dbMonth.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const offset = (first.getDay() + 6) % 7;
+  const days = new Date(y, m, 0).getDate();
+  const dateOf = (r) =>
+    col.kind === "date"
+      ? r.cells[col.id]
+      : isoDay(
+          col.kind === "created" ? r.created_at || r.updated_at : r.updated_at,
+        );
+  const byDay = new Map();
+  let undated = 0;
+  for (const r of rows) {
+    const day = dateOf(r);
+    if (!day) undated++;
+    else byDay.set(day, [...(byDay.get(day) || []), r]);
+  }
+  const weekdays = Array.from({ length: 7 }, (_, i) =>
+    new Date(2024, 0, 1 + i).toLocaleDateString(undefined, {
+      weekday: "short",
+    }),
+  );
+  const cells = [];
+  for (let i = 0; i < offset; i++)
+    cells.push('<div class="cal-day blank"></div>');
+  for (let d = 1; d <= days; d++) {
+    const iso = `${dbMonth}-${String(d).padStart(2, "0")}`;
+    const records = byDay.get(iso) || [];
+    cells.push(
+      `<div class="cal-day ${iso === today ? "today" : ""}" data-day="${iso}"><span class="cal-num">${d}</span>${records
+        .slice(0, 6)
+        .map(
+          (r) =>
+            `<button class="cal-record" data-edit-record="${r.id}" title="${esc(embedRecordTitle(db, r))}">${esc(embedRecordTitle(db, r))}</button>`,
+        )
+        .join(
+          "",
+        )}${records.length > 6 ? `<small>+${records.length - 6} more</small>` : ""}${edit && col.kind === "date" ? `<button class="cal-add" data-cal-add="${iso}" aria-label="Add a record on ${iso}">+</button>` : ""}</div>`,
+    );
+  }
+  return `<div class="panel calendar"><div class="cal-head"><div class="toolbar-group"><button class="btn" data-cal-month="-1" aria-label="Previous month">‹</button><button class="btn" data-cal-month="0">Today</button><button class="btn" data-cal-month="1" aria-label="Next month">›</button></div><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2>${
+    cols.length > 1
+      ? `<label class="cal-by">By<select id="cal-column">${cols.map((c) => `<option value="${c.id}" ${c.id === col.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>`
+      : `<span class="cal-by">By ${esc(col.name)}</span>`
+  }</div><div class="cal-grid">${weekdays.map((w) => `<div class="cal-weekday">${esc(w)}</div>`).join("")}${cells.join("")}</div>${undated ? `<p class="hint">${undated} record${undated === 1 ? "" : "s"} without ${esc(col.name)}.</p>` : ""}</div>`;
 }
 function renderDatabase() {
   const db = activeDatabase;
@@ -6538,16 +6828,25 @@ function renderDatabase() {
     .filter(
       (r) =>
         !dbFilter ||
-        Object.values(r.cells).some((v) =>
-          String(v ?? "")
-            .toLowerCase()
-            .includes(dbFilter.toLowerCase()),
+        db.columns.some((c) =>
+          cellText(c, r, db).toLowerCase().includes(dbFilter.toLowerCase()),
         ),
     );
-  if (dbSort)
+  // Sorts by what a cell holds: times for created/edited, names for people and
+  // related records.
+  const sortColumn = db.columns.find((c) => c.id === dbSort);
+  const sortValue = (r) =>
+    sortColumn.kind === "created"
+      ? r.created_at || r.updated_at
+      : sortColumn.kind === "edited"
+        ? r.updated_at
+        : ["person", "relation", "multi_select"].includes(sortColumn.kind)
+          ? cellText(sortColumn, r, db)
+          : (r.cells[dbSort] ?? "");
+  if (sortColumn)
     rows.sort((a, b) => {
-      const av = a.cells[dbSort] ?? "",
-        bv = b.cells[dbSort] ?? "";
+      const av = sortValue(a),
+        bv = sortValue(b);
       return (
         (typeof av === "number" && typeof bv === "number"
           ? av - bv
@@ -6557,29 +6856,36 @@ function renderDatabase() {
       );
     });
   const group = db.columns.find((c) => c.kind === "select");
+  const dated = db.columns.some((c) =>
+    ["date", "created", "edited"].includes(c.kind),
+  );
+  if ((dbView === "calendar" && !dated) || (dbView === "board" && !group))
+    dbView = "table";
   $("#content").innerHTML =
-    `<section class="page database-page"><div class="eyebrow">STRUCTURED KNOWLEDGE</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${esc(data.folders.find((f) => f.id === db.folder_id)?.name)} · ${rows.length} records · ${edit ? "Can edit" : "Read only"}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}Property</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}New record</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}Table</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}Board</button></div><input id="db-filter" aria-label="Filter records" placeholder="Filter records…" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>Archived</label><button class="btn" id="db-reload">Reload records</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>Rename</button><button class="btn" id="db-embed" title="Copy the code that shows this database inside a note">${icon("note")}Use in a note</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}Delete</button></div>${
-      dbView === "table"
-        ? `<div class="panel table-wrap"><table class="records-table"><thead><tr>${db.columns.map((c) => `<th><span class="th-inner"><button data-sort="${c.id}">${esc(c.name)} <small>${esc(c.kind)}</small>${dbSort === c.id ? (dbDescending ? " ↓" : " ↑") : ""}</button><button class="th-menu" data-col-menu="${c.id}" aria-label="Options for ${esc(c.name)}" aria-haspopup="menu">${icon("more")}</button></span></th>`).join("")}<th>Actions</th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${r.id}">${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit)}</td>`).join("")}<td class="record-actions"><button class="btn" data-archive="${r.id}" ${!edit ? "disabled" : ""}>${showArchived ? "Restore" : "Archive"}</button><button class="btn danger" data-delete-record="${r.id}" ${!edit ? "disabled" : ""} aria-label="Delete record">${icon("trash")}</button></td></tr>`).join("")}</tbody></table>${!rows.length ? '<div class="empty">No matching records. Add a record or change your filter.</div>' : ""}</div>`
-        : `<div class="board">${["", ...group.options]
-            .map(
-              (option) =>
-                `<section class="board-column"><h3>${esc(option || "No status")}<span>${rows.filter((r) => (r.cells[group.id] || "") === option).length}</span></h3>${rows
-                  .filter((r) => (r.cells[group.id] || "") === option)
-                  .map(
-                    (r) =>
-                      `<button class="record-card" data-edit-record="${r.id}"><strong>${esc(r.cells[db.columns[0].id] || "Untitled")}</strong>${db.columns
-                        .slice(1)
-                        .filter((c) => c.id !== group.id)
-                        .map(
-                          (c) =>
-                            `<small>${esc(c.name)}: ${esc(r.cells[c.id] ?? "—")}</small>`,
-                        )
-                        .join("")}</button>`,
-                  )
-                  .join("")}</section>`,
-            )
-            .join("")}</div>`
+    `<section class="page database-page"><div class="eyebrow">STRUCTURED KNOWLEDGE</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${esc(data.folders.find((f) => f.id === db.folder_id)?.name)} · ${rows.length} records · ${edit ? "Can edit" : "Read only"}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}Property</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}New record</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}Table</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}Board</button><button class="btn ${dbView === "calendar" ? "selected" : ""}" id="calendar-view" ${!dated ? "disabled" : ""} title="${dated ? "Records by date" : "Add a date property to see records on a calendar"}">${icon("calendar")}Calendar</button></div><input id="db-filter" aria-label="Filter records" placeholder="Filter records…" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>Archived</label><button class="btn" id="db-reload">Reload records</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>Rename</button><button class="btn" id="db-embed" title="Copy the code that shows this database inside a note">${icon("note")}Use in a note</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}Delete</button></div>${
+      dbView === "calendar"
+        ? calendarHTML(db, rows, edit)
+        : dbView === "table"
+          ? `<div class="panel table-wrap"><table class="records-table"><thead><tr>${db.columns.map((c) => `<th><span class="th-inner"><button data-sort="${c.id}">${esc(c.name)} <small>${esc((DB_KINDS.find((k) => k[0] === c.kind)?.[1] || c.kind).toLowerCase())}</small>${dbSort === c.id ? (dbDescending ? " ↓" : " ↑") : ""}</button><button class="th-menu" data-col-menu="${c.id}" aria-label="Options for ${esc(c.name)}" aria-haspopup="menu">${icon("more")}</button></span></th>`).join("")}<th>Actions</th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${r.id}">${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}<td class="record-actions"><button class="btn" data-archive="${r.id}" ${!edit ? "disabled" : ""}>${showArchived ? "Restore" : "Archive"}</button><button class="btn danger" data-delete-record="${r.id}" ${!edit ? "disabled" : ""} aria-label="Delete record">${icon("trash")}</button></td></tr>`).join("")}</tbody></table>${!rows.length ? '<div class="empty">No matching records. Add a record or change your filter.</div>' : ""}</div>`
+          : `<div class="board">${["", ...group.options]
+              .map(
+                (option) =>
+                  `<section class="board-column"><h3>${esc(option || "No status")}<span>${rows.filter((r) => (r.cells[group.id] || "") === option).length}</span></h3>${rows
+                    .filter((r) => (r.cells[group.id] || "") === option)
+                    .map(
+                      (r) =>
+                        `<button class="record-card" data-edit-record="${r.id}"><strong>${esc(r.cells[db.columns[0].id] || "Untitled")}</strong>${db.columns
+                          .slice(1)
+                          .filter((c) => c.id !== group.id)
+                          .map(
+                            (c) =>
+                              `<small>${esc(c.name)}: ${esc(cellText(c, r, db) || "—")}</small>`,
+                          )
+                          .join("")}</button>`,
+                    )
+                    .join("")}</section>`,
+              )
+              .join("")}</div>`
     }<p class="editor-help">Changes save when you leave a cell. Other records refresh automatically. Concurrent edits to the same record are checked before saving.</p></section>`;
   action($("#db-filter"), "input", (e) => {
     const pos = e.target.selectionStart;
@@ -6610,6 +6916,39 @@ function renderDatabase() {
     dbView = "board";
     renderDatabase();
   });
+  action($("#calendar-view"), "click", () => {
+    dbView = "calendar";
+    renderDatabase();
+  });
+  $$("[data-cal-month]").forEach((el) =>
+    action(el, "click", () => {
+      const step = Number(el.dataset.calMonth);
+      const [y, m] = dbMonth.split("-").map(Number);
+      const d = step ? new Date(y, m - 1 + step, 1) : new Date();
+      dbMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      renderDatabase();
+    }),
+  );
+  action($("#cal-column"), "change", (e) => {
+    dbCalendarColumn = e.target.value;
+    renderDatabase();
+  });
+  $$("[data-cal-add]").forEach((el) =>
+    action(el, "click", async () => {
+      const col =
+        db.columns.find(
+          (c) => c.id === dbCalendarColumn && c.kind === "date",
+        ) || db.columns.find((c) => c.kind === "date");
+      const cells = { [col.id]: el.dataset.calAdd };
+      for (const c of db.columns)
+        if (c.kind === "checkbox") cells[c.id] = false;
+      if (db.columns[0].kind === "text") cells[db.columns[0].id] = "Untitled";
+      const row = await api(`databases/${db.id}/rows`, "POST", { cells });
+      db.rows.push(row);
+      renderDatabase();
+      editRecordDialog(db, row, true, renderDatabase);
+    }),
+  );
   action($("#db-reload"), "click", () =>
     formDialog(
       "Reload records?",
@@ -6626,13 +6965,14 @@ function renderDatabase() {
       "Reload",
     ),
   );
-  $$("[data-cell]").forEach((el) => {
+  // Only the page's own cells: a record dialog may still be open over it.
+  $$("[data-cell]", $("#content")).forEach((el) => {
     const [rid, cid] = el.dataset.cell.split(":");
     const col = db.columns.find((c) => c.id === cid);
     el.addEventListener("input", () =>
       dbDrafts.set(el.dataset.cell, parseCell(col, el)),
     );
-    const event = ["checkbox", "select"].includes(col.kind) ? "change" : "blur";
+    const event = cellEvent(col);
     el.addEventListener(event, () => {
       const row = db.rows.find((r) => r.id === rid),
         value = parseCell(col, el);
@@ -6709,33 +7049,23 @@ function renderDatabase() {
       "Save",
     ),
   );
-  action($("#add-property"), "click", () =>
+  action($("#add-property"), "click", () => {
     formDialog(
       "Add a property",
       "Choose the type of information this column will hold.",
-      `<label>Name<input name="name" required maxlength="100" placeholder="e.g. Due date"></label><label>Type<select name="kind"><option value="text">Text</option><option value="number">Number</option><option value="checkbox">Checkbox</option><option value="date">Date</option><option value="select">Select</option><option value="url">URL</option></select></label><label>Select options (one per line)<textarea name="options" placeholder="Low&#10;Medium&#10;High"></textarea></label>`,
+      propertyFields(db),
       async (v) => {
-        const col = {
-          id: crypto.randomUUID(),
-          name: v.name,
-          kind: v.kind,
-          options:
-            v.kind === "select"
-              ? v.options
-                  .split("\n")
-                  .map((x) => x.trim())
-                  .filter(Boolean)
-              : [],
-        };
         activeDatabase = await api("databases/" + db.id, "PATCH", {
           revision: db.revision,
-          columns: [...db.columns, col],
+          columns: [...db.columns, propertyColumn(v)],
         });
+        await loadDatabaseContext(activeDatabase);
         renderDatabase();
       },
       "Add property",
-    ),
-  );
+    );
+    bindPropertyFields();
+  });
   $$("[data-edit-record]").forEach((el) =>
     action(el, "click", () =>
       editRecordDialog(
@@ -6808,6 +7138,7 @@ function columnMenu(anchor, db, edit) {
       columns,
     });
     embedCache.delete(db.id);
+    await loadDatabaseContext(activeDatabase);
     renderDatabase();
     if (message) toast(message);
   };
@@ -6816,14 +7147,6 @@ function columnMenu(anchor, db, edit) {
     dbDescending = descending;
     renderDatabase();
   };
-  const kinds = [
-    ["text", "Text"],
-    ["number", "Number"],
-    ["checkbox", "Checkbox"],
-    ["date", "Date"],
-    ["select", "Select"],
-    ["url", "URL"],
-  ];
   rowMenu(anchor, [
     { icon: "arrow", label: "Sort ascending", run: () => sort(false) },
     { icon: "arrow", label: "Sort descending", run: () => sort(true) },
@@ -6833,32 +7156,22 @@ function columnMenu(anchor, db, edit) {
           {
             icon: "edit",
             label: "Edit property…",
-            run: () =>
+            run: () => {
               formDialog(
                 "Edit property",
                 "Changing the type or removing an option clears values that no longer fit.",
-                `<label>Name<input name="name" required maxlength="100" value="${esc(col.name)}"></label><label>Type<select name="kind">${kinds.map(([k, l]) => `<option value="${k}" ${k === col.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label><label>Select options (one per line)<textarea name="options">${esc(col.options.join("\n"))}</textarea></label>`,
-                (v) => {
-                  const options =
-                    v.kind === "select"
-                      ? v.options
-                          .split("\n")
-                          .map((x) => x.trim())
-                          .filter(Boolean)
-                      : [];
-                  if (v.kind === "select" && !options.length)
-                    throw new Error("Add at least one option.");
-                  return save(
+                propertyFields(db, col),
+                (v) =>
+                  save(
                     db.columns.map((c) =>
-                      c.id === col.id
-                        ? { ...c, name: v.name.trim(), kind: v.kind, options }
-                        : c,
+                      c.id === col.id ? propertyColumn(v, col) : c,
                     ),
                     "Property updated",
-                  );
-                },
+                  ),
                 "Save",
-              ),
+              );
+              bindPropertyFields();
+            },
           },
           {
             icon: "trash",
@@ -6913,6 +7226,8 @@ async function loadEmbed(id, fresh = false) {
   let entry;
   try {
     entry = { at: Date.now(), db: await api("databases/" + id) };
+    if (entry.db.columns.some((c) => ["person", "relation"].includes(c.kind)))
+      await loadDatabaseContext(entry.db);
   } catch (e) {
     entry = {
       at: Date.now(),
@@ -6969,7 +7284,7 @@ function drawEmbed(slot, entry) {
                     )
                     .map(
                       (c) =>
-                        `<small>${esc(c.name)}: ${esc(c.kind === "checkbox" ? (r.cells[c.id] ? "☑" : "☐") : r.cells[c.id])}</small>`,
+                        `<small>${esc(c.name)}: ${esc(cellText(c, r, db))}</small>`,
                     )
                     .join("")}</button>`,
               )
@@ -6979,7 +7294,7 @@ function drawEmbed(slot, entry) {
       : `<div class="db-embed-scroll"><table class="db-embed-table"><thead><tr>${db.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>${rows
           .map(
             (r) =>
-              `<tr>${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit)}</td>`).join("")}</tr>`,
+              `<tr>${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}</tr>`,
           )
           .join(
             "",
@@ -7024,7 +7339,7 @@ function bindEmbed(slot, db, edit) {
   $$("[data-cell]", slot).forEach((el) => {
     const [rid, cid] = el.dataset.cell.split(":");
     const col = db.columns.find((c) => c.id === cid);
-    const event = ["checkbox", "select"].includes(col.kind) ? "change" : "blur";
+    const event = cellEvent(col);
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && el.tagName === "INPUT") el.blur();
     });
@@ -7198,14 +7513,16 @@ function editRecordDialog(db, row, edit, onSaved) {
     db.columns
       .map(
         (c) =>
-          `<label>${esc(c.name)}${cellInput(c, row.cells[c.id], c.id, !edit)}</label>`,
+          `<label>${esc(c.name)}${cellInput(c, row.cells[c.id], c.id, !edit, { db, row })}</label>`,
       )
       .join(""),
     async () => {
       const cells = {};
-      db.columns.forEach((c) => {
-        cells[c.id] = parseCell(c, $(`[data-cell="${c.id}"]`, modal));
-      });
+      db.columns
+        .filter((c) => !COMPUTED.has(c.kind))
+        .forEach((c) => {
+          cells[c.id] = parseCell(c, $(`[data-cell="${c.id}"]`, modal));
+        });
       Object.assign(
         row,
         await api(`databases/${db.id}/rows/${row.id}`, "PATCH", {

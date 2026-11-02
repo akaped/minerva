@@ -417,10 +417,7 @@ pub(super) fn blocks(markdown: &str) -> Vec<String> {
         if opens.is_some() || trimmed.trim_end() == "$$" {
             flush(&mut group, &mut out);
             let marker: String = match opens {
-                Some(m) => trimmed
-                    .chars()
-                    .take_while(|c| m.starts_with(*c))
-                    .collect(),
+                Some(m) => trimmed.chars().take_while(|c| m.starts_with(*c)).collect(),
                 None => "$$".into(),
             };
             fence = Some((marker, width, vec![trimmed.to_string()]));
@@ -957,6 +954,7 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
             name,
             kind,
             options,
+            target: None,
         });
     }
     let records = rows
@@ -981,6 +979,7 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
                 cells,
                 revision: 1,
                 updated_at: now(),
+                created_at: now(),
                 archived: false,
                 conflict_of: None,
             }

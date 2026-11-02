@@ -4,7 +4,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Database calendar view**, then multi-select, person, created/edited columns, relations, rollups and formulas, and rows that open as pages. Reminders and journal dates can show on the same calendar.
+- [ ] **Databases**: rollups (counts, sums and lists through a relation) and formulas; records that open as pages; the calendar view in notes' embedded databases; reminders and journal dates on the same calendar; boards grouped by person or multi-select.
 - [ ] **Comments**: on a block or a selection, with replies, resolve, `@mentions` and email (reuse `mail.rs`), delivered live through the change feed (`live.rs`).
 - [ ] **Toggle blocks and folding** of nested blocks; then a table-of-contents block and link preview cards.
 - [ ] **MCP write tools** (create a note, append blocks, add a database record) with write-scoped credentials, and personal API tokens. Then a small `minerva` CLI over the API: search, append, backup.

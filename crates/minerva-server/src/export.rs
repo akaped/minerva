@@ -385,7 +385,7 @@ fn expand_databases<'a>(d: &Data, u: &User, markdown: &'a str) -> std::borrow::C
         let id = render::database_embed(body).map_or("", |(id, _)| id);
         match d.databases.iter().find(|db| db.id == id) {
             Some(db) if access(d, u, &db.folder_id, false).is_ok() => {
-                format!("\n\n{}\n", databases::markdown_table(db))
+                format!("\n\n{}\n", databases::markdown_table(d, u, db))
             }
             Some(_) => "*Embedded database (not available to you)*".into(),
             None => "*Embedded database (deleted)*".into(),

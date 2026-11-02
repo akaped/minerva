@@ -157,6 +157,7 @@ fn record_entity(workspace: &str, db: &Database, r: &Record) -> Entity {
         ("database_id".into(), json!(db.id)),
         ("archived".into(), json!(r.archived)),
         ("conflict_of".into(), json!(r.conflict_of)),
+        ("created_at".into(), json!(r.created_at)),
     ]);
     for (column, value) in &r.cells {
         fields.insert(format!("cells/{column}"), value.clone());
@@ -974,6 +975,11 @@ fn apply_record(
             cells: cells(&columns, fields),
             revision: 1,
             updated_at: now(),
+            created_at: fields
+                .get("created_at")
+                .and_then(Value::as_u64)
+                .filter(|at| *at > 0)
+                .unwrap_or_else(now),
             archived: fields
                 .get("archived")
                 .and_then(Value::as_bool)
@@ -1026,6 +1032,7 @@ fn apply_record(
             cells: std::mem::take(copy),
             revision: 1,
             updated_at: now(),
+            created_at: now(),
             archived: true,
             conflict_of: Some(id.into()),
         });
