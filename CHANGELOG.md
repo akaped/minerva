@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-02
+
 ### Changed
 
 - A picture from a note's files shows a slim bar above it on hover, with its name, size, upload date and **Download**, instead of a download card below it. New pictures are added without the card; in existing notes the card under a picture is hidden.

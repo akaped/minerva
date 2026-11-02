@@ -2181,7 +2181,7 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "minerva-client"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "axum",
  "hmac",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "minerva-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "minerva-desktop"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "dirs",
  "embed-resource",
@@ -2232,7 +2232,7 @@ dependencies = [
 
 [[package]]
 name = "minerva-server"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ammonia",
  "argon2",
