@@ -176,7 +176,7 @@ Download it from the [Releases page](https://github.com/akaped/minerva/releases)
 
 - **Windows:** unzip `minerva-desktop-…-windows-x86_64.zip` and run `Minerva.exe`. Windows 10 and 11 include everything it needs.
 - **Linux:** unpack `minerva-desktop-…-linux-x86_64.tar.gz` and run `./install.sh`, which adds Minerva to your applications. It needs WebKitGTK 4.1, already installed on most desktops.
-- **macOS** (11 or later, Apple Silicon and Intel): unzip `minerva-desktop-…-macos-universal.zip` and drag `Minerva.app` to Applications. It isn't notarized by Apple yet, so the first time, right-click it and choose **Open**.
+- **macOS** (11 or later): releases don't include a Mac package; build it from its source code as below, on a Mac with the Xcode command-line tools, with `scripts/package-desktop.sh macos`. It isn't notarized by Apple, so the first time, right-click `Minerva.app` and choose **Open**.
 
 Or build it from its source code:
 

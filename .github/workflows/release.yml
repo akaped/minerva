@@ -1,5 +1,6 @@
-# Builds Minerva for Linux, Windows and macOS, the desktop app and the server,
-# and publishes them as a GitHub release.
+# Builds Minerva for Linux and Windows, the desktop app and the server, and
+# publishes them as a GitHub release. macOS packages are not built here: build
+# them on a Mac with scripts/package-desktop.sh macos and package-server.sh macos.
 #
 # Prepare a release with scripts/release.sh, which sets the version, dates the
 # changelog and tags; pushing the tag starts this workflow:
@@ -83,46 +84,8 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  macos:
-    needs: check
-    # Apple Silicon; Intel is cross-compiled, and both join in universal binaries.
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust
-        run: |
-          rustup update stable --no-self-update
-          rustup default stable
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: macos
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - name: Build the web app
-        run: |
-          npm ci
-          npm run build
-
-      - name: Package the desktop app
-        run: scripts/package-desktop.sh macos
-
-      - name: Package the server
-        run: scripts/package-server.sh macos
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: minerva-macos
-          path: dist/*
-          if-no-files-found: error
-
   publish:
-    needs: [linux-windows, macos]
+    needs: [linux-windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
@@ -146,7 +109,7 @@ jobs:
             index($0, "## [" v "]") == 1 { on = 1; next }
             /^## \[/ { on = 0 }
             on' CHANGELOG.md >release-notes.md
-          printf '\n**Downloads:** `minerva-desktop` is the app for your computer (Linux, Windows, or macOS for Apple Silicon and Intel); `minerva-server` runs your own server, or use the Docker image `ghcr.io/%s/minerva:%s`. Check downloads against `SHA256SUMS.txt`.\n' "${GITHUB_REPOSITORY_OWNER,,}" "$version" >>release-notes.md
+          printf '\n**Downloads:** `minerva-desktop` is the app for your computer (Linux or Windows); `minerva-server` runs your own server, or use the Docker image `ghcr.io/%s/minerva:%s`. Check downloads against `SHA256SUMS.txt`.\n' "${GITHUB_REPOSITORY_OWNER,,}" "$version" >>release-notes.md
 
       - name: Publish the release
         env:

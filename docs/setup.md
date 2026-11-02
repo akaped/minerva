@@ -199,6 +199,6 @@ To back up: stop the server and copy the database, or use SQLite's online backup
 2. Run `scripts/release.sh 0.3.0`. It sets the version in `Cargo.toml` and `Cargo.lock`, turns **Unreleased** into `## [0.3.0] - <date>`, commits, and tags `v0.3.0`.
 3. Push both with `git push origin main v0.3.0`.
 
-The tag starts two workflows. **Release** builds the desktop app and the server for Linux (`.tar.gz`), Windows (`.zip`) and macOS (universal: a `.zip` with `Minerva.app`, and a `.tar.gz` server). It publishes them on GitHub Releases with a `SHA256SUMS.txt` file, using the version's changelog section as the release notes. **Docker image** publishes `ghcr.io/<owner>/minerva:0.3.0`. Run `scripts/package-server.sh` or `scripts/package-desktop.sh` to build the same packages locally in `dist/`.
+The tag starts two workflows. **Release** builds the desktop app and the server for Linux (`.tar.gz`) and Windows (`.zip`). macOS packages are not part of releases; build them on a Mac with `scripts/package-desktop.sh macos` and `scripts/package-server.sh macos` (universal: a `.zip` with `Minerva.app`, and a `.tar.gz` server). It publishes them on GitHub Releases with a `SHA256SUMS.txt` file, using the version's changelog section as the release notes. **Docker image** publishes `ghcr.io/<owner>/minerva:0.3.0`. Run `scripts/package-server.sh` or `scripts/package-desktop.sh` to build the same packages locally in `dist/`.
 
 This is independently authored code. No AFFiNE implementation code or artwork was copied.

@@ -18,7 +18,7 @@ turns that section into the next version.
 
 - The cursor is visible again while writing in a block (it had become transparent with the live preview, in the desktop app).
 - A task being edited shows its Markdown (`- [ ]`) without the checkbox beside it, and the text and the cursor line up again.
-- The desktop release builds for macOS again: GitHub retired the macOS 14 machines the release used, so 0.5.0 was published without desktop packages.
+- Releases include the desktop app and server for Linux and Windows again: 0.5.0 was published without them because its macOS build could not run. Releases no longer include macOS packages; build them on a Mac with `scripts/package-desktop.sh macos`.
 
 ## [0.5.0] - 2026-11-01
 
