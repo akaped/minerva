@@ -7097,3 +7097,7 @@ dialog.command-menu .command-menu-hint {
     font-size: 10px;
   }
 }
+/* Fields a dialog shows only for some choices (labels are flex by default). */
+[data-for][hidden] {
+  display: none;
+}
