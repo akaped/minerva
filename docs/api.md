@@ -20,7 +20,7 @@ Use HTTPS for remote clients. `MINERVA_SECURE_COOKIE=1` enables the cookie's Sec
 | PATCH  | `/folders/{id}`        | Any of `{name, parent_id}`; administrator or workspace owner. `parent_id: null` moves the folder to the top level; moving a folder into itself or a descendant is refused                                                                                                                                                          |
 | DELETE | `/folders/{id}`        | Folder editor; deletes the folder and everything in it, including subfolders. Returns `{ok, deleted_notes}`                                                                                                                                                                                                                        |
 | DELETE | `/workspaces/{id}`     | Administrator, or the owner while the workspace is personal (no other member has workspace or folder access); deletes everything in it. `bootstrap.workspaces[].can_delete` says whether the caller may                                                                                                                            |
-| POST   | `/notes`               | `{folder_id,title}`; requires editor access                                                                                                                                                                                                                                                                                        |
+| POST   | `/notes`               | `{folder_id,title,markdown?}`; requires editor access. `markdown` (up to 200,000 bytes) becomes the note's blocks, a paragraph or list item each                                                                                                                                                                                                                                                                                        |
 | GET    | `/notes/{id}`          | Note with blocks, sanitized `rendered` HTML array, `cover`, `tags`, derived `inline_tags`, the caller's effective `role`, a `sharing` summary, and `backlinks` (notes the caller may open that link here)                                                                                                                          |
 | PUT    | `/notes/{id}`          | `SaveNote` below; editor access and matching revision required                                                                                                                                                                                                                                                                     |
 | PATCH  | `/notes/{id}`          | `{folder_id}`: moves the note to another folder of the same workspace. Folder editor on both folders; a share recipient cannot move a note                                                                                                                                                                                         |
@@ -90,12 +90,36 @@ Column shape: `{id,name,kind,options?,target?}` where kind is `text`, `number`, 
 
 Records use optimistic concurrency. Local browser writes are serialized, but stale writes from other clients return 409 rather than overwriting their changes. Archiving is recoverable; no permanent deletion route is exposed. Database metadata is included in `/bootstrap`, filtered by current folder permissions.
 
+## Personal API tokens
+
+For scripts and `minerva-cli`. A token signs in as its owner with `Authorization: Bearer mnv_api_v1_…` and has the owner's permissions on every API, export and attachment route, but cannot manage the account: `api-tokens`, `mcp-credentials`, `account/*` (password, second factor) and `logout` answer 403. Server administrator accounts cannot create tokens. Only SHA-256 hashes are kept.
+
+| Method | Path               | Contract                                                                                  |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| GET    | `/api-tokens`      | Your tokens: `{id, name, created_at, expires_at}`; never the token                        |
+| POST   | `/api-tokens`      | `{name, expires_days?}`: 1–80 character name, 1–365 days (default 90); returns `token` once; up to 20 |
+| DELETE | `/api-tokens/{id}` | Revokes one of your tokens at once                                                        |
+
+`POST /notes/{id}/append` with `{markdown, after_block_id?}` adds Markdown to a note as blocks, at the end or after a block, like an edit in the app (the previous version goes to history, open editors update). Editor access; returns the note with `added_block_ids`.
+
+### `minerva-cli`
+
+Built from `crates/minerva-cli` (`cargo build --release -p minerva-cli`). Set `MINERVA_URL` and `MINERVA_TOKEN`, then:
+
+```sh
+minerva-cli search budget review          # ID, title and snippet of each match
+minerva-cli folders                       # folder IDs and paths
+echo "- call the bank" | minerva-cli new "Inbox" "Monday"   # folder by name, path or ID
+minerva-cli append NOTE_ID "One more thing"
+minerva-cli backup ./backup [--files]     # notes as Markdown (or zips with attachments), databases as JSON
+```
+
 ## MCP credentials
 
 | Method | Path                    | Contract                                                                          |
 | ------ | ----------------------- | --------------------------------------------------------------------------------- |
 | GET    | `/mcp-credentials`      | List current user's credential metadata; no raw tokens or hashes                  |
-| POST   | `/mcp-credentials`      | `{workspace_id,name,expires_days}`; 1–90 days, default 30; returns raw token once |
+| POST   | `/mcp-credentials`      | `{workspace_id,name,expires_days,access?}`; 1–90 days, default 30; `access` is `read_only` (default) or `read_write`; returns raw token once |
 | DELETE | `/mcp-credentials/{id}` | Revoke one of the current user's credentials immediately                          |
 
 Browser mutation headers and session authentication apply to credential management. MCP calls use the separate `/api/workspaces/{workspace_id}/mcp` endpoint with the issued bearer token. Browser session tokens cannot authenticate MCP, and MCP tokens cannot authenticate the browser API. See `mcp.md`.

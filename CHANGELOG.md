@@ -12,6 +12,10 @@ turns that section into the next version.
 
 ### Added
 
+- **MCP write access:** a credential can now be created with **Read and write** access (read only stays the default). Its AI tool can then create notes from Markdown, add blocks to a note, and add or update database records, always within your edit permissions. Nothing is deleted: notes keep their previous version in history, and open editors show the change at once.
+- **Personal API tokens** (MCP connections → Personal API tokens) for scripts: named, expiring after up to a year, revocable, acting as you but unable to change your password, second factor or tokens. The API gains `markdown` when creating a note and `POST /notes/{id}/append`.
+- **`minerva-cli`**, a small command line over the API: `search`, `folders`, `new` (Markdown from an argument or standard input), `append`, and `backup` (every note as Markdown or a zip with its files, every database as JSON).
+
 - **Folding:** a block with blocks nested under it has an arrow beside it (or press Ctrl+↑ / Ctrl+↓ in it) that hides and shows them, with a count of what is hidden. What you fold is remembered on your device for each note and does not change the note for others; going to a hidden block unfolds it. **/ → Toggle** makes a line with a block nested under it, ready to fold.
 - **Table of contents:** **/ → Table of contents** adds a block listing the note's headings; clicking one goes to it. Exported and published notes show it too, with links to the headings.
 - **Link cards:** a block that is just a web address shows the page's title, description, site and picture. The server fetches these only for signed-in members and only from public addresses (never its own network), and keeps them for a day.

@@ -24,6 +24,7 @@ mod server_plugins;
 mod sharing;
 mod sites;
 mod storage;
+mod tokens;
 mod twofactor;
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -110,6 +111,8 @@ struct Data {
     databases: Vec<Database>,
     #[serde(default)]
     mcp_credentials: Vec<mcp::Credential>,
+    #[serde(default)]
+    api_tokens: Vec<tokens::ApiToken>,
     #[serde(default)]
     shares: Vec<sharing::Share>,
     #[serde(default)]
@@ -841,6 +844,12 @@ fn authenticate(d: &Data, headers: &HeaderMap) -> Result<User, ApiError> {
             v.split(';')
                 .find_map(|p| p.trim().strip_prefix("minerva_session="))
         });
+    if let Some(token) = bearer.filter(|t| t.starts_with(tokens::PREFIX)) {
+        return tokens::user(d, token).ok_or(ApiError(
+            StatusCode::UNAUTHORIZED,
+            "This API token is not valid".into(),
+        ));
+    }
     let session = bearer
         .or(cookie)
         .and_then(|t| d.sessions.get(&hash_token(t)))
@@ -1164,6 +1173,15 @@ fn dispatch(
     }
     let u = authenticate(d, headers)?;
     let parts: Vec<&str> = path.split('/').collect();
+    if tokens::used(headers) && tokens::reserved(&parts) {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "API tokens cannot manage the account; sign in instead".into(),
+        ));
+    }
+    if parts.first() == Some(&"api-tokens") {
+        return Ok((tokens::route(d, &u, method, &parts, &v)?, None));
+    }
     if let Some(result) = administration::route(d, &u, method, &parts, &v)? {
         return Ok((result, None));
     }
@@ -1441,12 +1459,19 @@ fn dispatch(
         ("POST", ["notes"]) => {
             let fid = field(&v, "folder_id")?;
             access(d, &u, &fid, true)?;
+            let blocks = match v["markdown"].as_str() {
+                Some(m) if m.len() > 200_000 => {
+                    return Err(bad("At most 200,000 bytes of Markdown"))
+                }
+                Some(m) => mcp::markdown_blocks(m)?,
+                None => vec![Block::new("", 0)],
+            };
             let n = Note {
                 id: id(),
                 folder_id: fid,
                 title: field(&v, "title")?,
                 icon: "▤".into(),
-                blocks: vec![Block::new("", 0)],
+                blocks,
                 revision: 1,
                 updated_at: now(),
                 favorite: false,
@@ -1459,6 +1484,16 @@ fn dispatch(
             };
             d.notes.push(Arc::new(n.clone()));
             note_view(&n)
+        }
+        ("POST", ["notes", nid, "append"]) => {
+            let after = v["after_block_id"].as_str();
+            let markdown = v["markdown"]
+                .as_str()
+                .ok_or_else(|| bad("markdown is required"))?;
+            let (note, block_ids) = mcp::append_markdown(d, &u, nid, markdown, after)?;
+            let mut view = note_view(&note);
+            view["added_block_ids"] = json!(block_ids);
+            view
         }
         ("GET", ["notes", nid]) => {
             let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
@@ -1720,6 +1755,7 @@ fn dispatch(
             d.workspace_grants.retain(|g| g.user_id != *uid);
             d.shares.retain(|s| s.user_id.as_deref() != Some(*uid));
             mcp::forget_user(d, uid);
+            tokens::forget_user(d, uid);
             twofactor::forget(d, uid);
             json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
         }

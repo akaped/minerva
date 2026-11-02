@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/minerva-core", "crates/minerva-server", "crates/minerva-client", "crates/minerva-desktop"]
-default-members = ["crates/minerva-core", "crates/minerva-server", "crates/minerva-client"]
+members = ["crates/minerva-core", "crates/minerva-server", "crates/minerva-client", "crates/minerva-desktop", "crates/minerva-cli"]
+default-members = ["crates/minerva-core", "crates/minerva-server", "crates/minerva-client", "crates/minerva-cli"]
 resolver = "2"
 
 [workspace.package]

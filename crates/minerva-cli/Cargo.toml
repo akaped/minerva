@@ -1,0 +1,15 @@
+[package]
+name = "minerva-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command line for a Minerva server: search, new notes, append, backup"
+
+[[bin]]
+name = "minerva-cli"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }

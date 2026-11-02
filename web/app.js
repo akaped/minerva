@@ -7775,9 +7775,15 @@ async function renderIntegrations() {
   clearInterval(dbTimer);
   activeDatabase = null;
   const tokens = await api("mcp-credentials");
+  // Server administrators have no personal tokens (they manage, not write).
+  const personal = data.user.admin ? null : await api("api-tokens");
   $("#breadcrumb").textContent = "MCP connections";
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">YOUR KNOWLEDGE, WITH CONTEXT</div><div class="page-heading"><div><h1>Connect your AI tools</h1><p class="subtitle">Let your assistant find answers in your notes and structured records.</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}Create credential</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">MODEL CONTEXT PROTOCOL</div><h2>A useful connection. A clear boundary.</h2><p>Read-only access to one workspace. Your folder permissions always apply.<br>Create a separate, expiring credential for each AI tool.</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>Your connections</h2><p>Credentials are shown once. Revoke a connection to stop its access immediately.</p></div><span class="pill">Read only</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>CLIENT</th><th>WORKSPACE</th><th>EXPIRES</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || "Unavailable workspace")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? "· Expired" : ""}</td><td><button class="btn danger" data-revoke="${t.id}">Revoke</button></td></tr>`).join("") || '<tr><td colspan="4">No AI connections yet.</td></tr>'}</tbody></table></div></section><div class="integration-tools"><h2>What your assistant can do</h2><div class="folder-grid"><div class="folder-card"><div><strong>Find knowledge</strong><small>Keyword search with document and block references</small></div></div><div class="folder-card"><div><strong>Read documents</strong><small>Permission-aware, paginated note content</small></div></div><div class="folder-card"><div><strong>Query databases</strong><small>Typed records, property filters, and pagination</small></div></div></div><p class="subtitle">Supports MCP Streamable HTTP clients with bearer authentication. No AI provider receives your data until you connect a tool and use it.</p></div></section>`;
+    `<section class="page"><div class="eyebrow">YOUR KNOWLEDGE, WITH CONTEXT</div><div class="page-heading"><div><h1>Connect your AI tools</h1><p class="subtitle">Let your assistant find answers in your notes and structured records.</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}Create credential</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">MODEL CONTEXT PROTOCOL</div><h2>A useful connection. A clear boundary.</h2><p>Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.<br>Create a separate, expiring credential for each AI tool.</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>Your connections</h2><p>Credentials are shown once. Revoke a connection to stop its access immediately.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>CLIENT</th><th>WORKSPACE</th><th>ACCESS</th><th>EXPIRES</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || "Unavailable workspace")}</td><td><span class="pill">${t.access === "read_write" ? "Read and write" : "Read only"}</span></td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? "· Expired" : ""}</td><td><button class="btn danger" data-revoke="${t.id}">Revoke</button></td></tr>`).join("") || '<tr><td colspan="5">No AI connections yet.</td></tr>'}</tbody></table></div></section>${
+      personal
+        ? `<section class="panel"><div class="panel-heading"><div><h2>Personal API tokens</h2><p>For your scripts and the <code>minerva-cli</code> command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.</p></div><button class="btn" id="create-api-token">${icon("plus")}New token</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>NAME</th><th>CREATED</th><th>EXPIRES</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}</td><td>${date(t.created_at)}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? "· Expired" : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">Revoke</button></td></tr>`).join("") || '<tr><td colspan="4">No API tokens yet.</td></tr>'}</tbody></table></div></section>`
+        : ""
+    }<div class="integration-tools"><h2>What your assistant can do</h2><div class="folder-grid"><div class="folder-card"><div><strong>Find knowledge</strong><small>Keyword search with document and block references</small></div></div><div class="folder-card"><div><strong>Read documents</strong><small>Permission-aware, paginated note content</small></div></div><div class="folder-card"><div><strong>Query databases</strong><small>Typed records, property filters, and pagination</small></div></div><div class="folder-card"><div><strong>Write, if you allow it</strong><small>Create notes, add blocks, add and update records. Nothing is deleted, and earlier versions stay in history</small></div></div></div><p class="subtitle">Supports MCP Streamable HTTP clients with bearer authentication. No AI provider receives your data until you connect a tool and use it.</p></div></section>`;
   $$("[data-revoke]").forEach((el) =>
     action(el, "click", () =>
       formDialog(
@@ -7792,8 +7798,59 @@ async function renderIntegrations() {
       ),
     ),
   );
+  $$("[data-revoke-token]").forEach((el) =>
+    action(el, "click", () =>
+      formDialog(
+        "Revoke this token?",
+        "Scripts using it stop working at once.",
+        "",
+        async () => {
+          await api("api-tokens/" + el.dataset.revokeToken, "DELETE");
+          await renderIntegrations();
+        },
+        "Revoke",
+      ),
+    ),
+  );
+  if ($("#create-api-token"))
+    action($("#create-api-token"), "click", () => {
+      modal.innerHTML = `<form id="api-token-form"><h2>New API token</h2><p>It acts as you. Give each script or computer its own token.</p><label>Name<input name="name" placeholder="e.g. Laptop backup" required maxlength="80"></label><label>Expires in<select name="expires_days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option></select></label><div class="form-error"></div><footer><button type="button" class="btn" id="cancel-token">Cancel</button><button class="btn primary">Create token</button></footer></form>`;
+      modal.showModal();
+      $("#cancel-token").onclick = () => modal.close();
+      $("#api-token-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const button = $("footer button:last-child", modal);
+        button.disabled = true;
+        try {
+          const v = Object.fromEntries(new FormData(e.target));
+          const created = await api("api-tokens", "POST", {
+            name: v.name,
+            expires_days: Number(v.expires_days),
+          });
+          await renderIntegrations();
+          const origin =
+            document.querySelector('meta[name="minerva-server-origin"]')
+              ?.content || location.origin;
+          modal.innerHTML =
+            '<h2>Your token is ready</h2><p>It is shown only once; keep it private. For <code>minerva-cli</code>:</p><textarea id="token-env" aria-label="API token" rows="3" readonly></textarea><footer><button class="btn" id="done-token">Done</button><button class="btn primary" id="copy-token">Copy</button></footer>';
+          $("#token-env").value =
+            `export MINERVA_URL=${origin}\nexport MINERVA_TOKEN=${created.token}`;
+          $("#done-token").onclick = () => {
+            modal.close();
+            modal.innerHTML = "";
+          };
+          action($("#copy-token"), "click", async () => {
+            await navigator.clipboard.writeText($("#token-env").value);
+            toast("Copied");
+          });
+        } catch (err) {
+          $(".form-error", modal).textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    });
   action($("#create-mcp"), "click", () => {
-    modal.innerHTML = `<form id="mcp-create-form"><h2>Connect an AI tool</h2><p>One workspace. Read only. Always subject to your permissions.</p><label>Client label<input name="name" placeholder="e.g. Claude Code" required maxlength="200"></label><label>Workspace<select name="workspace_id">${data.workspaces.map((w) => `<option value="${w.id}" ${w.id === workspaceId ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label><label>Expires in<select name="expires_days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label><div class="form-error"></div><footer><button type="button" class="btn" id="cancel-mcp">Cancel</button><button class="btn primary">Create credential</button></footer></form>`;
+    modal.innerHTML = `<form id="mcp-create-form"><h2>Connect an AI tool</h2><p>One workspace. Always subject to your permissions.</p><label>Client label<input name="name" placeholder="e.g. Claude Code" required maxlength="200"></label><label>Workspace<select name="workspace_id">${data.workspaces.map((w) => `<option value="${w.id}" ${w.id === workspaceId ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label><label>Expires in<select name="expires_days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label><label>Access<select name="access"><option value="read_only" selected>Read only</option><option value="read_write">Read and write: create notes, add blocks and records</option></select></label><div class="form-error"></div><footer><button type="button" class="btn" id="cancel-mcp">Cancel</button><button class="btn primary">Create credential</button></footer></form>`;
     modal.showModal();
     $("#cancel-mcp").onclick = () => modal.close();
     $("#mcp-create-form").onsubmit = async (e) => {

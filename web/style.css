@@ -7478,3 +7478,6 @@ body.comments-open .note-pane {
     width: 96px;
   }
 }
+.panel + .panel {
+  margin-top: 20px;
+}

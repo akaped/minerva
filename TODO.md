@@ -5,7 +5,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 ## Next
 
 - [ ] **Databases**: rollups (counts, sums and lists through a relation) and formulas; records that open as pages; the calendar view in notes' embedded databases; reminders and journal dates on the same calendar; boards grouped by person or multi-select.
-- [ ] **MCP write tools** (create a note, append blocks, add a database record) with write-scoped credentials, and personal API tokens. Then a small `minerva` CLI over the API: search, append, backup.
 
 ## Soon
 
@@ -38,4 +37,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).
 - [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
 - [ ] **Search**: index database records and attachment text (PDFs); search filters (folder, tag, date) in the Ctrl+K dialog.
+- [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
+- [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
 - [ ] **Desktop**: when the server opened last does not answer at startup, say so on the local page instead of silently opening this computer.

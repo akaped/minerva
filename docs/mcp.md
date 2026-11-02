@@ -1,11 +1,11 @@
 # Minerva MCP server
 
-Minerva exposes a read-only knowledge interface directly from the Rust server, following the workspace-scoped pattern described by [AFFiNE MCP](https://affine.pro/mcp). No external bridge service or AI provider is required by the server.
+Minerva exposes a workspace knowledge interface directly from the Rust server: read only by default, and read and write for credentials you create with write access. It follows the workspace-scoped pattern described by [AFFiNE MCP](https://affine.pro/mcp). No external bridge service or AI provider is required by the server.
 
 ## Connect
 
-1. Open **AI connections** in Minerva.
-2. Choose **Create credential**, a client label, one accessible workspace, and a 7/30/90-day expiry.
+1. Open **MCP connections** in Minerva.
+2. Choose **Create credential**, a client label, one accessible workspace, a 7/30/90-day expiry, and the access: **Read only** (the default) or **Read and write**.
 3. Copy the generated JSON into your MCP client's configuration. The secret is displayed once.
 4. Ask the connected tool to search notes, read a document, or query structured records.
 
@@ -36,6 +36,17 @@ Configuration wrappers and transport-name fields differ by MCP client. The endpo
 | `list_databases` | List accessible structured databases and their property schemas                                                                    |
 | `query_database` | Read up to 100 records per page, with optional text query and exact typed property filter                                          |
 
+Credentials with write access also list these tools; read-only credentials neither list nor may call them:
+
+| Tool              | Purpose                                                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `create_document` | `{folder_id, title, markdown?}`: a note in a folder of the workspace. Markdown becomes blocks (a paragraph or list item each) |
+| `append_blocks`   | `{document_id, markdown, after_block_id?}`: adds blocks at the end of a note or after a block; returns the new block IDs      |
+| `add_record`      | `{database_id, cells}`: a database record                                                                                      |
+| `update_record`   | `{database_id, record_id, cells}`: changes some values of a record (`null` clears one); the others stay                        |
+
+`cells` are keyed by property ID or name and checked like the app's: text, URL, select and dates (`YYYY-MM-DD`) are strings, numbers numbers, checkboxes booleans, multi-select and relation lists of options or record IDs, person a user ID. Created and last-edited times are kept by the server.
+
 `query_database` filter example:
 
 ```json
@@ -47,7 +58,7 @@ Configuration wrappers and transport-name fields differ by MCP client. The endpo
 }
 ```
 
-All tools are read-only. This release does not implement MCP create/update tools, semantic/vector search, attachments, provider-backed chat, or public shares. Returned note/record content is user-authored data and should not be treated as instructions by consuming AI tools. Tools include descriptions and read-only annotations to make that boundary explicit.
+Write tools need edit access to the folder, as in the app. They never delete or archive anything: an appended note keeps its previous version in its history, and changes reach open editors at once. Read tools are annotated `readOnlyHint: true`, write tools `readOnlyHint: false, destructiveHint: false`. There is no semantic/vector search, attachments, or sharing through MCP. Returned note/record content is user-authored data and should not be treated as instructions by consuming AI tools.
 
 ## Permissions and credentials
 
@@ -72,4 +83,6 @@ Use HTTPS when connecting remotely. Set `MINERVA_PUBLIC_URL` to the exact public
 
 ## Distinction from in-app chat
 
-**AI connections** currently lets an external assistant read Minerva through MCP. It does not configure an LLM or send documents to a provider by itself. DeepSeek/OpenAI/Claude configuration and workspace/folder/note-scoped chat are separately tracked in `TODO.md`.
+**MCP connections** lets an external assistant read Minerva through MCP. It does not configure an LLM or send documents to a provider by itself. In-app chat is configured under **AI providers**.
+
+For scripts that are not AI tools, use a personal API token and the REST API, or the `minerva-cli` command (see `api.md`).
