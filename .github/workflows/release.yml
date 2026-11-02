@@ -86,7 +86,7 @@ jobs:
   macos:
     needs: check
     # Apple Silicon; Intel is cross-compiled, and both join in universal binaries.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
 
