@@ -41,7 +41,7 @@ export function paneMessage(type, payload = {}) {
     );
 }
 
-export function createNoteTabs({ esc, error, onBrowse, onChange }) {
+export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   let tabs = [],
     active = null,
     secondary = null,
@@ -411,6 +411,13 @@ export function createNoteTabs({ esc, error, onBrowse, onChange }) {
         beside: tab.key,
         origin: tab.origin,
       });
+    // A note asks for the graph around it, in the main page.
+    if (
+      message.type === "open-graph" &&
+      tab.origin === location.origin &&
+      /^[a-f0-9-]{36}$/i.test(message.id || "")
+    )
+      onGraph?.(message.id);
     // A note asks for an AI chat about itself, beside it.
     if (
       message.type === "open-chat" &&

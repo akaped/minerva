@@ -4,11 +4,10 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Graph view** of note links, per workspace and per note (backlinks are already computed).
+- [ ] **Block references and embeds**: link to a block (`#note/<id>#<block>`), show a block or note inside another, kept live.
 
 ## Soon
 
-- [ ] **Block references and embeds**: link to a block (`#note/<id>#<block>`), show a block or note inside another, kept live.
 - [ ] **Installable web app (PWA)**: manifest, service worker for offline reading, and a quick-capture page for phones.
 - [ ] **Calendar feed**: reminders and journal dates as an iCal URL; CalDAV later.
 - [ ] **Recording to notes**: recording → transcript → summary with action items, turned into tasks and reminders.
@@ -33,6 +32,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
 - [ ] **Search**: index database records and attachment text (PDFs); search filters (folder, tag, date) in the Ctrl+K dialog.
 - [ ] **Databases**: saving the board grouping and calendar property chosen for an embedded view (embeds use the first that fits); formulas over lists of related records, and rollups of rollups; number formats (currency, percent); records' pages in the desktop app's offline copies; reordering cards within a board column.
+- [ ] **Graph**: keep the positions people arrange; colour by tag as well as folder; filter by folder or date; links to blocks and embeds as edges once they exist; a small graph of a note's neighbours inside the note.
 - [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
 - [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
 

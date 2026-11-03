@@ -9,6 +9,7 @@ mod export;
 mod flashcards;
 mod formulas;
 mod fsrs;
+mod graph;
 mod import;
 mod journal;
 mod live;
@@ -1185,6 +1186,9 @@ fn dispatch(
             StatusCode::FORBIDDEN,
             "API tokens cannot manage the account; sign in instead".into(),
         ));
+    }
+    if let ("GET", ["workspaces", wid, "graph"]) = (method, parts.as_slice()) {
+        return Ok((graph::route(d, &u, wid)?, None));
     }
     if parts.first() == Some(&"api-tokens") {
         return Ok((tokens::route(d, &u, method, &parts, &v)?, None));

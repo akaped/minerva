@@ -72,6 +72,10 @@ Response: `{update, note, peers, can_edit, denied_block}`. `denied_block` names 
 
 Yjs/Yrs roots: `title` text; `order` string-ID array; `block:<id>` text; `meta` map with `icon` string, `favorite` boolean, `trashed` boolean, and optional `cover` string and `tags` string array (validated as for saves). Folder IDs, user roles, and identity are not editable through CRDT payloads. Limits: 2,000 materialized blocks, 100,000 bytes per block, 200-byte title, 24-byte icon, encoded incoming update 1.5 MB, stored encoded state 2.5 MB. Exceeding a limit rejects the update and keeps the client's unsaved changes for export/recovery.
 
+## Graph
+
+`GET /workspaces/{id}/graph` returns `{nodes, links}` for the graph view: `nodes` are the workspace's notes the caller can open (not trashed), each `{id, title, icon, folder_id, updated_at, tags, journal, record}` (`tags` includes inline `#tags`), and `links` are `[from, to]` pairs of note IDs, one per linking note and target, for links written as `[…](#note/{id})`. A link to a note the caller cannot open is left out. 403 when the caller can open nothing in the workspace.
+
 ## Structured databases
 
 | Method | Path                            | Contract                                                                                                                                                                                          |
