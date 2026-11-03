@@ -3,6 +3,7 @@
 // Widgets sit in rows that always fill the page width: a widget's size is a
 // preference, and the widgets of a row grow or shrink to fill it. The layout is
 // saved per account on the server.
+import { $t } from "./i18n.js";
 import { intervalLabel, rich } from "./flashcards.js";
 
 export const WIDGETS = {
@@ -133,8 +134,8 @@ export async function renderDashboard(root, app) {
     if (!root.isConnected) return;
     root.innerHTML = `<div class="dashboard-bar">${
       editing
-        ? `<button class="btn primary" id="dash-add">${icon("plus")}Add widget</button><button class="btn" id="dash-reset">Restore default layout</button><span class="dash-hint">Drag a widget beside another to share its row, or above or below a row to give it a row of its own.</span><button class="btn primary" id="dash-done">Done</button>`
-        : `<button class="btn" id="dash-edit">${icon("grid")}Customize</button>`
+        ? `<button class="btn primary" id="dash-add">${icon("plus")}${$t("Add widget")}</button><button class="btn" id="dash-reset">${$t("Restore default layout")}</button><span class="dash-hint">${$t("Drag a widget beside another to share its row, or above or below a row to give it a row of its own.")}</span><button class="btn primary" id="dash-done">${$t("Done")}</button>`
+        : `<button class="btn" id="dash-edit">${icon("grid")}${$t("Customize")}</button>`
     }</div><div class="dashboard ${editing ? "editing" : ""}">${
       rows(widgets)
         .map((row) => {
@@ -144,7 +145,7 @@ export async function renderDashboard(root, app) {
             .join("");
         })
         .join("") ||
-      '<div class="empty">Your dashboard is empty. Choose Customize to add widgets.</div>'
+      `<div class="empty">${$t("Your dashboard is empty. Choose Customize to add widgets.")}</div>`
     }</div>`;
     bind();
     widgets.forEach((w) => fill(w).catch(() => {}));
@@ -153,14 +154,14 @@ export async function renderDashboard(root, app) {
     const spec = WIDGETS[w.type];
     const title = w.type === "chart" ? w.options.title || spec.name : spec.name;
     const tools = editing
-      ? `<div class="widget-tools"><button data-move="${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${esc(title)} earlier" title="Move earlier">←</button><button data-move="${i}:1" ${i === widgets.length - 1 ? "disabled" : ""} aria-label="Move ${esc(title)} later" title="Move later">→</button><select data-size="${i}" aria-label="Preferred size of ${esc(title)}" title="Preferred size; the row stretches or shrinks it to fill the width">${SIZES.map(([v, label]) => `<option value="${v}" ${w.size === v ? "selected" : ""}>${label}</option>`).join("")}</select>${w.type === "chart" ? `<button data-configure="${i}" aria-label="Chart settings" title="Chart settings">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="Remove">×</button></div>`
+      ? `<div class="widget-tools"><button data-move="${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${esc(title)} earlier" title="${$t("Move earlier")}">←</button><button data-move="${i}:1" ${i === widgets.length - 1 ? "disabled" : ""} aria-label="Move ${esc(title)} later" title="${$t("Move later")}">→</button><select data-size="${i}" aria-label="Preferred size of ${esc(title)}" title="${$t("Preferred size; the row stretches or shrinks it to fill the width")}">${SIZES.map(([v, label]) => `<option value="${v}" ${w.size === v ? "selected" : ""}>${label}</option>`).join("")}</select>${w.type === "chart" ? `<button data-configure="${i}" aria-label="${$t("Chart settings")}" title="${$t("Chart settings")}">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="${$t("Remove")}">×</button></div>`
       : "";
     // The welcome block can be dismissed for good, without customizing.
     const dismiss =
       !editing && w.type === "welcome"
-        ? `<button class="widget-dismiss" data-remove="${i}" aria-label="Hide this welcome for good" title="Hide for good">×</button>`
+        ? `<button class="widget-dismiss" data-remove="${i}" aria-label="${$t("Hide this welcome for good")}" title="${$t("Hide for good")}">×</button>`
         : "";
-    return `<section class="widget widget-${w.type}" style="--span:${span}" data-widget="${w.id}" aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">Loading…</p></div></section>`;
+    return `<section class="widget widget-${w.type}" style="--span:${span}" data-widget="${w.id}" aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">${$t("Loading…")}</p></div></section>`;
   }
   function bind() {
     const on = (sel, fn, event = "click") =>
@@ -199,7 +200,7 @@ export async function renderDashboard(root, app) {
       widgets.splice(i, 1);
       save();
       draw();
-      app.toast("Widget removed · add it back with Customize → Add widget");
+      app.toast($t("Widget removed · add it back with Customize → Add widget"));
     });
     on("[data-configure]", (b) =>
       chartDialog(widgets[Number(b.dataset.configure)]),
@@ -317,7 +318,7 @@ export async function renderDashboard(root, app) {
   }
   function addDialog() {
     const modal = document.querySelector("#modal");
-    modal.innerHTML = `<form method="dialog" class="widget-picker"><h2>Add a widget</h2><div class="widget-choices">${Object.entries(
+    modal.innerHTML = `<form method="dialog" class="widget-picker"><h2>${$t("Add a widget")}</h2><div class="widget-choices">${Object.entries(
       WIDGETS,
     )
       .map(
@@ -326,7 +327,7 @@ export async function renderDashboard(root, app) {
       )
       .join(
         "",
-      )}</div><footer><button class="btn">Close</button></footer></form>`;
+      )}</div><footer><button class="btn">${$t("Close")}</button></footer></form>`;
     modal.showModal();
     modal.querySelectorAll("[data-add]").forEach((b) =>
       b.addEventListener("click", () => {
@@ -372,7 +373,7 @@ export async function renderDashboard(root, app) {
       : `<p class="widget-empty">${empty}</p>`;
   const WIDGET_BODIES = {
     welcome: (w, body) => {
-      body.innerHTML = `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">A FRESH START</div><h2>Good ideas start with a little space.</h2><p>A quick thought, a detailed plan, your next big thing.<br>Bring it all together in your workspace.</p><button class="text-link" id="start-writing">Start writing <span>↗</span></button></div>${app.art()}</div>`;
+      body.innerHTML = `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("A FRESH START")}</div><h2>${$t("Good ideas start with a little space.")}</h2><p>${$t("A quick thought, a detailed plan, your next big thing.")}<br>${$t("Bring it all together in your workspace.")}</p><button class="text-link" id="start-writing">${$t("Start writing")} <span>↗</span></button></div>${app.art()}</div>`;
       body.querySelector("#start-writing").addEventListener("click", () =>
         Promise.resolve()
           .then(() => app.createNote())
@@ -380,7 +381,7 @@ export async function renderDashboard(root, app) {
       );
     },
     folders: (w, body) => {
-      body.innerHTML = `<div class="folder-grid">${app.folderCards() || '<div class="widget-empty">No folders yet.</div>'}</div>`;
+      body.innerHTML = `<div class="folder-grid">${app.folderCards() || `<div class="widget-empty">${$t("No folders yet.")}</div>`}</div>`;
       body
         .querySelectorAll("[data-open-folder]")
         .forEach((b) =>
@@ -418,7 +419,7 @@ export async function renderDashboard(root, app) {
         month: "long",
         year: "numeric",
       });
-      body.innerHTML = `<div class="calendar compact"><div class="calendar-head"><button class="btn" data-month="-1" aria-label="Previous month">‹</button><strong>${esc(label)}</strong><button class="btn" data-month="1" aria-label="Next month">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div><button class="btn widget-action" data-journal-today>${icon("calendar")}Today’s entry</button></div>`;
+      body.innerHTML = `<div class="calendar compact"><div class="calendar-head"><button class="btn" data-month="-1" aria-label="${$t("Previous month")}">‹</button><strong>${esc(label)}</strong><button class="btn" data-month="1" aria-label="${$t("Next month")}">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div><button class="btn widget-action" data-journal-today>${icon("calendar")}${$t("Today’s entry")}</button></div>`;
       body
         .querySelectorAll("[data-journal-date]")
         .forEach((b) =>
@@ -443,8 +444,7 @@ export async function renderDashboard(root, app) {
       const { decks } = await api("flashcards/decks");
       const due = decks.reduce((n, d) => n + d.due, 0);
       if (!decks.length) {
-        body.innerHTML =
-          '<p class="widget-empty">No decks yet. Create one in Flashcards.</p>';
+        body.innerHTML = `<p class="widget-empty">${$t("No decks yet. Create one in Flashcards.")}</p>`;
         return;
       }
       const deck = decks.find((d) => d.due);
@@ -457,7 +457,7 @@ export async function renderDashboard(root, app) {
       const card = full.cards
         .filter((c) => !c.suspended && c.due <= now)
         .sort((a, b) => a.due - b.due)[0];
-      body.innerHTML = `<p class="widget-due"><strong>${due}</strong> card${due === 1 ? "" : "s"} due · ${esc(deck.name)}</p><div class="widget-card"><div class="widget-card-face">${rich(card.front, esc)}</div><div class="widget-card-answer" hidden><hr><div class="widget-card-face">${rich(card.back, esc)}</div><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(card.interval, r)}</small></button>`).join("")}</div></div><button class="btn primary widget-action" data-reveal>Reveal answer</button></div>`;
+      body.innerHTML = `<p class="widget-due"><strong>${due}</strong> card${due === 1 ? "" : "s"} due · ${esc(deck.name)}</p><div class="widget-card"><div class="widget-card-face">${rich(card.front, esc)}</div><div class="widget-card-answer" hidden><hr><div class="widget-card-face">${rich(card.back, esc)}</div><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(card.interval, r)}</small></button>`).join("")}</div></div><button class="btn primary widget-action" data-reveal>${$t("Reveal answer")}</button></div>`;
       body.querySelector("[data-reveal]").addEventListener("click", (e) => {
         body.querySelector(".widget-card-answer").hidden = false;
         e.target.hidden = true;
@@ -483,7 +483,7 @@ export async function renderDashboard(root, app) {
     chart: async (w, body) => {
       const o = w.options;
       if (!o.database) {
-        body.innerHTML = `<p class="widget-empty">Choose a database and a property to chart.</p><button class="btn widget-action" data-configure-here>Set up chart</button>`;
+        body.innerHTML = `<p class="widget-empty">${$t("Choose a database and a property to chart.")}</p><button class="btn widget-action" data-configure-here>${$t("Set up chart")}</button>`;
         body
           .querySelector("[data-configure-here]")
           .addEventListener("click", () => chartDialog(w));
@@ -521,11 +521,11 @@ export async function renderDashboard(root, app) {
     const modal = document.querySelector("#modal");
     const dbs = app.data.databases || [];
     if (!dbs.length) {
-      app.toast("Create a database first; then chart it here.");
+      app.toast($t("Create a database first; then chart it here."));
       return;
     }
     const o = w.options;
-    modal.innerHTML = `<form id="chart-form"><h2>Chart settings</h2><p>Counts the database’s records by a property.</p><label>Title <small class="hint">(optional)</small><input name="title" maxlength="80" value="${esc(o.title || "")}"></label><label>Database<select name="database">${dbs.map((d) => `<option value="${esc(d.id)}" ${d.id === o.database ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label><label>Property<select name="column"></select></label><label>Chart<select name="kind"><option value="bar" ${o.kind !== "pie" ? "selected" : ""}>Bars</option><option value="pie" ${o.kind === "pie" ? "selected" : ""}>Pie</option></select></label><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="chart-cancel">Cancel</button><button class="btn primary">Save chart</button></footer></form>`;
+    modal.innerHTML = `<form id="chart-form"><h2>${$t("Chart settings")}</h2><p>${$t("Counts the database’s records by a property.")}</p><label>${$t("Title")} <small class="hint">${$t("(optional)")}</small><input name="title" maxlength="80" value="${esc(o.title || "")}"></label><label>${$t("Database")}<select name="database">${dbs.map((d) => `<option value="${esc(d.id)}" ${d.id === o.database ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label><label>${$t("Property")}<select name="column"></select></label><label>${$t("Chart")}<select name="kind"><option value="bar" ${o.kind !== "pie" ? "selected" : ""}>${$t("Bars")}</option><option value="pie" ${o.kind === "pie" ? "selected" : ""}>${$t("Pie")}</option></select></label><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="chart-cancel">${$t("Cancel")}</button><button class="btn primary">${$t("Save chart")}</button></footer></form>`;
     modal.showModal();
     const form = modal.querySelector("#chart-form");
     const columns = async () => {
@@ -563,7 +563,7 @@ export async function renderDashboard(root, app) {
 function bars(groups, esc) {
   const max = Math.max(...groups.map((g) => g[1]));
   const total = groups.reduce((n, g) => n + g[1], 0);
-  return `<div class="chart-bars" role="table" aria-label="Records per value">${groups
+  return `<div class="chart-bars" role="table" aria-label="${$t("Records per value")}">${groups
     .map(
       ([label, n]) =>
         `<div class="chart-bar" role="row" title="${esc(label)}: ${n} (${Math.round((n / total) * 100)}%)"><span role="cell" class="chart-label">${esc(label)}</span><span class="chart-track"><span class="chart-fill" style="width:${Math.max(2, (n / max) * 100)}%"></span></span><span role="cell" class="chart-value">${n}</span></div>`,
@@ -592,7 +592,7 @@ function pie(groups, esc) {
       return `<path class="slice s${i + 1}" d="M50 50 L${point(start)} A46 46 0 ${sweep > Math.PI ? 1 : 0} 1 ${point(angle)} Z"><title>${title}</title></path>`;
     })
     .join("");
-  return `<div class="chart-pie"><svg viewBox="0 0 100 100" role="img" aria-label="Pie chart">${arcs}</svg><ul class="chart-legend">${slices
+  return `<div class="chart-pie"><svg viewBox="0 0 100 100" role="img" aria-label="${$t("Pie chart")}">${arcs}</svg><ul class="chart-legend">${slices
     .map(
       ([label, n], i) =>
         `<li><span class="swatch s${i + 1}"></span><span>${esc(label)}</span><strong>${n}</strong><small>${Math.round((n / total) * 100)}%</small></li>`,

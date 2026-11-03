@@ -2895,7 +2895,7 @@ button.doc-icon:hover {
   line-height: 1.2;
 }
 .tag-add input {
-  width: 110px;
+  width: 14ch;
   padding: 3px 8px;
   border: 1px dashed var(--line);
   border-radius: 99px;

@@ -1,0 +1,514 @@
+/*
+ * name: Liquid Glass
+ * base: light
+ * description: Frosted crystal surfaces, luminous edges, and an airy blue-lilac atmosphere.
+ *
+ * Standalone theme: no imported fonts, images, or changes to application layout.
+ * Opaque defaults remain usable without backdrop-filter. Blur is confined to
+ * navigation and floating surfaces to avoid a compositor layer on every card.
+ */
+[data-variant="liquidglass"] {
+  --surface: #fdfdff;
+  --surface-alt: #edf2fa;
+  --ink: #23334f;
+  --subtle: #52627d;
+  --muted: #5e6f88;
+  --border: #c5d0e3;
+  --line: #d9e1ee;
+  --accent: #325bc1;
+  --soft: #e5edff;
+  --row-hover: #e6edf9;
+  --row-action-hover: #d7e3fa;
+  --drop: #d3e3ff;
+  --glass-fill: #f5f8ff;
+  --glass-popup: #fcfdff;
+  --glass-edge: #ffffff;
+  --glass-shadow:
+    inset 0 1px 0 #ffffff, inset 0 -1px 0 #ffffff80, 0 2px 4px #354b7605,
+    0 12px 32px #354b7610;
+  --glass-float:
+    inset 0 1px 0 #ffffff, 0 8px 24px #354b7614, 0 28px 64px #354b7624;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: var(--surface-alt);
+  color: var(--ink);
+  color-scheme: light;
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+}
+
+/* The ambient canvas supplies color behind the glass without extra elements. */
+[data-variant="liquidglass"] body {
+  background:
+    radial-gradient(ellipse at 8% 0%, #d6eaff 0%, transparent 48%),
+    radial-gradient(ellipse at 92% 18%, #e8ddfa 0%, transparent 46%),
+    radial-gradient(ellipse at 65% 100%, #d9f1ee 0%, transparent 45%), #eef3fa;
+  color: var(--ink);
+}
+
+[data-variant="liquidglass"] .main {
+  background: transparent;
+}
+
+[data-variant="liquidglass"] ::selection {
+  background: #ccddff;
+  color: #203f80;
+}
+
+[data-variant="liquidglass"] .sidebar,
+[data-variant="liquidglass"] .topbar,
+[data-variant="liquidglass"] .login-art {
+  background: var(--glass-fill);
+  border-color: var(--glass-edge);
+  box-shadow:
+    inset -1px 0 #ffffff80,
+    1px 0 0 #6378a010;
+}
+
+[data-variant="liquidglass"] .topbar {
+  color: var(--subtle);
+  box-shadow:
+    inset 0 -1px #ffffff80,
+    0 1px 0 #6378a010;
+}
+
+[data-variant="liquidglass"] .brand {
+  color: #263e6a;
+  letter-spacing: -0.8px;
+}
+
+[data-variant="liquidglass"] .brand-mark,
+[data-variant="liquidglass"] .eyebrow,
+[data-variant="liquidglass"] .text-link,
+[data-variant="liquidglass"] .folder-row .tree-icon,
+[data-variant="liquidglass"] .section-toggle {
+  color: var(--accent);
+}
+
+[data-variant="liquidglass"] .page-heading h1,
+[data-variant="liquidglass"] .welcome-copy h2,
+[data-variant="liquidglass"] .doc-title,
+[data-variant="liquidglass"] .login-form h2 {
+  color: #233858;
+  letter-spacing: -0.035em;
+  font-weight: 650;
+  text-wrap: balance;
+}
+
+[data-variant="liquidglass"] .subtitle,
+[data-variant="liquidglass"] .note-meta,
+[data-variant="liquidglass"] .folder-card small,
+[data-variant="liquidglass"] .doc-meta,
+[data-variant="liquidglass"] .save-status,
+[data-variant="liquidglass"] .panel p,
+[data-variant="liquidglass"] dialog p,
+[data-variant="liquidglass"] .login-form p,
+[data-variant="liquidglass"] .profile-role,
+[data-variant="liquidglass"] .section-title span,
+[data-variant="liquidglass"] .section-label,
+[data-variant="liquidglass"] .hint,
+[data-variant="liquidglass"] .nav button,
+[data-variant="liquidglass"] .folder-button,
+[data-variant="liquidglass"] .tree-row,
+[data-variant="liquidglass"] label,
+[data-variant="liquidglass"] .crumb strong {
+  color: var(--subtle);
+}
+
+[data-variant="liquidglass"] button:hover,
+[data-variant="liquidglass"] .record-card:hover {
+  background-color: var(--row-hover);
+}
+
+[data-variant="liquidglass"] .nav button,
+[data-variant="liquidglass"] .folder-button,
+[data-variant="liquidglass"] .tree-row {
+  border-radius: 12px;
+}
+
+[data-variant="liquidglass"] .nav button.active,
+[data-variant="liquidglass"] .folder-button.active,
+[data-variant="liquidglass"] .tree-row.active {
+  background: linear-gradient(160deg, #f3f8ff, #dae7ff);
+  color: #294e9e;
+  box-shadow:
+    inset 3px 0 #5278cc,
+    inset 0 1px #ffffff,
+    0 3px 10px #354b7610;
+  font-weight: 600;
+}
+
+[data-variant="liquidglass"] .workspace-button,
+[data-variant="liquidglass"] .btn {
+  background: linear-gradient(165deg, #ffffff, #edf3ff);
+  color: var(--ink);
+  border-color: var(--border);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px #ffffff,
+    0 2px 5px #354b7609;
+}
+
+[data-variant="liquidglass"] .workspace-button:hover,
+[data-variant="liquidglass"] .workspace-button[aria-expanded="true"],
+[data-variant="liquidglass"] .btn:hover {
+  background: #edf3ff;
+  border-color: #99afd6;
+}
+
+[data-variant="liquidglass"] .btn.primary,
+[data-variant="liquidglass"] .db-embed-actions button.primary {
+  background: linear-gradient(165deg, #426dce, #3156b1);
+  border-color: #365cb7;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px #ffffff66,
+    0 4px 12px #325bc12b;
+}
+
+[data-variant="liquidglass"] .btn.primary:hover,
+[data-variant="liquidglass"] .db-embed-actions button.primary:hover {
+  background: linear-gradient(165deg, #365fbd, #294a9c);
+  border-color: #294a9c;
+}
+
+[data-variant="liquidglass"] .btn.danger,
+[data-variant="liquidglass"] .form-error {
+  color: #ad304d;
+}
+
+[data-variant="liquidglass"] .folder-card,
+[data-variant="liquidglass"] .note-card,
+[data-variant="liquidglass"] .panel,
+[data-variant="liquidglass"] .db-embed-panel,
+[data-variant="liquidglass"] .db-embed-card {
+  background: var(--glass-fill);
+  border-color: var(--glass-edge);
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow);
+}
+
+[data-variant="liquidglass"] .workspace-menu,
+[data-variant="liquidglass"] .row-menu,
+[data-variant="liquidglass"] .popover,
+[data-variant="liquidglass"] .format-bar,
+[data-variant="liquidglass"] .link-picker,
+[data-variant="liquidglass"] .ai-assist,
+[data-variant="liquidglass"] dialog {
+  background: var(--glass-popup);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--glass-float);
+}
+
+[data-variant="liquidglass"] dialog::backdrop {
+  background: #26395955;
+}
+
+[data-variant="liquidglass"] .welcome-banner {
+  background:
+    radial-gradient(ellipse at 90% 20%, #e8def7, transparent 60%),
+    linear-gradient(125deg, #f3faff, #e4efff 60%, #e8f6f4);
+  border-color: var(--glass-edge);
+  border-radius: 26px;
+  box-shadow: var(--glass-shadow);
+}
+
+[data-variant="liquidglass"] .welcome-copy p,
+[data-variant="liquidglass"] .welcome-copy .eyebrow {
+  color: #4f6383;
+}
+
+[data-variant="liquidglass"] .art-sheet {
+  background: linear-gradient(145deg, #ffffffed, #eef4ffd9);
+  border-color: #ffffff;
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px #ffffff,
+    0 14px 32px #45649b26;
+}
+
+[data-variant="liquidglass"] .art-sheet::before,
+[data-variant="liquidglass"] .art-star {
+  color: #6486c6;
+}
+
+[data-variant="liquidglass"] .art-sheet i,
+[data-variant="liquidglass"] .preview-lines i {
+  background: #cfdbed;
+}
+
+[data-variant="liquidglass"] .art-sticky {
+  background: linear-gradient(145deg, #f1eaff, #ded2f4);
+  color: #705594;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px #ffffff,
+    0 8px 24px #65528a20;
+}
+
+[data-variant="liquidglass"] .folder-icon,
+[data-variant="liquidglass"] .square,
+[data-variant="liquidglass"] .avatar {
+  background: linear-gradient(145deg, #f5f9ff, #dae7ff);
+  color: #3b5c9c;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px #ffffff,
+    0 2px 6px #354b760d;
+}
+
+[data-variant="liquidglass"] .folder-card:nth-child(3n + 2) .folder-icon {
+  background: linear-gradient(145deg, #f4efff, #e3d9f5);
+  color: #735399;
+}
+
+[data-variant="liquidglass"] .folder-card:nth-child(3n) .folder-icon {
+  background: linear-gradient(145deg, #effbf7, #d3ede6);
+  color: #346f64;
+}
+
+[data-variant="liquidglass"] .note-preview {
+  background: #edf3fc;
+  color: var(--subtle);
+  border-color: var(--line);
+}
+
+[data-variant="liquidglass"] .note-card:nth-child(3n + 2) .note-preview {
+  background: #f1edfa;
+}
+
+[data-variant="liquidglass"] .note-card:nth-child(3n) .note-preview {
+  background: #eaf5f2;
+}
+
+[data-variant="liquidglass"] .preview-symbol {
+  color: #6a83b5;
+}
+
+[data-variant="liquidglass"] .badge,
+[data-variant="liquidglass"] .shortcut {
+  background: #f0f4fb;
+  color: var(--subtle);
+  border-color: var(--border);
+  border-radius: 7px;
+}
+
+[data-variant="liquidglass"] .tag,
+[data-variant="liquidglass"] .pill,
+[data-variant="liquidglass"] .peer {
+  background: #e7efff;
+  color: #365699;
+  border-radius: 999px;
+}
+
+[data-variant="liquidglass"] .tabs button,
+[data-variant="liquidglass"] .note-tab small {
+  color: var(--subtle);
+}
+
+[data-variant="liquidglass"] .tabs .active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+[data-variant="liquidglass"] .view-toggle,
+[data-variant="liquidglass"] .note-tab-strip,
+[data-variant="liquidglass"] .db-embed-head,
+[data-variant="liquidglass"] .admin-table th {
+  background: #edf3fc;
+  border-color: var(--line);
+}
+
+[data-variant="liquidglass"] .view-toggle .active,
+[data-variant="liquidglass"] .toolbar-group .selected,
+[data-variant="liquidglass"] .db-embed-views [aria-pressed="true"] {
+  background: var(--soft);
+  color: #294e9e;
+}
+
+[data-variant="liquidglass"] .note-tab.active {
+  background: var(--surface);
+  border-top-color: var(--accent);
+  color: var(--accent);
+}
+
+[data-variant="liquidglass"] .note-tab.secondary {
+  border-top-color: #8162ab;
+}
+
+[data-variant="liquidglass"] .note-tab.drag-over {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+/* Opaque reading and input surfaces keep text stable over the ambient canvas. */
+[data-variant="liquidglass"] .document,
+[data-variant="liquidglass"] .note-pane-frame,
+[data-variant="liquidglass"] .block-controls {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+[data-variant="liquidglass"] .editor-toolbar,
+[data-variant="liquidglass"] .find-bar {
+  background: var(--glass-popup);
+  border-color: var(--line);
+}
+
+[data-variant="liquidglass"] input,
+[data-variant="liquidglass"] select,
+[data-variant="liquidglass"] textarea {
+  background: #fdfdff;
+  color: var(--ink);
+  border-color: var(--border);
+  border-radius: 11px;
+}
+
+[data-variant="liquidglass"] .doc-title {
+  background: transparent;
+  border: 0;
+}
+
+[data-variant="liquidglass"] input::placeholder,
+[data-variant="liquidglass"] textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+[data-variant="liquidglass"] .block blockquote,
+[data-variant="liquidglass"] .block .lp-quote,
+[data-variant="liquidglass"] .block .lp-callout {
+  background: #edf3ff;
+  border-color: #6287cc;
+  color: #3b5684;
+}
+
+[data-variant="liquidglass"] .block pre,
+[data-variant="liquidglass"] .block code {
+  background: #eff2f8;
+  color: #3e5479;
+}
+
+[data-variant="liquidglass"] .block pre code {
+  background: transparent;
+}
+
+[data-variant="liquidglass"] mark {
+  background: #f8e8b4;
+  color: #4a3c1c;
+}
+
+[data-variant="liquidglass"] :focus-visible,
+[data-variant="liquidglass"] input:focus,
+[data-variant="liquidglass"] textarea:focus,
+[data-variant="liquidglass"] select:focus,
+[data-variant="liquidglass"] .workspace-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@supports (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  [data-variant="liquidglass"] {
+    --glass-fill: #ffffffb8;
+    --glass-popup: #fffffff0;
+    --glass-edge: #ffffffe6;
+  }
+
+  [data-variant="liquidglass"] .sidebar,
+  [data-variant="liquidglass"] .topbar,
+  [data-variant="liquidglass"] .workspace-menu,
+  [data-variant="liquidglass"] .row-menu,
+  [data-variant="liquidglass"] .popover,
+  [data-variant="liquidglass"] .format-bar,
+  [data-variant="liquidglass"] .link-picker,
+  [data-variant="liquidglass"] .ai-assist,
+  [data-variant="liquidglass"] dialog {
+    -webkit-backdrop-filter: blur(20px) saturate(125%);
+    backdrop-filter: blur(20px) saturate(125%);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-variant="liquidglass"] .folder-card:hover,
+  [data-variant="liquidglass"] .note-card:hover {
+    background: var(--glass-popup);
+    border-color: #a9bce0;
+    box-shadow:
+      inset 0 1px #ffffff,
+      0 6px 12px #354b760a,
+      0 18px 38px #354b761c;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-variant="liquidglass"] .btn,
+  [data-variant="liquidglass"] .workspace-button,
+  [data-variant="liquidglass"] .nav button,
+  [data-variant="liquidglass"] .tree-row {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      color 160ms ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-variant="liquidglass"] *,
+  [data-variant="liquidglass"] *::before,
+  [data-variant="liquidglass"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-variant="liquidglass"] .folder-card:hover,
+  [data-variant="liquidglass"] .note-card:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  [data-variant="liquidglass"] {
+    --glass-fill: #f5f8ff;
+    --glass-popup: #fcfdff;
+    --glass-edge: #94a6c4;
+    --border: #94a6c4;
+    --line: #94a6c4;
+  }
+
+  [data-variant="liquidglass"] .sidebar,
+  [data-variant="liquidglass"] .topbar,
+  [data-variant="liquidglass"] .workspace-menu,
+  [data-variant="liquidglass"] .row-menu,
+  [data-variant="liquidglass"] .popover,
+  [data-variant="liquidglass"] .format-bar,
+  [data-variant="liquidglass"] .link-picker,
+  [data-variant="liquidglass"] .ai-assist,
+  [data-variant="liquidglass"] dialog {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-variant="liquidglass"] :focus-visible {
+    outline-color: Highlight;
+  }
+
+  [data-variant="liquidglass"] .nav button.active,
+  [data-variant="liquidglass"] .folder-button.active,
+  [data-variant="liquidglass"] .tree-row.active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

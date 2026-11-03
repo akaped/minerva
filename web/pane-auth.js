@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 import { isPane } from "./note-tabs.js";
 // Cross-server panes sign in on their own origin. Keep their session in memory,
 // never in the host page, localStorage, a URL, or a host-page postMessage payload.
@@ -113,7 +114,7 @@ if (isPane && host && host !== location.origin) {
       images.set(img, "");
       try {
         const response = await fetch(source);
-        if (!response.ok) throw new Error("Image unavailable");
+        if (!response.ok) throw new Error($t("Image unavailable"));
         const blob = URL.createObjectURL(await response.blob());
         if (!img.isConnected || !session) {
           URL.revokeObjectURL(blob);
@@ -144,7 +145,7 @@ if (isPane && host && host !== location.origin) {
       e.stopPropagation();
       try {
         const response = await fetch(url.href);
-        if (!response.ok) throw new Error("Download denied");
+        if (!response.ok) throw new Error($t("Download denied"));
         const blob = URL.createObjectURL(await response.blob()),
           download = document.createElement("a");
         download.href = blob;

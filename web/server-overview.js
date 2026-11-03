@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 export async function renderServerOverview({
   api,
   esc,
@@ -11,7 +12,7 @@ export async function renderServerOverview({
     api("admin"),
   ]);
   if (!root.isConnected) return;
-  document.querySelector("#breadcrumb").textContent = "Server overview";
+  document.querySelector("#breadcrumb").textContent = $t("Server overview");
   const bytes = (n) =>
     n < 1024
       ? `${n} B`
@@ -39,7 +40,7 @@ export async function renderServerOverview({
       return `${colors[i % colors.length]} ${start}% ${at}%`;
     });
   const members = accounts.users.filter((u) => !u.admin && !u.disabled);
-  root.innerHTML = `<section class="page server-overview"><div class="eyebrow">SERVER HEALTH, AT A GLANCE</div><div class="page-heading"><div><h1>Server overview</h1><p class="subtitle">Manage people and capacity. Member content stays in their workspaces.</p></div></div><div class="server-stat-grid">${[
+  root.innerHTML = `<section class="page server-overview"><div class="eyebrow">${$t("SERVER HEALTH, AT A GLANCE")}</div><div class="page-heading"><div><h1>${$t("Server overview")}</h1><p class="subtitle">${$t("Manage people and capacity. Member content stays in their workspaces.")}</p></div></div><div class="server-stat-grid">${[
     ["Accounts", stats.total_users],
     ["Workspaces", stats.total_workspaces],
     ["Notes", stats.total_notes],
@@ -51,14 +52,16 @@ export async function renderServerOverview({
     )
     .join(
       "",
-    )}</div><section class="panel"><h2>Storage by workspace owner</h2><p>Current note text and uploaded files, counted once under each workspace owner. History, database overhead, and backups are excluded.</p><div class="server-storage"><div class="storage-pie" role="img" aria-label="Storage distribution; exact values are listed in the table" style="background:${total ? "conic-gradient(" + segments.join(",") + ")" : "var(--line)"}"></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Workspaces</th><th>Notes</th><th>Note text</th><th>Files</th></tr></thead><tbody>${stats.users.map((u) => `<tr><td>${esc(u.name)}${u.admin ? " (administrator)" : ""}</td><td>${u.workspaces}</td><td>${u.notes}</td><td>${bytes(u.text_bytes)}</td><td>${bytes(u.file_bytes)}</td></tr>`).join("")}</tbody></table></div></div></section>${stats.legacy_workspaces.length ? `<section class="panel"><h2>Preserved administrator workspaces</h2><p>These pre-existing workspaces are retained, but administrators cannot open their content. Transfer them to a member to restore content management.</p>${stats.legacy_workspaces.map((w) => `<div class="legacy-workspace"><strong>${esc(w.name)}</strong><button class="btn" data-transfer="${esc(w.id)}" ${members.length ? "" : "disabled"}>Transfer to member</button></div>`).join("")}${!members.length ? "<p>Add a regular user first.</p>" : ""}</section>` : ""}</section>`;
+    )}</div><section class="panel"><h2>${$t("Storage by workspace owner")}</h2><p>${$t("Current note text and uploaded files, counted once under each workspace owner. History, database overhead, and backups are excluded.")}</p><div class="server-storage"><div class="storage-pie" role="img" aria-label="${$t("Storage distribution; exact values are listed in the table")}" style="background:${total ? "conic-gradient(" + segments.join(",") + ")" : "var(--line)"}"></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("Account")}</th><th>${$t("Workspaces")}</th><th>${$t("Notes")}</th><th>${$t("Note text")}</th><th>${$t("Files")}</th></tr></thead><tbody>${stats.users.map((u) => `<tr><td>${esc(u.name)}${u.admin ? $t(" (administrator)") : ""}</td><td>${u.workspaces}</td><td>${u.notes}</td><td>${bytes(u.text_bytes)}</td><td>${bytes(u.file_bytes)}</td></tr>`).join("")}</tbody></table></div></div></section>${stats.legacy_workspaces.length ? `<section class="panel"><h2>${$t("Preserved administrator workspaces")}</h2><p>${$t("These pre-existing workspaces are retained, but administrators cannot open their content. Transfer them to a member to restore content management.")}</p>${stats.legacy_workspaces.map((w) => `<div class="legacy-workspace"><strong>${esc(w.name)}</strong><button class="btn" data-transfer="${esc(w.id)}" ${members.length ? "" : "disabled"}>${$t("Transfer to member")}</button></div>`).join("")}${!members.length ? `<p>${$t("Add a regular user first.")}</p>` : ""}</section>` : ""}</section>`;
   root.querySelectorAll("[data-transfer]").forEach(
     (b) =>
       (b.onclick = () =>
         formDialog(
-          "Transfer preserved workspace",
-          "The selected member becomes its owner. Existing member access and content are preserved.",
-          `<label>New owner<select name="user_id">${members.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.email)}</option>`).join("")}</select></label>`,
+          $t("Transfer preserved workspace"),
+          $t(
+            "The selected member becomes its owner. Existing member access and content are preserved.",
+          ),
+          `<label>${$t("New owner")}<select name="user_id">${members.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.email)}</option>`).join("")}</select></label>`,
           async (v) => {
             await api(
               `admin/workspaces/${b.dataset.transfer}/transfer`,

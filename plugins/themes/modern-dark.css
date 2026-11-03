@@ -1,0 +1,520 @@
+/*
+ * name: Modern Dark
+ * base: dark
+ * description: Midnight surfaces, luminous mint accents, sculpted cards, and quiet typography.
+ *
+ * Self-contained visual overlay. Keep the app's layout and responsive behavior.
+ * System fonts only; no external assets or network requests.
+ */
+[data-variant="modern-dark"] {
+  --surface: #19262b;
+  --surface-alt: #10191e;
+  --ink: #e2edeb;
+  --subtle: #a7bdbb;
+  --muted: #96adab;
+  --border: #344a50;
+  --line: #2a3d43;
+  --accent: #79d9bf;
+  --soft: #203e38;
+  --row-hover: #263a3e;
+  --row-action-hover: #304c4a;
+  --drop: #2c544b;
+  --modern-dark-shadow: 0 2px 4px #00000018, 0 8px 24px #00000024;
+  --modern-dark-float: 0 8px 24px #00000033, 0 24px 64px #00000055;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: var(--ink);
+  background: var(--surface-alt);
+  color-scheme: dark;
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+}
+
+[data-variant="modern-dark"] body,
+[data-variant="modern-dark"] .main {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+
+[data-variant="modern-dark"] ::selection {
+  background: #87dfc8;
+  color: #102e27;
+}
+
+/* Quiet chrome keeps attention on the notes. */
+[data-variant="modern-dark"] .sidebar,
+[data-variant="modern-dark"] .login-art {
+  background: linear-gradient(165deg, #142328, #111b21 75%);
+  border-color: var(--border);
+}
+
+[data-variant="modern-dark"] .topbar {
+  background: #131f24;
+  border-color: var(--line);
+  color: var(--subtle);
+}
+
+[data-variant="modern-dark"] .brand {
+  letter-spacing: -0.8px;
+  color: #d6eee6;
+}
+
+[data-variant="modern-dark"] .brand-mark,
+[data-variant="modern-dark"] .folder-row .tree-icon,
+[data-variant="modern-dark"] .section-toggle,
+[data-variant="modern-dark"] .text-link {
+  color: var(--accent);
+}
+
+[data-variant="modern-dark"] .page-heading h1,
+[data-variant="modern-dark"] .welcome-copy h2,
+[data-variant="modern-dark"] .doc-title,
+[data-variant="modern-dark"] .login-form h2 {
+  color: #e5f2ee;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+[data-variant="modern-dark"] .eyebrow {
+  color: var(--accent);
+  letter-spacing: 0.14em;
+}
+
+[data-variant="modern-dark"] .subtitle,
+[data-variant="modern-dark"] .note-meta,
+[data-variant="modern-dark"] .folder-card small,
+[data-variant="modern-dark"] .doc-meta,
+[data-variant="modern-dark"] .save-status,
+[data-variant="modern-dark"] .panel p,
+[data-variant="modern-dark"] dialog p,
+[data-variant="modern-dark"] .login-form p,
+[data-variant="modern-dark"] .profile-role,
+[data-variant="modern-dark"] .section-title span,
+[data-variant="modern-dark"] .section-label {
+  color: var(--subtle);
+}
+
+[data-variant="modern-dark"] .nav button,
+[data-variant="modern-dark"] .folder-button,
+[data-variant="modern-dark"] .tree-row,
+[data-variant="modern-dark"] label,
+[data-variant="modern-dark"] .crumb strong {
+  color: var(--subtle);
+}
+
+[data-variant="modern-dark"] .nav button,
+[data-variant="modern-dark"] .folder-button,
+[data-variant="modern-dark"] .tree-row {
+  border-radius: 9px;
+}
+
+[data-variant="modern-dark"] button:hover {
+  background-color: var(--row-hover);
+}
+
+[data-variant="modern-dark"] .nav button.active,
+[data-variant="modern-dark"] .folder-button.active,
+[data-variant="modern-dark"] .tree-row.active {
+  background: #25463e;
+  color: #a5ecd5;
+  box-shadow: inset 3px 0 #79d9bf;
+  font-weight: 600;
+}
+
+/* Layered charcoal surfaces, soft depth, and consistent corners. */
+[data-variant="modern-dark"] .workspace-button,
+[data-variant="modern-dark"] .btn,
+[data-variant="modern-dark"] input,
+[data-variant="modern-dark"] select,
+[data-variant="modern-dark"] textarea {
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+[data-variant="modern-dark"] .workspace-button {
+  box-shadow: var(--modern-dark-shadow);
+}
+
+[data-variant="modern-dark"] .workspace-button:hover,
+[data-variant="modern-dark"] .workspace-button[aria-expanded="true"] {
+  background: #19262b;
+  border-color: #568f80;
+}
+
+[data-variant="modern-dark"] .folder-card,
+[data-variant="modern-dark"] .note-card,
+[data-variant="modern-dark"] .panel,
+[data-variant="modern-dark"] .db-embed-panel,
+[data-variant="modern-dark"] .db-embed-card {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 16px;
+  box-shadow: var(--modern-dark-shadow);
+}
+
+[data-variant="modern-dark"] .workspace-menu,
+[data-variant="modern-dark"] .row-menu,
+[data-variant="modern-dark"] .popover,
+[data-variant="modern-dark"] .format-bar,
+[data-variant="modern-dark"] .link-picker,
+[data-variant="modern-dark"] dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--ink);
+  box-shadow: var(--modern-dark-float);
+}
+
+[data-variant="modern-dark"] dialog::backdrop {
+  background: #050d15aa;
+  backdrop-filter: blur(4px);
+}
+
+[data-variant="modern-dark"] .btn.primary,
+[data-variant="modern-dark"] .db-embed-actions button.primary {
+  background: linear-gradient(180deg, #79d9bf, #60c8ad);
+  border-color: #60c8ad;
+  color: #102e27;
+  font-weight: 600;
+  box-shadow:
+    0 2px 3px #00000040,
+    inset 0 1px #ffffff26;
+}
+
+[data-variant="modern-dark"] .btn.primary:hover,
+[data-variant="modern-dark"] .db-embed-actions button.primary:hover {
+  background: #9be7d0;
+  border-color: #9be7d0;
+}
+
+[data-variant="modern-dark"] .btn.danger,
+[data-variant="modern-dark"] .form-error {
+  color: #ff9bae;
+}
+
+/* A restrained aurora wash adds character without competing with content. */
+[data-variant="modern-dark"] .welcome-banner {
+  background:
+    radial-gradient(ellipse at 95% 10%, #234c41 0%, transparent 55%),
+    linear-gradient(115deg, #192e2c, #242e2d);
+  border-color: #35564d;
+  border-radius: 22px;
+  box-shadow: inset 0 1px #ffffff0a;
+}
+
+[data-variant="modern-dark"] .welcome-copy p,
+[data-variant="modern-dark"] .welcome-copy .eyebrow {
+  color: #b7d1c7;
+}
+
+[data-variant="modern-dark"] .art-sheet {
+  background: #19262b;
+  border-color: #416357;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px #00000040;
+}
+
+[data-variant="modern-dark"] .art-sheet::before,
+[data-variant="modern-dark"] .art-star {
+  color: #89d4b8;
+}
+
+[data-variant="modern-dark"] .art-sheet i {
+  background: #3a6156;
+}
+
+[data-variant="modern-dark"] .art-sticky {
+  background: #d9bd7c;
+  color: #3d3014;
+  border-radius: 10px;
+}
+
+[data-variant="modern-dark"] .folder-icon,
+[data-variant="modern-dark"] .square,
+[data-variant="modern-dark"] .avatar {
+  background: #244239;
+  color: #a0dfc4;
+  border-radius: 11px;
+}
+
+[data-variant="modern-dark"] .folder-card:nth-child(3n + 2) .folder-icon {
+  background: #2b354b;
+  color: #b2c6f3;
+}
+
+[data-variant="modern-dark"] .folder-card:nth-child(3n) .folder-icon {
+  background: #443b2b;
+  color: #e8c98c;
+}
+
+[data-variant="modern-dark"] .note-preview {
+  background: #1b302d;
+  color: var(--subtle);
+  border-color: var(--line);
+}
+
+[data-variant="modern-dark"] .note-card:nth-child(3n + 2) .note-preview {
+  background: #212b3b;
+}
+
+[data-variant="modern-dark"] .note-card:nth-child(3n) .note-preview {
+  background: #302e27;
+}
+
+[data-variant="modern-dark"] .preview-lines i {
+  background: #3d5555;
+}
+
+[data-variant="modern-dark"] .preview-symbol {
+  color: #83b3a5;
+}
+
+[data-variant="modern-dark"] .badge,
+[data-variant="modern-dark"] .shortcut {
+  background: #213338;
+  border-color: var(--border);
+  color: var(--subtle);
+  border-radius: 6px;
+}
+
+[data-variant="modern-dark"] .tag,
+[data-variant="modern-dark"] .pill,
+[data-variant="modern-dark"] .peer {
+  background: var(--soft);
+  color: #a0dfc4;
+  border-radius: 999px;
+}
+
+[data-variant="modern-dark"] .tabs button {
+  color: var(--subtle);
+}
+
+[data-variant="modern-dark"] .tabs .active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+[data-variant="modern-dark"] .view-toggle,
+[data-variant="modern-dark"] .note-tab-strip,
+[data-variant="modern-dark"] .db-embed-head,
+[data-variant="modern-dark"] .admin-table th {
+  background: #152329;
+  border-color: var(--line);
+}
+
+[data-variant="modern-dark"] .view-toggle .active,
+[data-variant="modern-dark"] .toolbar-group .selected,
+[data-variant="modern-dark"] .db-embed-views [aria-pressed="true"] {
+  background: var(--soft);
+  color: #a5ecd5;
+}
+
+[data-variant="modern-dark"] .note-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  border-top-color: var(--accent);
+}
+
+[data-variant="modern-dark"] .note-tab.secondary {
+  border-top-color: #b2c6f3;
+}
+
+[data-variant="modern-dark"] .note-tab.drag-over {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+/* The writing canvas stays neutral, including split panes and embedded data. */
+[data-variant="modern-dark"] .document,
+[data-variant="modern-dark"] .note-pane-frame,
+[data-variant="modern-dark"] .block-controls {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+[data-variant="modern-dark"] .editor-toolbar,
+[data-variant="modern-dark"] .find-bar {
+  background: #19262bf5;
+  border-color: var(--line);
+}
+
+[data-variant="modern-dark"] .block blockquote,
+[data-variant="modern-dark"] .block .lp-quote,
+[data-variant="modern-dark"] .block .lp-callout {
+  background: #1c342e;
+  border-color: #68b89b;
+  color: #b4dac8;
+}
+
+[data-variant="modern-dark"] .block pre,
+[data-variant="modern-dark"] .block code {
+  background: #111c22;
+  color: #b6d7df;
+}
+
+[data-variant="modern-dark"] .block pre code {
+  background: transparent;
+}
+
+[data-variant="modern-dark"] mark {
+  background: #675421;
+  color: #ffedba;
+}
+
+[data-variant="modern-dark"] input::placeholder,
+[data-variant="modern-dark"] textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+[data-variant="modern-dark"] :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+[data-variant="modern-dark"] input:focus,
+[data-variant="modern-dark"] textarea:focus,
+[data-variant="modern-dark"] select:focus,
+[data-variant="modern-dark"] .workspace-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+/* Complete the dark base's fixed-color surfaces and interaction states. */
+[data-variant="modern-dark"] .doc-title {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+}
+
+[data-variant="modern-dark"] .record-card:hover {
+  background: var(--row-hover);
+}
+
+[data-variant="modern-dark"] .empty,
+[data-variant="modern-dark"] .server-status {
+  border-color: var(--border);
+}
+
+[data-variant="modern-dark"] .empty h3 {
+  color: var(--ink);
+}
+
+[data-variant="modern-dark"] .hint,
+[data-variant="modern-dark"] .note-tab small {
+  color: var(--subtle);
+}
+
+[data-variant="modern-dark"] .shared-top,
+[data-variant="modern-dark"] .comments-panel .comments-head {
+  background: var(--surface-alt);
+}
+
+[data-variant="modern-dark"] .cell-picker-pop,
+[data-variant="modern-dark"] .comments-panel {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-variant="modern-dark"] .command-selected,
+[data-variant="modern-dark"] .command-item.command-selected {
+  background: var(--soft);
+  color: var(--ink);
+  outline-color: var(--accent);
+}
+
+[data-variant="modern-dark"] mark,
+[data-variant="modern-dark"] .format-highlight {
+  background: #675421 !important;
+  color: #ffedba;
+}
+
+[data-variant="modern-dark"] ::highlight(find-match) {
+  background: #675421;
+  color: #ffedba;
+}
+
+[data-variant="modern-dark"] ::highlight(find-current) {
+  background: #e8c98c;
+  color: #3d3014;
+}
+
+[data-variant="modern-dark"] .markdown-alert-note {
+  --alert: #a6c6f5;
+}
+
+[data-variant="modern-dark"] .markdown-alert-tip {
+  --alert: #79d9bf;
+}
+
+[data-variant="modern-dark"] .markdown-alert-important {
+  --alert: #c5b3f0;
+}
+
+[data-variant="modern-dark"] .markdown-alert-warning {
+  --alert: #e8c98c;
+}
+
+[data-variant="modern-dark"] .markdown-alert-caution {
+  --alert: #ff9bae;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-variant="modern-dark"] .folder-card:hover,
+  [data-variant="modern-dark"] .note-card:hover {
+    background: var(--surface);
+    border-color: #507e70;
+    box-shadow:
+      0 4px 8px #00000022,
+      0 12px 28px #00000033;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-variant="modern-dark"] .btn,
+  [data-variant="modern-dark"] .workspace-button,
+  [data-variant="modern-dark"] .nav button,
+  [data-variant="modern-dark"] .tree-row {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      color 160ms ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-variant="modern-dark"] *,
+  [data-variant="modern-dark"] *::before,
+  [data-variant="modern-dark"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-variant="modern-dark"] .folder-card:hover,
+  [data-variant="modern-dark"] .note-card:hover {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-variant="modern-dark"] :focus-visible {
+    outline-color: Highlight;
+  }
+
+  [data-variant="modern-dark"] .nav button.active,
+  [data-variant="modern-dark"] .folder-button.active,
+  [data-variant="modern-dark"] .tree-row.active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

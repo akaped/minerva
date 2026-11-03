@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 // An emoji picker with search: every emoji, found by its name or tags ("heart",
 // "pizza", "smile cat"), grouped like a phone keyboard, with recently used ones
 // first. The data (web/dist/emoji.json) loads the first time a picker opens.
@@ -6,7 +7,7 @@ let data = null;
 /** The emoji list: { groups: [name], emoji: [[char, name, search, group]] }. */
 export function loadEmoji() {
   data ||= fetch("/emoji.json", { credentials: "same-origin" }).then((r) => {
-    if (!r.ok) throw new Error("Emoji could not be loaded");
+    if (!r.ok) throw new Error($t("Emoji could not be loaded"));
     return r.json();
   });
   return data.catch((err) => {
@@ -112,8 +113,7 @@ export function searchEmoji(list, query) {
  */
 export async function emojiPicker(root, { onPick, esc }) {
   root.classList.add("emoji-picker");
-  root.innerHTML =
-    '<input type="search" class="emoji-search" placeholder="Search emoji: heart, pizza, rocket…" aria-label="Search emoji" autocomplete="off"><p class="emoji-loading">Loading emoji…</p>';
+  root.innerHTML = `<input type="search" class="emoji-search" placeholder="${$t("Search emoji: heart, pizza, rocket…")}" aria-label="${$t("Search emoji")}" autocomplete="off"><p class="emoji-loading">${$t("Loading emoji…")}</p>`;
   const search = root.querySelector(".emoji-search");
   search.focus();
   let all;
@@ -134,7 +134,7 @@ export async function emojiPicker(root, { onPick, esc }) {
   root.querySelector(".emoji-loading").remove();
   const tabs = document.createElement("nav");
   tabs.className = "emoji-tabs";
-  tabs.setAttribute("aria-label", "Emoji groups");
+  tabs.setAttribute("aria-label", $t("Emoji groups"));
   tabs.innerHTML = all.groups
     .map((name, g) => {
       const first = all.emoji.find((e) => e[3] === g);
@@ -149,7 +149,7 @@ export async function emojiPicker(root, { onPick, esc }) {
   grid.setAttribute("role", "listbox");
   const footer = document.createElement("p");
   footer.className = "emoji-name";
-  footer.textContent = "Pick an emoji";
+  footer.textContent = $t("Pick an emoji");
   search.after(tabs, grid, footer);
 
   const draw = () => {
@@ -168,7 +168,7 @@ export async function emojiPicker(root, { onPick, esc }) {
       .filter(Boolean);
     grid.innerHTML =
       (used.length
-        ? `<h4>Recently used</h4><div class="emoji-set">${used.map(button).join("")}</div>`
+        ? `<h4>${$t("Recently used")}</h4><div class="emoji-set">${used.map(button).join("")}</div>`
         : "") +
       all.groups
         .map((name, g) => {

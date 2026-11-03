@@ -3,6 +3,7 @@
  * and save it as a new note or into today's journal. Without a connection,
  * captures wait on the device and are sent when it is back.
  */
+import { $t } from "./i18n.js";
 import {
   sharedText,
   noteFrom,
@@ -45,7 +46,7 @@ async function api(path, method = "GET", body) {
   });
   const v = await r.json().catch(() => ({}));
   if (!r.ok || r.headers.get("x-minerva-offline")) {
-    const e = new Error(v.error || "Request failed");
+    const e = new Error(v.error || $t("Request failed"));
     e.status = r.headers.get("x-minerva-offline") ? 0 : r.status;
     throw e;
   }

@@ -1,0 +1,441 @@
+/*
+ * name: Modern
+ * base: light
+ * description: Pearl surfaces, deep teal accents, sculpted cards, and quiet typography.
+ *
+ * Self-contained visual overlay. Keep the app's layout and responsive behavior.
+ * System fonts only; no external assets or network requests.
+ */
+[data-variant="modern"] {
+  --surface: #ffffff;
+  --surface-alt: #f3f6f6;
+  --ink: #203438;
+  --subtle: #586c70;
+  --muted: #64777b;
+  --border: #d6e1e2;
+  --line: #e0e8e9;
+  --accent: #08756d;
+  --soft: #e2f3ef;
+  --row-hover: #eaf0f0;
+  --row-action-hover: #dbe8e6;
+  --drop: #cdebe3;
+  --modern-shadow: 0 2px 4px #20343803, 0 8px 24px #20343806;
+  --modern-float: 0 8px 24px #2034380d, 0 24px 64px #20343812;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: var(--ink);
+  background: var(--surface-alt);
+  color-scheme: light;
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+}
+
+[data-variant="modern"] body,
+[data-variant="modern"] .main {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+
+[data-variant="modern"] ::selection {
+  background: #c4e9df;
+  color: #143f39;
+}
+
+/* Quiet chrome keeps attention on the notes. */
+[data-variant="modern"] .sidebar,
+[data-variant="modern"] .login-art {
+  background: linear-gradient(165deg, #f0f6f4, #edf2f3 75%);
+  border-color: var(--border);
+}
+
+[data-variant="modern"] .topbar {
+  background: #f8fafa;
+  border-color: var(--line);
+  color: var(--subtle);
+}
+
+[data-variant="modern"] .brand {
+  letter-spacing: -0.8px;
+  color: #183e3b;
+}
+
+[data-variant="modern"] .brand-mark,
+[data-variant="modern"] .folder-row .tree-icon,
+[data-variant="modern"] .section-toggle,
+[data-variant="modern"] .text-link {
+  color: var(--accent);
+}
+
+[data-variant="modern"] .page-heading h1,
+[data-variant="modern"] .welcome-copy h2,
+[data-variant="modern"] .doc-title,
+[data-variant="modern"] .login-form h2 {
+  color: #193538;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+[data-variant="modern"] .eyebrow {
+  color: var(--accent);
+  letter-spacing: 0.14em;
+}
+
+[data-variant="modern"] .subtitle,
+[data-variant="modern"] .note-meta,
+[data-variant="modern"] .folder-card small,
+[data-variant="modern"] .doc-meta,
+[data-variant="modern"] .save-status,
+[data-variant="modern"] .panel p,
+[data-variant="modern"] dialog p,
+[data-variant="modern"] .login-form p,
+[data-variant="modern"] .profile-role,
+[data-variant="modern"] .section-title span,
+[data-variant="modern"] .section-label {
+  color: var(--subtle);
+}
+
+[data-variant="modern"] .nav button,
+[data-variant="modern"] .folder-button,
+[data-variant="modern"] .tree-row,
+[data-variant="modern"] label,
+[data-variant="modern"] .crumb strong {
+  color: var(--subtle);
+}
+
+[data-variant="modern"] .nav button,
+[data-variant="modern"] .folder-button,
+[data-variant="modern"] .tree-row {
+  border-radius: 9px;
+}
+
+[data-variant="modern"] button:hover {
+  background-color: var(--row-hover);
+}
+
+[data-variant="modern"] .nav button.active,
+[data-variant="modern"] .folder-button.active,
+[data-variant="modern"] .tree-row.active {
+  background: #dceee8;
+  color: #145e54;
+  box-shadow: inset 3px 0 #08756d;
+  font-weight: 600;
+}
+
+/* White surfaces, soft depth, and consistent corners. */
+[data-variant="modern"] .workspace-button,
+[data-variant="modern"] .btn,
+[data-variant="modern"] input,
+[data-variant="modern"] select,
+[data-variant="modern"] textarea {
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+[data-variant="modern"] .workspace-button {
+  box-shadow: var(--modern-shadow);
+}
+
+[data-variant="modern"] .workspace-button:hover,
+[data-variant="modern"] .workspace-button[aria-expanded="true"] {
+  background: #ffffff;
+  border-color: #91b9b0;
+}
+
+[data-variant="modern"] .folder-card,
+[data-variant="modern"] .note-card,
+[data-variant="modern"] .panel,
+[data-variant="modern"] .db-embed-panel,
+[data-variant="modern"] .db-embed-card {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 16px;
+  box-shadow: var(--modern-shadow);
+}
+
+[data-variant="modern"] .workspace-menu,
+[data-variant="modern"] .row-menu,
+[data-variant="modern"] .popover,
+[data-variant="modern"] .format-bar,
+[data-variant="modern"] .link-picker,
+[data-variant="modern"] dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--ink);
+  box-shadow: var(--modern-float);
+}
+
+[data-variant="modern"] dialog::backdrop {
+  background: #142f3b55;
+  backdrop-filter: blur(4px);
+}
+
+[data-variant="modern"] .btn.primary,
+[data-variant="modern"] .db-embed-actions button.primary {
+  background: linear-gradient(180deg, #08756d, #08665e);
+  border-color: #08665e;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow:
+    0 2px 3px #153e3520,
+    inset 0 1px #ffffff22;
+}
+
+[data-variant="modern"] .btn.primary:hover,
+[data-variant="modern"] .db-embed-actions button.primary:hover {
+  background: #075b54;
+  border-color: #075b54;
+}
+
+[data-variant="modern"] .btn.danger,
+[data-variant="modern"] .form-error {
+  color: #b33249;
+}
+
+/* A restrained aurora wash adds character without competing with content. */
+[data-variant="modern"] .welcome-banner {
+  background:
+    radial-gradient(ellipse at 95% 10%, #d9eee8 0%, transparent 55%),
+    linear-gradient(115deg, #edf7f3, #f5f6ee);
+  border-color: #d6e7df;
+  border-radius: 22px;
+  box-shadow: inset 0 1px #ffffff;
+}
+
+[data-variant="modern"] .welcome-copy p,
+[data-variant="modern"] .welcome-copy .eyebrow {
+  color: #486961;
+}
+
+[data-variant="modern"] .art-sheet {
+  background: #ffffff;
+  border-color: #d8e7e2;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px #315e4820;
+}
+
+[data-variant="modern"] .art-sheet::before,
+[data-variant="modern"] .art-star {
+  color: #357d6b;
+}
+
+[data-variant="modern"] .art-sheet i {
+  background: #dbece5;
+}
+
+[data-variant="modern"] .art-sticky {
+  background: #f0dea7;
+  color: #766021;
+  border-radius: 10px;
+}
+
+[data-variant="modern"] .folder-icon,
+[data-variant="modern"] .square,
+[data-variant="modern"] .avatar {
+  background: #e1f1ec;
+  color: #216e5d;
+  border-radius: 11px;
+}
+
+[data-variant="modern"] .folder-card:nth-child(3n + 2) .folder-icon {
+  background: #e8edf7;
+  color: #526a9c;
+}
+
+[data-variant="modern"] .folder-card:nth-child(3n) .folder-icon {
+  background: #f6ecd9;
+  color: #8a6526;
+}
+
+[data-variant="modern"] .note-preview {
+  background: #eef5f2;
+  color: var(--subtle);
+  border-color: var(--line);
+}
+
+[data-variant="modern"] .note-card:nth-child(3n + 2) .note-preview {
+  background: #eff2f8;
+}
+
+[data-variant="modern"] .note-card:nth-child(3n) .note-preview {
+  background: #f7f3e9;
+}
+
+[data-variant="modern"] .preview-lines i {
+  background: #d5e0df;
+}
+
+[data-variant="modern"] .preview-symbol {
+  color: #6b9389;
+}
+
+[data-variant="modern"] .badge,
+[data-variant="modern"] .shortcut {
+  background: #eef3f2;
+  border-color: var(--border);
+  color: var(--subtle);
+  border-radius: 6px;
+}
+
+[data-variant="modern"] .tag,
+[data-variant="modern"] .pill,
+[data-variant="modern"] .peer {
+  background: var(--soft);
+  color: #216657;
+  border-radius: 999px;
+}
+
+[data-variant="modern"] .tabs button {
+  color: var(--subtle);
+}
+
+[data-variant="modern"] .tabs .active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+[data-variant="modern"] .view-toggle,
+[data-variant="modern"] .note-tab-strip,
+[data-variant="modern"] .db-embed-head,
+[data-variant="modern"] .admin-table th {
+  background: #edf3f2;
+  border-color: var(--line);
+}
+
+[data-variant="modern"] .view-toggle .active,
+[data-variant="modern"] .toolbar-group .selected,
+[data-variant="modern"] .db-embed-views [aria-pressed="true"] {
+  background: var(--soft);
+  color: #145e54;
+}
+
+[data-variant="modern"] .note-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  border-top-color: var(--accent);
+}
+
+[data-variant="modern"] .note-tab.secondary {
+  border-top-color: #526a9c;
+}
+
+[data-variant="modern"] .note-tab.drag-over {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+/* The writing canvas stays neutral, including split panes and embedded data. */
+[data-variant="modern"] .document,
+[data-variant="modern"] .note-pane-frame,
+[data-variant="modern"] .block-controls {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+[data-variant="modern"] .editor-toolbar,
+[data-variant="modern"] .find-bar {
+  background: #fffffff5;
+  border-color: var(--line);
+}
+
+[data-variant="modern"] .block blockquote,
+[data-variant="modern"] .block .lp-quote,
+[data-variant="modern"] .block .lp-callout {
+  background: #eef7f3;
+  border-color: #438b76;
+  color: #305c50;
+}
+
+[data-variant="modern"] .block pre,
+[data-variant="modern"] .block code {
+  background: #f0f4f5;
+  color: #355b61;
+}
+
+[data-variant="modern"] .block pre code {
+  background: transparent;
+}
+
+[data-variant="modern"] mark {
+  background: #f7e7ac;
+  color: #4c401d;
+}
+
+[data-variant="modern"] input::placeholder,
+[data-variant="modern"] textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+[data-variant="modern"] :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+[data-variant="modern"] input:focus,
+[data-variant="modern"] textarea:focus,
+[data-variant="modern"] select:focus,
+[data-variant="modern"] .workspace-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-variant="modern"] .folder-card:hover,
+  [data-variant="modern"] .note-card:hover {
+    background: var(--surface);
+    border-color: #aaccc3;
+    box-shadow:
+      0 4px 8px #20343805,
+      0 12px 28px #2034380d;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-variant="modern"] .btn,
+  [data-variant="modern"] .workspace-button,
+  [data-variant="modern"] .nav button,
+  [data-variant="modern"] .tree-row {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      color 160ms ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-variant="modern"] *,
+  [data-variant="modern"] *::before,
+  [data-variant="modern"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-variant="modern"] .folder-card:hover,
+  [data-variant="modern"] .note-card:hover {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-variant="modern"] :focus-visible {
+    outline-color: Highlight;
+  }
+
+  [data-variant="modern"] .nav button.active,
+  [data-variant="modern"] .folder-button.active,
+  [data-variant="modern"] .tree-row.active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

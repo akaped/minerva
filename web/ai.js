@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 import { splitMarkdown } from "./markdown.js";
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -22,17 +23,17 @@ export async function renderAISettings({ api, esc, data, error }) {
   const epoch = generation;
   const providers = await api("ai/providers");
   if (epoch !== generation) return;
-  $("#breadcrumb").textContent = "AI providers";
+  $("#breadcrumb").textContent = $t("AI providers");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">IN-APP INTELLIGENCE</div><div class="page-heading"><div><h1>AI providers</h1><p class="subtitle">Choose the models your server can use for contextual chat.</p></div>${data.user.admin ? '<button class="btn primary" id="add-provider">+ Add provider</button>' : ""}</div>
-    <div class="panel ai-notice"><h2>Your context, your choice</h2><p>Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Files attached to a question are sent with that question only, and are not stored. With “No context”, no notes are sent. Provider usage may incur API charges.</p><p>API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.</p></div>
-    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? " · web search on" : ""} · answers up to ${Number(p.max_tokens || 4096).toLocaleString()} tokens</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">Edit</button><button class="btn danger" data-remove-provider="${p.id}">Remove provider</button></div>` : ""}</section>`).join("") || '<div class="empty"><h3>No providers configured</h3><p>A server administrator can add a model and API key to enable chat.</p></div>'}</div></section>`;
+    `<section class="page"><div class="eyebrow">${$t("IN-APP INTELLIGENCE")}</div><div class="page-heading"><div><h1>${$t("AI providers")}</h1><p class="subtitle">${$t("Choose the models your server can use for contextual chat.")}</p></div>${data.user.admin ? `<button class="btn primary" id="add-provider">${$t("+ Add provider")}</button>` : ""}</div>
+    <div class="panel ai-notice"><h2>${$t("Your context, your choice")}</h2><p>${$t("Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Files attached to a question are sent with that question only, and are not stored. With “No context”, no notes are sent. Provider usage may incur API charges.")}</p><p>${$t("API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.")}</p></div>
+    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? $t(" · web search on") : ""} · answers up to ${Number(p.max_tokens || 4096).toLocaleString()} tokens</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">${$t("Edit")}</button><button class="btn danger" data-remove-provider="${p.id}">${$t("Remove provider")}</button></div>` : ""}</section>`).join("") || `<div class="empty"><h3>${$t("No providers configured")}</h3><p>${$t("A server administrator can add a model and API key to enable chat.")}</p></div>`}</div></section>`;
   // Adds a provider, or edits `existing`. The stored key is never shown: an
   // empty key field keeps it, and pointing it at another server needs it again.
   const providerForm = (existing = null) => {
     const modal = $("#modal");
     const p = existing || { kind: "openai", endpoint: presets.openai.endpoint };
-    modal.innerHTML = `<form id="provider-form"><h2>${existing ? "Edit AI provider" : "Add an AI provider"}</h2><p>This profile is available to server members. Requests use this API key and its billing account.</p><label>Provider<select name="kind">${Object.entries(
+    modal.innerHTML = `<form id="provider-form"><h2>${existing ? $t("Edit AI provider") : $t("Add an AI provider")}</h2><p>${$t("This profile is available to server members. Requests use this API key and its billing account.")}</p><label>${$t("Provider")}<select name="kind">${Object.entries(
       presets,
     )
       .map(
@@ -41,7 +42,7 @@ export async function renderAISettings({ api, esc, data, error }) {
       )
       .join(
         "",
-      )}</select></label><label>Profile name<input name="name" maxlength="200" placeholder="e.g. Team assistant" value="${esc(p.name || "")}" required></label><label>API base URL<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>Model ID<input name="model" placeholder="Exact model ID from your provider" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>Allow web search</label><p class="hint web-search-hint"></p><label>Max answer length (tokens)<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.</p><label>API key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? "<p>The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.</p>" : ""}<p>Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">Cancel</button><button class="btn primary" type="submit">Save provider</button></footer></form>`;
+      )}</select></label><label>${$t("Profile name")}<input name="name" maxlength="200" placeholder="${$t("e.g. Team assistant")}" value="${esc(p.name || "")}" required></label><label>${$t("API base URL")}<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>${$t("Model ID")}<input name="model" placeholder="${$t("Exact model ID from your provider")}" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>${$t("Allow web search")}</label><p class="hint web-search-hint"></p><label>${$t("Max answer length (tokens)")}<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">${$t("Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.")}</p><label>${$t("API key")}<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? `<p>${$t("The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.")}</p>` : ""}<p>${$t("Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.")}</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Save provider")}</button></footer></form>`;
     modal.showModal();
     const clear = () => {
       modal.close();
@@ -64,8 +65,10 @@ export async function renderAISettings({ api, esc, data, error }) {
       box.disabled = !supported;
       if (!supported) box.checked = false;
       $(".web-search-hint", modal).textContent = supported
-        ? "The model may search the web while answering. Searches run at the provider, are billed per search, and receive search terms based on the question and notes."
-        : "Web search is available for OpenAI and Anthropic providers.";
+        ? $t(
+            "The model may search the web while answering. Searches run at the provider, are billed per search, and receive search terms based on the question and notes.",
+          )
+        : $t("Web search is available for OpenAI and Anthropic providers.");
     };
     searchable();
     $("select[name=kind]", modal).onchange = (e) => {
@@ -102,8 +105,7 @@ export async function renderAISettings({ api, esc, data, error }) {
     (button) =>
       (button.onclick = async () => {
         const modal = $("#modal");
-        modal.innerHTML =
-          '<h2>Remove this provider?</h2><p>New requests will stop using this profile. Existing conversation history stays available.</p><footer><button class="btn" id="cancel-remove">Cancel</button><button class="btn danger" id="confirm-remove">Remove</button></footer>';
+        modal.innerHTML = `<h2>${$t("Remove this provider?")}</h2><p>${$t("New requests will stop using this profile. Existing conversation history stays available.")}</p><footer><button class="btn" id="cancel-remove">${$t("Cancel")}</button><button class="btn danger" id="confirm-remove">${$t("Remove")}</button></footer>`;
         modal.showModal();
         $("#cancel-remove").onclick = () => modal.close();
         $("#confirm-remove").onclick = async () => {
@@ -185,9 +187,9 @@ export async function renderAIChat({
   const chosen = scopeOptions.findIndex(
     (s) => s.kind === initialScope?.kind && s.id === initialScope?.id,
   );
-  $("#breadcrumb").textContent = "AI chat";
+  $("#breadcrumb").textContent = $t("AI chat");
   $("#content").innerHTML =
-    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">History</button><button class="btn" id="ai-settings">Providers</button></div></div>` : '<div class="eyebrow">ANSWERS, FROM ANYTHING YOU SHARE</div><div class="page-heading"><div><h1>Ask anything</h1><p class="subtitle">A plain question, or one about your notes. Attach photos, scans and documents to have them read.</p></div><button class="btn" id="ai-settings">Provider settings</button></div>'}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">+ New conversation</button><h3>Your conversations</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>Context<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>Model<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || '<option value="">No provider configured</option>'}</select></label></div><details class="ai-disclosure"><summary>What is sent to the model?</summary><p>Your question, the recent conversation, and any files you attach go to the selected provider. With a context, the permitted notes and records from it go too; with no context, none do. Context is capped; source coverage appears with each answer. Attached files are sent with that question only and are not stored. Replies may be inaccurate.</p></details><div id="chat-messages" class="chat-messages" aria-label="Conversation"><div class="empty"><h3>What would you like to understand?</h3><p>Ask a question, read a photo or a PDF, or pick a context to ask about your notes.</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">Your question</label><div id="chat-files" class="chat-files" hidden></div><div class="chat-input"><button type="button" class="chat-attach" id="chat-attach" title="Attach images or documents" aria-label="Attach images or documents" ${providers.length ? "" : "disabled"}>${CLIP}</button><input type="file" id="chat-file-input" multiple accept="${ACCEPT}" hidden><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? "Ask about this note…" : "Ask anything…"}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="Send (Enter)" aria-label="Send" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? "Enter to send · Shift+Enter for a new line · drop images or documents here" : "Configure a provider to begin."}</span><button class="btn" id="stop-chat" type="button" disabled>Stop</button></div></form></section></div></section>`;
+    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">${$t("History")}</button><button class="btn" id="ai-settings">${$t("Providers")}</button></div></div>` : `<div class="eyebrow">${$t("ANSWERS, FROM ANYTHING YOU SHARE")}</div><div class="page-heading"><div><h1>${$t("Ask anything")}</h1><p class="subtitle">${$t("A plain question, or one about your notes. Attach photos, scans and documents to have them read.")}</p></div><button class="btn" id="ai-settings">${$t("Provider settings")}</button></div>`}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">${$t("+ New conversation")}</button><h3>${$t("Your conversations")}</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>${$t("Context")}<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>${$t("Model")}<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || `<option value="">${$t("No provider configured")}</option>`}</select></label></div><details class="ai-disclosure"><summary>${$t("What is sent to the model?")}</summary><p>${$t("Your question, the recent conversation, and any files you attach go to the selected provider. With a context, the permitted notes and records from it go too; with no context, none do. Context is capped; source coverage appears with each answer. Attached files are sent with that question only and are not stored. Replies may be inaccurate.")}</p></details><div id="chat-messages" class="chat-messages" aria-label="${$t("Conversation")}"><div class="empty"><h3>${$t("What would you like to understand?")}</h3><p>${$t("Ask a question, read a photo or a PDF, or pick a context to ask about your notes.")}</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">${$t("Your question")}</label><div id="chat-files" class="chat-files" hidden></div><div class="chat-input"><button type="button" class="chat-attach" id="chat-attach" title="${$t("Attach images or documents")}" aria-label="${$t("Attach images or documents")}" ${providers.length ? "" : "disabled"}>${CLIP}</button><input type="file" id="chat-file-input" multiple accept="${ACCEPT}" hidden><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? $t("Ask about this note…") : $t("Ask anything…")}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="${$t("Send (Enter)")}" aria-label="${$t("Send")}" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? $t("Enter to send · Shift+Enter for a new line · drop images or documents here") : $t("Configure a provider to begin.")}</span><button class="btn" id="stop-chat" type="button" disabled>${$t("Stop")}</button></div></form></section></div></section>`;
   $("#ai-settings").onclick = configure;
   // Beside a note, past conversations open on demand.
   const historyToggle = $("#ai-history-toggle");
@@ -260,9 +262,10 @@ export async function renderAIChat({
       shown
         .map(
           (c) =>
-            `<div class="chat-history-row ${chat?.id === c.id ? "current" : ""}"><button class="chat-history-item" data-chat="${c.id}" title="${esc(c.title)}"><span class="chat-history-title">${esc(c.title)}</span><small>${esc(scopeLabel(c.scope))} · ${ago(c.updated_at)}</small></button><button class="chat-delete" data-delete-chat="${c.id}" aria-label="Delete conversation “${esc(c.title)}”" title="Delete conversation">×</button></div>`,
+            `<div class="chat-history-row ${chat?.id === c.id ? "current" : ""}"><button class="chat-history-item" data-chat="${c.id}" title="${esc(c.title)}"><span class="chat-history-title">${esc(c.title)}</span><small>${esc(scopeLabel(c.scope))} · ${ago(c.updated_at)}</small></button><button class="chat-delete" data-delete-chat="${c.id}" aria-label="Delete conversation “${esc(c.title)}”" title="${$t("Delete conversation")}">×</button></div>`,
         )
-        .join("") || '<p class="chat-history-empty">No conversations yet.</p>';
+        .join("") ||
+      `<p class="chat-history-empty">${$t("No conversations yet.")}</p>`;
     if (history.length)
       $("#chat-history").insertAdjacentHTML(
         "beforeend",
@@ -365,7 +368,7 @@ export async function renderAIChat({
             `<article class="chat-turn"><p class="chat-question">${esc(t.question)}${filesHTML(t.files)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
         )
         .join("") ||
-      '<div class="empty"><h3>A new conversation</h3><p>Ask a question to get started.</p></div>';
+      `<div class="empty"><h3>${$t("A new conversation")}</h3><p>${$t("Ask a question to get started.")}</p></div>`;
     bindSources($("#chat-messages"));
     const scope = chat?.scope;
     $$(".chat-turn", $("#chat-messages")).forEach((turn, i) =>
@@ -405,13 +408,13 @@ export async function renderAIChat({
     answer.innerHTML = blocks
       .map(
         (_, i) =>
-          `<div class="chat-block"><div class="chat-block-body">${html[i]}</div>${target ? `<button class="chat-block-add" data-add-block="${i}" title="Add this block to the end of the note" aria-label="Add this block to the note">＋ Note</button>` : ""}</div>`,
+          `<div class="chat-block"><div class="chat-block-body">${html[i]}</div>${target ? `<button class="chat-block-add" data-add-block="${i}" title="${$t("Add this block to the end of the note")}" aria-label="${$t("Add this block to the note")}">${$t("＋ Note")}</button>` : ""}</div>`,
       )
       .join("");
     turn.querySelector(".chat-reply-actions")?.remove();
     const actions = document.createElement("div");
     actions.className = "chat-reply-actions";
-    actions.innerHTML = `<button class="btn" data-reply="copy">Copy</button><button class="btn" data-reply="note">New note</button>${target ? '<button class="btn primary" data-reply="add">Add all to note</button>' : ""}`;
+    actions.innerHTML = `<button class="btn" data-reply="copy">${$t("Copy")}</button><button class="btn" data-reply="note">${$t("New note")}</button>${target ? `<button class="btn primary" data-reply="add">${$t("Add all to note")}</button>` : ""}`;
     answer.after(actions);
     // Button feedback: a short confirmation, or the error.
     const run = async (button, label, work) => {
@@ -460,7 +463,7 @@ export async function renderAIChat({
       area.select();
       const ok = document.execCommand("copy");
       area.remove();
-      if (!ok) throw new Error("Copying is not allowed here.");
+      if (!ok) throw new Error($t("Copying is not allowed here."));
     }
   }
   function usageLabel(usage) {
@@ -475,13 +478,13 @@ export async function renderAIChat({
     chat = null;
     const kind = scope()?.kind;
     $("#chat-question").placeholder = docked
-      ? "Ask about this note…"
+      ? $t("Ask about this note…")
       : kind === "none"
-        ? "Ask anything…"
-        : "Ask a question about this context…";
+        ? $t("Ask anything…")
+        : $t("Ask a question about this context…");
     drawTurns();
     drawHistory();
-    $("#chat-status").textContent = "New conversation · ready";
+    $("#chat-status").textContent = $t("New conversation · ready");
   }
   // Files for the next question: chosen with 📎, dropped on the composer, or
   // pasted (images).
@@ -567,13 +570,13 @@ export async function renderAIChat({
       "chat-attach",
     ].forEach((id) => ($("#" + id).disabled = true));
     $("#stop-chat").disabled = false;
-    $("#chat-status").textContent = "Preparing context…";
+    $("#chat-status").textContent = $t("Preparing context…");
     const messages = $("#chat-messages");
     if (!chat?.turns.length) messages.innerHTML = "";
     const turn = document.createElement("article");
     turn.className = "chat-turn";
     const chosen = providers.find((p) => p.id === $("#chat-provider").value);
-    turn.innerHTML = `<p class="chat-question">${esc(question)}${filesHTML(sending.map((f) => f.name))}</p><div class="chat-reply">${replyMeta(chosen?.name, chosen?.model)}<div class="chat-answer chat-pending"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chat-pending-text">Reading your notes…</span></div><div class="chat-sources"></div><small class="chat-usage"></small></div>`;
+    turn.innerHTML = `<p class="chat-question">${esc(question)}${filesHTML(sending.map((f) => f.name))}</p><div class="chat-reply">${replyMeta(chosen?.name, chosen?.model)}<div class="chat-answer chat-pending"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chat-pending-text">${$t("Reading your notes…")}</span></div><div class="chat-sources"></div><small class="chat-usage"></small></div>`;
     messages.append(turn);
     turn.scrollIntoView({ block: "start", behavior: "smooth" });
     // The question is on its way: the box is free for the next one.
@@ -631,7 +634,7 @@ export async function renderAIChat({
       });
       if (!response.ok) {
         const problem = await response.json();
-        throw new Error(problem.error || "Unable to start response");
+        throw new Error(problem.error || $t("Unable to start response"));
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -655,7 +658,7 @@ export async function renderAIChat({
             $(".chat-sources", turn).innerHTML = sourcesHTML(sources);
             bindSources(turn);
             $("#chat-status").textContent = event.truncated
-              ? "Reading selected excerpts · context truncated"
+              ? $t("Reading selected excerpts · context truncated")
               : "Reading " + sources.length + " sources";
             const pending = $(".chat-pending-text", turn);
             if (pending)
@@ -663,26 +666,28 @@ export async function renderAIChat({
           }
           // Thinking models reason before they answer.
           if (event.type === "thinking" && !answer) {
-            $("#chat-status").textContent = "Thinking…";
+            $("#chat-status").textContent = $t("Thinking…");
             const pending = $(".chat-pending-text", turn);
-            if (pending) pending.textContent = "Thinking…";
+            if (pending) pending.textContent = $t("Thinking…");
           }
           if (event.type === "delta") {
             answer += event.text;
             live(answer);
-            $("#chat-status").textContent = "Writing…";
+            $("#chat-status").textContent = $t("Writing…");
           }
           if (event.type === "error") throw new Error(event.message);
           if (event.type === "done") {
             complete = true;
             usage = event.usage;
             $(".chat-usage", turn).textContent = usageLabel(usage);
-            $("#chat-status").textContent = "Saved";
+            $("#chat-status").textContent = $t("Saved");
           }
         }
       }
       if (!complete)
-        throw new Error("Response interrupted. Partial output was not saved.");
+        throw new Error(
+          $t("Response interrupted. Partial output was not saved."),
+        );
       chat = await api(`ai/chats/${chat.id}`);
       if (epoch !== generation) return;
       reply(turn, answer, question, chat.scope);
@@ -696,7 +701,7 @@ export async function renderAIChat({
       if (epoch === generation) {
         $("#chat-status").textContent =
           err.name === "AbortError"
-            ? "Stopped · partial output was not saved"
+            ? $t("Stopped · partial output was not saved")
             : err.message;
         turn.classList.add("chat-incomplete");
         // Not answered: the question goes back in the box to try again.

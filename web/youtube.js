@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 /** Accept only a single, bare YouTube URL. Never interpret arbitrary HTML. */
 export function youtubeVideo(text) {
   const raw = text.trim();
@@ -60,7 +61,9 @@ function loadAPI() {
       loading = null;
       reject(
         new Error(
-          "YouTube could not load. Check your connection or open the video on YouTube.",
+          $t(
+            "YouTube could not load. Check your connection or open the video on YouTube.",
+          ),
         ),
       );
     }, 15000);
@@ -73,7 +76,7 @@ function loadAPI() {
     script.onerror = () => {
       clearTimeout(timeout);
       loading = null;
-      reject(new Error("YouTube could not load."));
+      reject(new Error($t("YouTube could not load.")));
     };
     document.head.append(script);
   }));
@@ -181,19 +184,22 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
   function create(block, video) {
     const portal = document.createElement("section");
     portal.className = "youtube-portal";
-    portal.setAttribute("aria-label", "YouTube player");
+    portal.setAttribute("aria-label", $t("YouTube player"));
     portal.hidden = true;
     const controls = document.createElement("div");
     controls.className = "youtube-controls";
     const back = document.createElement("button");
-    back.textContent = "↙ Back to video";
+    back.textContent = $t("↙ Back to video");
     back.onclick = () =>
       document
         .querySelector(`[data-video-block="${CSS.escape(block)}"]`)
         ?.scrollIntoView({ block: "center", behavior: "smooth" });
     const close = document.createElement("button");
     close.textContent = "×";
-    close.setAttribute("aria-label", "Pause and return the video to its block");
+    close.setAttribute(
+      "aria-label",
+      $t("Pause and return the video to its block"),
+    );
     close.onclick = () => {
       entry.player?.pauseVideo?.();
       entry.playing = entry.floating = false;
@@ -201,7 +207,7 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
     };
     controls.append(back, close);
     const iframe = document.createElement("iframe");
-    iframe.title = "YouTube video";
+    iframe.title = $t("YouTube video");
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
     iframe.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
     iframe.allowFullscreen = true;
@@ -242,7 +248,7 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
     const failed = () =>
       error(
         new Error(
-          "This video cannot be embedded. Use “Open on YouTube” instead.",
+          $t("This video cannot be embedded. Use “Open on YouTube” instead."),
         ),
       );
     if (desktop) {
@@ -302,10 +308,10 @@ export function createYouTubeEmbeds({ getNote, edit, error }) {
       link.href = video.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      link.textContent = "Open on YouTube";
+      link.textContent = $t("Open on YouTube");
       const editButton = document.createElement("button");
       editButton.className = "text-link";
-      editButton.textContent = "Edit link";
+      editButton.textContent = $t("Edit link");
       editButton.onclick = () => {
         remove(block.id);
         edit(block.id);

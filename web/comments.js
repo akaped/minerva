@@ -4,6 +4,7 @@
  * composer for a new thread on a block or a selection. `@person@example.com`
  * mentions are offered from the people who can open the note.
  */
+import { $t } from "./i18n.js";
 import { mentionQuery } from "./editor-tools.js";
 
 /** Comment text as HTML: escaped, mentions by name, line breaks kept. */
@@ -120,7 +121,10 @@ export function createComments(deps) {
     if (button) {
       const n = openThreads().length;
       $(".comments-count", button).textContent = n ? String(n) : "";
-      button.setAttribute("aria-label", n ? `Comments, ${n} open` : "Comments");
+      button.setAttribute(
+        "aria-label",
+        n ? `Comments, ${n} open` : $t("Comments"),
+      );
       button.setAttribute("aria-pressed", String(open));
     }
   }
@@ -161,16 +165,16 @@ export function createComments(deps) {
     return text.length > 60 ? text.slice(0, 60) + "…" : text || "Empty block";
   }
   function composer(kind, id = "") {
-    return `<form class="comment-compose" data-compose="${kind}" data-thread="${id}"><textarea rows="${kind === "reply" ? 1 : 3}" maxlength="4000" placeholder="${kind === "reply" ? "Reply…" : "Add a comment… (@ to mention someone)"}" aria-label="${kind === "reply" ? "Reply" : "Comment"}"></textarea><div class="mention-list" hidden></div><div class="comment-actions"><small>Ctrl+Enter to send</small>${kind === "new" ? '<button type="button" class="btn" data-cancel-draft>Cancel</button>' : ""}<button class="btn primary">${kind === "reply" ? "Reply" : "Comment"}</button></div></form>`;
+    return `<form class="comment-compose" data-compose="${kind}" data-thread="${id}"><textarea rows="${kind === "reply" ? 1 : 3}" maxlength="4000" placeholder="${kind === "reply" ? $t("Reply…") : $t("Add a comment… (@ to mention someone)")}" aria-label="${kind === "reply" ? $t("Reply") : $t("Comment")}"></textarea><div class="mention-list" hidden></div><div class="comment-actions"><small>${$t("Ctrl+Enter to send")}</small>${kind === "new" ? `<button type="button" class="btn" data-cancel-draft>${$t("Cancel")}</button>` : ""}<button class="btn primary">${kind === "reply" ? $t("Reply") : $t("Comment")}</button></div></form>`;
   }
   function threadHTML(t) {
     const esc = deps.esc;
     const mine = t.comments[0]?.author === deps.me();
     const resolvable = deps.canResolveAll() || mine;
-    return `<article class="comment-thread ${t.resolved ? "resolved" : ""}" data-thread="${t.id}" data-block="${esc(t.block_id || "")}"><header>${t.block_id ? `<button class="comment-anchor" data-goto="${esc(t.block_id)}" title="Go to the block">${t.quote ? `“${esc(t.quote)}”` : esc(blockLabel(t.block_id))}</button>` : '<span class="comment-anchor">On the note</span>'}${resolvable ? `<button class="btn" data-resolve="${t.id}" data-value="${!t.resolved}">${t.resolved ? "Reopen" : "Resolve"}</button>` : ""}</header>${t.comments
+    return `<article class="comment-thread ${t.resolved ? "resolved" : ""}" data-thread="${t.id}" data-block="${esc(t.block_id || "")}"><header>${t.block_id ? `<button class="comment-anchor" data-goto="${esc(t.block_id)}" title="${$t("Go to the block")}">${t.quote ? `“${esc(t.quote)}”` : esc(blockLabel(t.block_id))}</button>` : `<span class="comment-anchor">${$t("On the note")}</span>`}${resolvable ? `<button class="btn" data-resolve="${t.id}" data-value="${!t.resolved}">${t.resolved ? $t("Reopen") : $t("Resolve")}</button>` : ""}</header>${t.comments
       .map(
         (c) =>
-          `<div class="comment" data-comment="${c.id}"><div class="comment-meta"><strong>${esc(c.author_name)}</strong><span>${esc(ago(c.created_at))}</span>${c.author === deps.me() ? `<button class="comment-delete" data-delete="${t.id}:${c.id}" title="${c === t.comments[0] ? "Delete the thread" : "Delete"}" aria-label="Delete comment">×</button>` : ""}</div><div class="comment-text">${commentHTML(c.text, esc, names())}</div></div>`,
+          `<div class="comment" data-comment="${c.id}"><div class="comment-meta"><strong>${esc(c.author_name)}</strong><span>${esc(ago(c.created_at))}</span>${c.author === deps.me() ? `<button class="comment-delete" data-delete="${t.id}:${c.id}" title="${c === t.comments[0] ? $t("Delete the thread") : $t("Delete")}" aria-label="${$t("Delete comment")}">×</button>` : ""}</div><div class="comment-text">${commentHTML(c.text, esc, names())}</div></div>`,
       )
       .join(
         "",
@@ -183,7 +187,7 @@ export function createComments(deps) {
       el = document.createElement("aside");
       el.id = "comments-panel";
       el.className = "comments-panel";
-      el.setAttribute("aria-label", "Comments");
+      el.setAttribute("aria-label", $t("Comments"));
       document.body.append(el);
     }
     document.body.classList.add("comments-open");
@@ -196,11 +200,11 @@ export function createComments(deps) {
           a.created_at - b.created_at,
       );
     const esc = deps.esc;
-    el.innerHTML = `<header class="comments-head"><h2>Comments</h2><div class="comments-tabs" role="tablist"><button role="tab" aria-selected="${!showResolved}" data-tab="open">Open ${openThreads().length || ""}</button><button role="tab" aria-selected="${showResolved}" data-tab="resolved">Resolved</button></div><button class="btn" data-new-note-thread title="Comment on the whole note">+</button><button class="btn" data-close aria-label="Close comments">×</button></header>${
+    el.innerHTML = `<header class="comments-head"><h2>${$t("Comments")}</h2><div class="comments-tabs" role="tablist"><button role="tab" aria-selected="${!showResolved}" data-tab="open">Open ${openThreads().length || ""}</button><button role="tab" aria-selected="${showResolved}" data-tab="resolved">${$t("Resolved")}</button></div><button class="btn" data-new-note-thread title="${$t("Comment on the whole note")}">+</button><button class="btn" data-close aria-label="${$t("Close comments")}">×</button></header>${
       draft
-        ? `<article class="comment-thread comment-draft"><header><span class="comment-anchor">${draft.quote ? `“${esc(draft.quote)}”` : draft.blockId ? esc(blockLabel(draft.blockId)) : "On the note"}</span></header>${composer("new")}</article>`
+        ? `<article class="comment-thread comment-draft"><header><span class="comment-anchor">${draft.quote ? `“${esc(draft.quote)}”` : draft.blockId ? esc(blockLabel(draft.blockId)) : $t("On the note")}</span></header>${composer("new")}</article>`
         : ""
-    }${shown.map(threadHTML).join("") || `<p class="comments-empty">${showResolved ? "No resolved threads." : "No comments yet. Select text or hover a block and choose 💬 to start one."}</p>`}`;
+    }${shown.map(threadHTML).join("") || `<p class="comments-empty">${showResolved ? $t("No resolved threads.") : $t("No comments yet. Select text or hover a block and choose 💬 to start one.")}</p>`}`;
     bind(el);
     drawBadges();
   }

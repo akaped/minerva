@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 /** Generic worker UI. Commands and capability availability come from the server. */
 export function timestamp(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -57,11 +58,11 @@ export async function pluginDialog({
   const q = (s) => modal.querySelector(s);
   const input =
     kind === "youtube"
-      ? `<label>YouTube video URL<input id="plugin-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required></label><label>Transcript language<input id="plugin-language" value="${esc(command.language || "en")}" maxlength="20"></label>${command.audio_fallback ? '<label class="checkbox-label"><input id="plugin-audio" type="checkbox">If captions are missing, transcribe audio I have permission to process. This may incur provider charges.</label>' : "<p>Uses available captions. Audio fallback is not configured.</p>"}`
+      ? `<label>${$t("YouTube video URL")}<input id="plugin-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required></label><label>${$t("Transcript language")}<input id="plugin-language" value="${esc(command.language || "en")}" maxlength="20"></label>${command.audio_fallback ? `<label class="checkbox-label"><input id="plugin-audio" type="checkbox">${$t("If captions are missing, transcribe audio I have permission to process. This may incur provider charges.")}</label>` : `<p>${$t("Uses available captions. Audio fallback is not configured.")}</p>`}`
       : kind === "audio"
-        ? `<label>Audio attachment<select id="plugin-attachment"><option value="">Choose an existing recording</option>${files.map((f) => `<option value="${esc(f.id)}">${esc(f.filename)}</option>`).join("")}</select></label><label>Or upload a recording (WAV, MP3, FLAC, M4A; up to 60 MiB)<input id="plugin-file" type="file" accept=".wav,.mp3,.flac,.m4a,audio/*"></label><p>Audio is sent to the server’s configured transcription provider. Uploaded originals remain in this note’s Files.</p>`
-        : `<label>Source<select id="plugin-source"><option value="note">Current note</option>${context.blockId ? '<option value="block">Current block</option>' : ""}${context.selection ? '<option value="selection">Selected text</option>' : ""}</select></label>`;
-  modal.innerHTML = `<h2>${esc(command.name)}</h2><p>Review generated content before inserting it. References show where an idea came from; they do not independently verify it.</p>${input}<label>${media ? "Knowledge extraction" : "AI provider"}<select id="plugin-provider">${media ? '<option value="">Transcript only · no knowledge extraction</option>' : ""}${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.model)}</option>`).join("")}</select></label><p>AI processing sends the chosen source to your provider and may incur charges. Longer sources are processed in sections, with up to 24 model calls.</p><p id="plugin-status" role="status"></p><div id="plugin-preview"></div><footer><button class="btn" id="plugin-close">Close</button><button class="btn" id="plugin-cancel" hidden>Cancel processing</button><button class="btn" id="plugin-retry" hidden>Retry unfinished stages</button><button class="btn primary" id="plugin-start">${media ? "Import" : "Generate"}</button><button class="btn primary" id="plugin-insert" hidden>Insert selected sections</button></footer>`;
+        ? `<label>${$t("Audio attachment")}<select id="plugin-attachment"><option value="">${$t("Choose an existing recording")}</option>${files.map((f) => `<option value="${esc(f.id)}">${esc(f.filename)}</option>`).join("")}</select></label><label>${$t("Or upload a recording (WAV, MP3, FLAC, M4A; up to 60 MiB)")}<input id="plugin-file" type="file" accept=".wav,.mp3,.flac,.m4a,audio/*"></label><p>${$t("Audio is sent to the server’s configured transcription provider. Uploaded originals remain in this note’s Files.")}</p>`
+        : `<label>${$t("Source")}<select id="plugin-source"><option value="note">${$t("Current note")}</option>${context.blockId ? `<option value="block">${$t("Current block")}</option>` : ""}${context.selection ? `<option value="selection">${$t("Selected text")}</option>` : ""}</select></label>`;
+  modal.innerHTML = `<h2>${esc(command.name)}</h2><p>${$t("Review generated content before inserting it. References show where an idea came from; they do not independently verify it.")}</p>${input}<label>${media ? $t("Knowledge extraction") : $t("AI provider")}<select id="plugin-provider">${media ? `<option value="">${$t("Transcript only · no knowledge extraction")}</option>` : ""}${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.model)}</option>`).join("")}</select></label><p>${$t("AI processing sends the chosen source to your provider and may incur charges. Longer sources are processed in sections, with up to 24 model calls.")}</p><p id="plugin-status" role="status"></p><div id="plugin-preview"></div><footer><button class="btn" id="plugin-close">${$t("Close")}</button><button class="btn" id="plugin-cancel" hidden>${$t("Cancel processing")}</button><button class="btn" id="plugin-retry" hidden>${$t("Retry unfinished stages")}</button><button class="btn primary" id="plugin-start">${media ? $t("Import") : $t("Generate")}</button><button class="btn primary" id="plugin-insert" hidden>${$t("Insert selected sections")}</button></footer>`;
   modal.showModal();
   if (!media)
     q("#plugin-source").value = context.selection
@@ -108,11 +109,11 @@ export async function pluginDialog({
     const items = job.result?.items || [];
     const segments = job.sources || [];
     q("#plugin-preview").innerHTML =
-      `<details><summary>Source${job.source?.title ? ` · ${esc(job.source.title)}` : ` · note revision ${esc(job.note_revision)}`}</summary><pre style="white-space:pre-wrap">${esc(segments.map((s) => `${s.start != null ? timestamp(s.start) : s.id} ${s.text}`).join("\n\n"))}</pre></details>${media && segments.length ? '<label class="checkbox-label"><input id="plugin-include-transcript" type="checkbox" checked>Include timestamped transcript</label>' : ""}` +
+      `<details><summary>Source${job.source?.title ? ` · ${esc(job.source.title)}` : ` · note revision ${esc(job.note_revision)}`}</summary><pre style="white-space:pre-wrap">${esc(segments.map((s) => `${s.start != null ? timestamp(s.start) : s.id} ${s.text}`).join("\n\n"))}</pre></details>${media && segments.length ? `<label class="checkbox-label"><input id="plugin-include-transcript" type="checkbox" checked>${$t("Include timestamped transcript")}</label>` : ""}` +
       items
         .map(
           (item, i) =>
-            `<section><label class="checkbox-label"><input type="checkbox" data-include="${i}" checked>Include ${esc(item.kind.replaceAll("_", " "))}${item.grounding === "analysis" ? " (AI analysis)" : ""}</label><label>Editable Markdown<textarea data-section="${i}" rows="6">${esc(knowledgeMarkdown(item, context.noteId, segments, job.source))}</textarea></label></section>`,
+            `<section><label class="checkbox-label"><input type="checkbox" data-include="${i}" checked>Include ${esc(item.kind.replaceAll("_", " "))}${item.grounding === "analysis" ? $t(" (AI analysis)") : ""}</label><label>${$t("Editable Markdown")}<textarea data-section="${i}" rows="6">${esc(knowledgeMarkdown(item, context.noteId, segments, job.source))}</textarea></label></section>`,
         )
         .join("");
     q("#plugin-insert").hidden = !items.length && !(media && segments.length);
@@ -132,7 +133,7 @@ export async function pluginDialog({
         if (q("#plugin-include-transcript")?.checked)
           text.unshift(...transcriptMarkdown(job, context.noteId));
         if (!text.length)
-          throw new Error("Select at least one nonempty section.");
+          throw new Error($t("Select at least one nonempty section."));
         await insert(text, context.noteId, context.blockId);
         sessionStorage.removeItem(storageKey);
         modal.close();

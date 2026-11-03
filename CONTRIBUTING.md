@@ -15,7 +15,7 @@ For security concerns, avoid public exploit details or private data. Use GitHub�
 - Improve onboarding, examples, and documentation.
 - Create original note templates or themes and explain who they help.
 - Test keyboard navigation, assistive technology, desktop sync, or export layouts.
-- Suggest clearer wording or help plan translations. A full translation system is not yet available.
+- Suggest clearer wording, improve the Italian translation, or add a language (see [Interface text and translations](#interface-text-and-translations)).
 - Share a small, reproducible example of a workflow that feels unnecessarily difficult.
 
 ## Before a larger change
@@ -65,6 +65,14 @@ cargo test --locked -p minerva-server --test learning
 Learning tests use local mock providers and do not require real media downloads or paid requests. Some server tests bind loopback ports. Python 3 is required for learning-plugin tests; media unit tests mock yt-dlp. Test the browser workflow when changing the editor, and check small screens when changing the public landing page.
 
 The repository-root `index.html` is the public landing page. `web/index.html` is the actual Minerva app. Keep these separate. See [GitHub Pages](docs/github-pages.md).
+
+## Interface text and translations
+
+Interface text is written in English in the code and wrapped in `$t()` from `web/i18n.js`: `$t("Save")`, or with values, `$t("Added {count} blocks", { count })`. Each language has a catalog in `web/locales/`, from the English text to its translation; text missing from a catalog shows in English.
+
+When you add or change text, add its Italian to `web/locales/it.json`. `npm test` fails if text in the code has no translation, if a translation is no longer used, or if one loses a `{value}`. Translations are inserted into HTML, so they must not contain `<`, `>` or `"` (use « » or “ ” for quotes).
+
+To add a language, add `web/locales/{code}.json` with the same keys, import it in `web/i18n.js`, and list it in `LANGUAGES`.
 
 ## Send a pull request
 

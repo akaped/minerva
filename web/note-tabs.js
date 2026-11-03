@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 export function noteLocation(input, base) {
   const url = new URL(input, base);
   if (
@@ -5,12 +6,12 @@ export function noteLocation(input, base) {
     url.username ||
     url.password
   )
-    throw new Error("Use a Minerva server HTTP(S) address.");
+    throw new Error($t("Use a Minerva server HTTP(S) address."));
   const id =
     url.searchParams.get("note") ||
     (url.hash.startsWith("#note/") ? url.hash.slice(6) : "");
   if (id && !/^[a-f0-9-]{36}$/i.test(id))
-    throw new Error("The note link has an invalid ID.");
+    throw new Error($t("The note link has an invalid ID."));
   return { origin: url.origin, id };
 }
 export function reorderTabs(tabs, from, to) {
@@ -54,7 +55,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   root.hidden = true;
   const strip = document.createElement("div");
   strip.className = "note-tab-strip";
-  strip.setAttribute("aria-label", "Open notes");
+  strip.setAttribute("aria-label", $t("Open notes"));
   const deck = document.createElement("div");
   deck.className = "note-tab-deck";
   root.append(strip, deck);
@@ -112,7 +113,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     }
   }
   function draw() {
-    strip.innerHTML = `<button class="tab-browse" title="Browse notes" aria-label="Browse notes">☷</button><div class="note-tab-list" role="tablist">${tabs.map((t) => `<div class="note-tab ${t.key === active && shown ? "active" : ""} ${t.key === secondary && shown ? "secondary" : ""}" draggable="true" data-tab="${t.key}"><button role="tab" aria-selected="${shown && (t.key === active || t.key === secondary)}" data-activate="${t.key}" title="${esc(t.title + " · " + t.workspace + " · " + t.origin)}"><span>${esc(t.title)}</span><small>${esc([t.workspace, new URL(t.origin).host].filter(Boolean).join(" · "))}</small>${t.dirty ? ' <span aria-label="Unsaved changes">●</span>' : ""}</button><button data-split="${t.key}" title="Open side by side" aria-label="Open ${esc(t.title)} side by side">◫</button><button data-close="${t.key}" title="Close tab" aria-label="Close ${esc(t.title)}">×</button></div>`).join("")}</div><button class="tab-remote" aria-label="Open another server or note link" title="Open another server or note link">＋</button>${secondary ? '<button class="tab-unsplit" title="Single pane" aria-label="Single pane">▣</button>' : ""}`;
+    strip.innerHTML = `<button class="tab-browse" title="${$t("Browse notes")}" aria-label="${$t("Browse notes")}">☷</button><div class="note-tab-list" role="tablist">${tabs.map((t) => `<div class="note-tab ${t.key === active && shown ? "active" : ""} ${t.key === secondary && shown ? "secondary" : ""}" draggable="true" data-tab="${t.key}"><button role="tab" aria-selected="${shown && (t.key === active || t.key === secondary)}" data-activate="${t.key}" title="${esc(t.title + " · " + t.workspace + " · " + t.origin)}"><span>${esc(t.title)}</span><small>${esc([t.workspace, new URL(t.origin).host].filter(Boolean).join(" · "))}</small>${t.dirty ? ` <span aria-label="${$t("Unsaved changes")}">●</span>` : ""}</button><button data-split="${t.key}" title="${$t("Open side by side")}" aria-label="Open ${esc(t.title)} side by side">◫</button><button data-close="${t.key}" title="${$t("Close tab")}" aria-label="Close ${esc(t.title)}">×</button></div>`).join("")}</div><button class="tab-remote" aria-label="${$t("Open another server or note link")}" title="${$t("Open another server or note link")}">＋</button>${secondary ? `<button class="tab-unsplit" title="${$t("Single pane")}" aria-label="${$t("Single pane")}">▣</button>` : ""}`;
     strip.querySelector(".tab-browse").onclick = () => {
       shown = false;
       place();
@@ -151,7 +152,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
         (b.onclick = () => {
           if (tabs.length < 2) {
             error(
-              new Error("Open a second note first, then choose side by side."),
+              new Error(
+                $t("Open a second note first, then choose side by side."),
+              ),
             );
             return;
           }
@@ -195,8 +198,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   }
   function remoteDialog() {
     const modal = document.querySelector("#modal");
-    modal.innerHTML =
-      '<form id="open-server-tab"><h2>Open a server or note</h2><p>Paste a Minerva server address or a note link. Sign in separately on that server. For remote browser tabs, its administrator must allow this app’s origin in MINERVA_EMBED_ORIGINS.</p><label>Server or note URL<input name="url" type="url" placeholder="https://notes.example.com/?note=…" required></label><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-tab">Cancel</button><button class="btn primary">Open tab</button></footer></form>';
+    modal.innerHTML = `<form id="open-server-tab"><h2>${$t("Open a server or note")}</h2><p>${$t("Paste a Minerva server address or a note link. Sign in separately on that server. For remote browser tabs, its administrator must allow this app’s origin in MINERVA_EMBED_ORIGINS.")}</p><label>${$t("Server or note URL")}<input name="url" type="url" placeholder="https://notes.example.com/?note=…" required></label><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-tab">${$t("Cancel")}</button><button class="btn primary">${$t("Open tab")}</button></footer></form>`;
     modal.showModal();
     modal.querySelector("#cancel-tab").onclick = () => modal.close();
     modal.querySelector("form").onsubmit = (e) => {
@@ -254,7 +256,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       return;
     }
     if (tabs.length >= 12)
-      throw new Error("Close a tab before opening another (12 tabs maximum).");
+      throw new Error(
+        $t("Close a tab before opening another (12 tabs maximum)."),
+      );
     const frame = document.createElement("iframe");
     frame.className = "note-pane-frame";
     frame.title = title;
@@ -310,7 +314,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
         if (!tab.ready && tabs.includes(tab))
           error(
             new Error(
-              "The server tab has not connected. Check its address and MINERVA_EMBED_ORIGINS setting.",
+              $t(
+                "The server tab has not connected. Check its address and MINERVA_EMBED_ORIGINS setting.",
+              ),
             ),
           );
       }, 15000);
@@ -355,7 +361,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       const request = crypto.randomUUID();
       const timeout = setTimeout(() => {
         requests.delete(request);
-        reject(new Error("The note did not respond. Nothing was added."));
+        reject(new Error($t("The note did not respond. Nothing was added.")));
       }, 20000);
       requests.set(request, { tab, resolve, reject, timeout });
       const deliver = () => send(tab, "insert-blocks", { request, blocks });
@@ -367,7 +373,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     if (tab.file) return;
     if (!tab.ready) {
       if (tab.dirty)
-        throw new Error("This tab has not connected; it cannot safely close.");
+        throw new Error(
+          $t("This tab has not connected; it cannot safely close."),
+        );
       return;
     }
     const request = crypto.randomUUID();
@@ -375,7 +383,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       const timeout = setTimeout(() => {
         requests.delete(request);
         reject(
-          new Error("The note did not confirm its save. The tab remains open."),
+          new Error(
+            $t("The note did not confirm its save. The tab remains open."),
+          ),
         );
       }, 15000);
       requests.set(request, { tab, resolve, reject, timeout });

@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 // The Reminders page of a workspace: its reminders, one-off or repeating
 // ("Car insurance, every year") and grouped by category, shared by everyone in
 // the workspace, together with every ⏰ time written in its notes.
@@ -92,9 +93,8 @@ let filter = "all";
 export async function renderReminders(ctx) {
   const { api, esc, workspaceId, error } = ctx;
   const root = document.querySelector("#content");
-  document.querySelector("#breadcrumb").textContent = "Reminders";
-  root.innerHTML =
-    '<section class="page reminders-page"><div class="eyebrow">NOTHING IMPORTANT SLIPS BY</div><div class="page-heading"><div><h1>Reminders</h1><p class="subtitle">Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.</p></div></div><p class="subtitle">Loading…</p></section>';
+  document.querySelector("#breadcrumb").textContent = $t("Reminders");
+  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">${$t("NOTHING IMPORTANT SLIPS BY")}</div><div class="page-heading"><div><h1>${$t("Reminders")}</h1><p class="subtitle">${$t("Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.")}</p></div></div><p class="subtitle">${$t("Loading…")}</p></section>`;
   const result = await api("reminders");
   if (!root.isConnected) return;
   const items = [
@@ -155,11 +155,11 @@ function draw(ctx, root, items, mailEnabled) {
     const when = `${relative(r.at, now)} · ${d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", year: d.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric", hour: "2-digit", minute: "2-digit" })}`;
     const meta =
       r.kind === "own"
-        ? `${r.repeat ? `<span class="reminder-repeat">↻ ${esc(repeatLabel(r.repeat))}</span>` : ""}${r.category ? `<span class="reminder-cat" style="--cat:${color(r.category)}">${esc(r.category)}</span>` : ""}${r.created_by && r.created_by !== ctx.me ? `<span>Added by ${esc(r.created_by)}</span>` : ""}${r.sent ? '<span title="The email for this time was sent to everyone in the workspace">✉ Sent</span>' : ""}`
-        : `<button class="text-link" data-open-note="${esc(r.note_id)}">In ${esc(r.icon || "")} ${esc(r.note_title || "Untitled")}</button>${r.emailed ? '<span title="You get this block by email">✉ By email</span>' : ""}`;
+        ? `${r.repeat ? `<span class="reminder-repeat">↻ ${esc(repeatLabel(r.repeat))}</span>` : ""}${r.category ? `<span class="reminder-cat" style="--cat:${color(r.category)}">${esc(r.category)}</span>` : ""}${r.created_by && r.created_by !== ctx.me ? `<span>Added by ${esc(r.created_by)}</span>` : ""}${r.sent ? `<span title="${$t("The email for this time was sent to everyone in the workspace")}">${$t("✉ Sent")}</span>` : ""}`
+        : `<button class="text-link" data-open-note="${esc(r.note_id)}">In ${esc(r.icon || "")} ${esc(r.note_title || "Untitled")}</button>${r.emailed ? `<span title="${$t("You get this block by email")}">${$t("✉ By email")}</span>` : ""}`;
     const actions =
       r.kind === "own" && r.can_edit
-        ? `<button class="btn" data-done="${esc(r.id)}" title="${r.repeat ? "Done: move to the next time" : "Done: remove it"}">✓ Done</button><button class="btn" data-edit="${esc(r.id)}" aria-label="Edit ${esc(r.title)}">Edit</button><button class="btn" data-delete="${esc(r.id)}" aria-label="Delete ${esc(r.title)}">×</button>`
+        ? `<button class="btn" data-done="${esc(r.id)}" title="${r.repeat ? $t("Done: move to the next time") : $t("Done: remove it")}">${$t("✓ Done")}</button><button class="btn" data-edit="${esc(r.id)}" aria-label="Edit ${esc(r.title)}">${$t("Edit")}</button><button class="btn" data-delete="${esc(r.id)}" aria-label="Delete ${esc(r.title)}">×</button>`
         : "";
     return `<li class="reminder-row ${r.kind === "own" && r.at <= now ? "due" : ""}"><div class="reminder-date" aria-hidden="true"><b>${d.getDate()}</b><span>${esc(d.toLocaleString(undefined, { month: "short" }))}</span></div><div class="reminder-main"><strong>${esc(r.title)}</strong><div class="reminder-meta"><span class="reminder-when">${esc(when)}</span>${meta}</div></div><div class="reminder-actions">${actions}</div></li>`;
   };
@@ -168,11 +168,11 @@ function draw(ctx, root, items, mailEnabled) {
       ? `<section class="reminder-group ${extra}"><h2>${title} <span class="count">${list.length}</span></h2><ul>${list.map(row).join("")}</ul></section>`
       : "";
   const empty = !items.length
-    ? `<div class="empty"><h3>Nothing to remember yet.</h3>Add reminders like “Car insurance, every year” or “Blood test, every month”. Times written in notes with /remindme show here too.</div>`
+    ? `<div class="empty"><h3>${$t("Nothing to remember yet.")}</h3>${$t("Add reminders like “Car insurance, every year” or “Blood test, every month”. Times written in notes with /remindme show here too.")}</div>`
     : !shown.length
-      ? '<div class="empty">Nothing here.</div>'
+      ? `<div class="empty">${$t("Nothing here.")}</div>`
       : "";
-  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">NOTHING IMPORTANT SLIPS BY</div><div class="page-heading"><div><h1>Reminders</h1><p class="subtitle">Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.</p></div><div class="toolbar-group"><button class="btn" id="calendar-feed" title="See your reminders in Google Calendar, Apple Calendar, Outlook or Thunderbird">📅 Add to your calendar</button>${ctx.canAdd ? '<button class="btn primary" id="new-reminder">+ New reminder</button>' : ""}</div></div>${mailEnabled ? "" : '<p class="reminder-notice">This server does not send email, so reminders are only shown here. Come back to this page to see what is due.</p>'}${items.length ? `<nav class="reminder-filters" aria-label="Categories">${filters}</nav>` : ""}${section("Due", groups.due, "due")}${section("Next 7 days", groups.week)}${section("Next 30 days", groups.month)}${section("Later", groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>Past times in notes <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
+  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">${$t("NOTHING IMPORTANT SLIPS BY")}</div><div class="page-heading"><div><h1>${$t("Reminders")}</h1><p class="subtitle">${$t("Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.")}</p></div><div class="toolbar-group"><button class="btn" id="calendar-feed" title="${$t("See your reminders in Google Calendar, Apple Calendar, Outlook or Thunderbird")}">${$t("📅 Add to your calendar")}</button>${ctx.canAdd ? `<button class="btn primary" id="new-reminder">${$t("+ New reminder")}</button>` : ""}</div></div>${mailEnabled ? "" : `<p class="reminder-notice">${$t("This server does not send email, so reminders are only shown here. Come back to this page to see what is due.")}</p>`}${items.length ? `<nav class="reminder-filters" aria-label="${$t("Categories")}">${filters}</nav>` : ""}${section("Due", groups.due, "due")}${section("Next 7 days", groups.week)}${section("Next 30 days", groups.month)}${section("Later", groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>${$t("Past times in notes")} <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
 
   const again = () => renderReminders(ctx).catch(ctx.error);
   const find = (id) => items.find((r) => r.kind === "own" && r.id === id);
@@ -209,7 +209,7 @@ function draw(ctx, root, items, mailEnabled) {
           ctx.toast(
             next
               ? `Done. Next time: ${new Date(next.at * 1000).toLocaleDateString(undefined, { dateStyle: "medium" })}`
-              : "Done.",
+              : $t("Done."),
           );
           await again();
         } catch (e) {
@@ -242,7 +242,7 @@ function dialog(ctx, r, categories, done) {
   const preset = !repeat ? "" : repeat.every === 1 ? repeat.unit : "custom";
   const option = (value, label) =>
     `<option value="${value}" ${preset === value ? "selected" : ""}>${label}</option>`;
-  modal.innerHTML = `<form class="reminder-form"><h2>${r ? "Edit reminder" : "New reminder"}</h2><label>Name<input name="title" required maxlength="200" placeholder="e.g. Car insurance" value="${esc(r?.title || "")}"></label><label>${r ? "Next time" : "When"}<input name="at" type="datetime-local" required value="${local(r ? r.at : soon.getTime())}"></label><label>Repeats<select name="preset">${option("", "Does not repeat")}${option("day", "Every day")}${option("week", "Every week")}${option("month", "Every month")}${option("year", "Every year")}${option("custom", "Custom…")}</select></label><div class="reminder-custom" ${preset === "custom" ? "" : "hidden"}><label>Every<input name="every" type="number" min="1" max="1000" value="${repeat?.every || 2}"></label><label>Unit<select name="unit">${UNITS.map((u) => `<option value="${u}" ${repeat?.unit === u ? "selected" : ""}>${u}s</option>`).join("")}</select></label></div><label>Category<input name="category" maxlength="40" list="reminder-categories" placeholder="e.g. car, health, home" value="${esc(r?.category || "")}" autocomplete="off"></label><datalist id="reminder-categories">${categories.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>${categories.length ? `<div class="reminder-suggest">${categories.map((c) => `<button type="button" data-category="${esc(c)}" style="--cat:${color(c)}">${esc(c)}</button>`).join("")}</div>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">Cancel</button><button class="btn primary" type="submit">${r ? "Save" : "Add reminder"}</button></footer></form>`;
+  modal.innerHTML = `<form class="reminder-form"><h2>${r ? $t("Edit reminder") : $t("New reminder")}</h2><label>${$t("Name")}<input name="title" required maxlength="200" placeholder="${$t("e.g. Car insurance")}" value="${esc(r?.title || "")}"></label><label>${r ? $t("Next time") : $t("When")}<input name="at" type="datetime-local" required value="${local(r ? r.at : soon.getTime())}"></label><label>${$t("Repeats")}<select name="preset">${option("", "Does not repeat")}${option("day", "Every day")}${option("week", "Every week")}${option("month", "Every month")}${option("year", "Every year")}${option("custom", "Custom…")}</select></label><div class="reminder-custom" ${preset === "custom" ? "" : "hidden"}><label>${$t("Every")}<input name="every" type="number" min="1" max="1000" value="${repeat?.every || 2}"></label><label>${$t("Unit")}<select name="unit">${UNITS.map((u) => `<option value="${u}" ${repeat?.unit === u ? "selected" : ""}>${u}s</option>`).join("")}</select></label></div><label>${$t("Category")}<input name="category" maxlength="40" list="reminder-categories" placeholder="${$t("e.g. car, health, home")}" value="${esc(r?.category || "")}" autocomplete="off"></label><datalist id="reminder-categories">${categories.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>${categories.length ? `<div class="reminder-suggest">${categories.map((c) => `<button type="button" data-category="${esc(c)}" style="--cat:${color(c)}">${esc(c)}</button>`).join("")}</div>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${r ? $t("Save") : $t("Add reminder")}</button></footer></form>`;
   modal.showModal();
   const form = modal.querySelector("form");
   form.preset.onchange = () =>
@@ -307,13 +307,13 @@ async function calendarDialog(ctx, made = null) {
         dateStyle: "medium",
       })
     : "";
-  const journal = `<label class="checkbox-label"><input type="checkbox" name="journal" ${feed.journal ? "checked" : ""}>Include journal days, as all-day events</label>`;
+  const journal = `<label class="checkbox-label"><input type="checkbox" name="journal" ${feed.journal ? "checked" : ""}>${$t("Include journal days, as all-day events")}</label>`;
   const body = made
-    ? `<p>Subscribe to this address in your calendar app. It is shown only now: copy it before closing.</p><label>Calendar address<input name="url" readonly value="${esc(made.url)}"></label><div class="toolbar-group"><button type="button" class="btn primary" id="copy-feed">Copy address</button><a class="btn" href="${esc(webcal(made.url))}">Open in calendar app</a></div><p class="hint">Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription. Outlook: Add calendar → Subscribe from web. Calendars refresh it every few hours.</p>`
+    ? `<p>${$t("Subscribe to this address in your calendar app. It is shown only now: copy it before closing.")}</p><label>${$t("Calendar address")}<input name="url" readonly value="${esc(made.url)}"></label><div class="toolbar-group"><button type="button" class="btn primary" id="copy-feed">${$t("Copy address")}</button><a class="btn" href="${esc(webcal(made.url))}">${$t("Open in calendar app")}</a></div><p class="hint">${$t("Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription. Outlook: Add calendar → Subscribe from web. Calendars refresh it every few hours.")}</p>`
     : feed.enabled
       ? `<p>Your calendar address is on, since ${esc(since)}. For safety it is not shown again: make a new one to see it, and the old one stops working.</p>${journal}`
-      : `<p>Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.</p>${journal}`;
-  modal.innerHTML = `<form class="calendar-feed-form"><h2>Add to your calendar</h2>${body}<p class="hint">Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? '<button type="button" class="btn danger" id="feed-off">Turn off</button>' : ""}<button type="button" class="btn" id="cancel">${made ? "Done" : "Cancel"}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? "New address" : "Create address"}</button>`}</footer></form>`;
+      : `<p>${$t("Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.")}</p>${journal}`;
+  modal.innerHTML = `<form class="calendar-feed-form"><h2>${$t("Add to your calendar")}</h2>${body}<p class="hint">${$t("Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.")}</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? `<button type="button" class="btn danger" id="feed-off">${$t("Turn off")}</button>` : ""}<button type="button" class="btn" id="cancel">${made ? $t("Done") : $t("Cancel")}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? $t("New address") : $t("Create address")}</button>`}</footer></form>`;
   if (!modal.open) modal.showModal();
   const form = modal.querySelector("form");
   const fail = (e) =>
@@ -325,15 +325,15 @@ async function calendarDialog(ctx, made = null) {
       form.url.select();
       try {
         await navigator.clipboard.writeText(made.url);
-        toast("Calendar address copied");
+        toast($t("Calendar address copied"));
       } catch {
-        toast("Select the address and copy it.");
+        toast($t("Select the address and copy it."));
       }
     };
   if (form.journal && feed.enabled)
     form.journal.onchange = () =>
       api("calendar-feed", "PUT", { journal: form.journal.checked })
-        .then(() => toast("Calendar updated"))
+        .then(() => toast($t("Calendar updated")))
         .catch(fail);
   const off = form.querySelector("#feed-off");
   if (off)
@@ -341,7 +341,7 @@ async function calendarDialog(ctx, made = null) {
       try {
         await api("calendar-feed", "DELETE");
         modal.close();
-        toast("Calendar address turned off");
+        toast($t("Calendar address turned off"));
       } catch (e) {
         fail(e);
       }
@@ -351,7 +351,9 @@ async function calendarDialog(ctx, made = null) {
     if (
       feed.enabled &&
       !confirm(
-        "Make a new address? Calendars subscribed to the old one stop updating.",
+        $t(
+          "Make a new address? Calendars subscribed to the old one stop updating.",
+        ),
       )
     )
       return;

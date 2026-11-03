@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 /**
  * AI on selected text: improve, fix, shorten, lengthen, translate or continue it
  * (`POST /api/v1/ai/transform`). The result is shown first; the person replaces
@@ -86,7 +87,7 @@ export function createWritingAssist(deps) {
       }
       await new Promise((r) => setTimeout(r, 30));
     }
-    throw new Error("The block is busy. Try again.");
+    throw new Error($t("The block is busy. Try again."));
   }
 
   /** Opens the menu for the selection in `ta`, inside the block element `el`. */
@@ -103,8 +104,8 @@ export function createWritingAssist(deps) {
     panel = document.createElement("div");
     panel.className = "ai-assist";
     panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-label", "AI on selected text");
-    panel.innerHTML = '<p class="ai-assist-status">Loading models…</p>';
+    panel.setAttribute("aria-label", $t("AI on selected text"));
+    panel.innerHTML = `<p class="ai-assist-status">${$t("Loading models…")}</p>`;
     el.append(panel);
     document.addEventListener("mousedown", outside, true);
     panel.addEventListener("keydown", (e) => {
@@ -124,8 +125,7 @@ export function createWritingAssist(deps) {
     }
     if (epoch !== run) return;
     if (!providers.length) {
-      panel.innerHTML =
-        '<p class="ai-assist-status">No AI provider is set up yet. An administrator adds one under <strong>AI providers</strong>.</p>';
+      panel.innerHTML = `<p class="ai-assist-status">${$t("No AI provider is set up yet. An administrator adds one under")} <strong>${$t("AI providers")}</strong>.</p>`;
       return;
     }
     menu(target);
@@ -141,9 +141,9 @@ export function createWritingAssist(deps) {
         `<button role="menuitem" data-action="${action}"><strong>${deps.esc(label)}</strong><small>${deps.esc(hint)}</small></button>`,
     ).join(
       "",
-    )}</div><div class="ai-assist-options"><label>Language<input id="ai-assist-language" maxlength="40" value="${deps.esc(remembered("minerva.ai.language", defaultLanguage()))}"></label>${
+    )}</div><div class="ai-assist-options"><label>${$t("Language")}<input id="ai-assist-language" maxlength="40" value="${deps.esc(remembered("minerva.ai.language", defaultLanguage()))}"></label>${
       providers.length > 1
-        ? `<label>Model<select id="ai-assist-provider">${providers
+        ? `<label>${$t("Model")}<select id="ai-assist-provider">${providers
             .map(
               (p) =>
                 `<option value="${p.id}" ${p.id === provider ? "selected" : ""}>${deps.esc(p.name)} · ${deps.esc(p.model)}</option>`,
@@ -168,8 +168,7 @@ export function createWritingAssist(deps) {
 
   async function perform(target, action, providerId, language) {
     const epoch = ++run;
-    panel.innerHTML =
-      '<p class="ai-assist-status" role="status"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span>Writing…</p><div class="ai-assist-buttons"><button class="btn" data-stop>Stop</button></div>';
+    panel.innerHTML = `<p class="ai-assist-status" role="status"><span class="chat-dots" aria-hidden="true"><i></i><i></i><i></i></span>${$t("Writing…")}</p><div class="ai-assist-buttons"><button class="btn" data-stop>${$t("Stop")}</button></div>`;
     panel.querySelector("[data-stop]").onclick = () => {
       close();
       deps.editBlock(target.id);
@@ -189,12 +188,12 @@ export function createWritingAssist(deps) {
     if (epoch !== run) return;
     const text = reply.text || "";
     const replaces = action !== "continue";
-    panel.innerHTML = `<div class="ai-assist-result" tabindex="0" aria-label="Suggested text">${deps.esc(text)}</div><div class="ai-assist-buttons">${
+    panel.innerHTML = `<div class="ai-assist-result" tabindex="0" aria-label="${$t("Suggested text")}">${deps.esc(text)}</div><div class="ai-assist-buttons">${
       replaces
-        ? '<button class="btn primary" data-apply="replace">Replace selection</button>'
-        : '<button class="btn primary" data-apply="after">Add after selection</button>'
-    }<button class="btn" data-apply="below">Insert below</button><button class="btn" data-apply="copy">Copy</button><button class="btn" data-apply="back">Back</button><button class="btn" data-apply="discard">Discard</button></div>`;
-    deps.announce("Suggestion ready");
+        ? `<button class="btn primary" data-apply="replace">${$t("Replace selection")}</button>`
+        : `<button class="btn primary" data-apply="after">${$t("Add after selection")}</button>`
+    }<button class="btn" data-apply="below">${$t("Insert below")}</button><button class="btn" data-apply="copy">${$t("Copy")}</button><button class="btn" data-apply="back">${$t("Back")}</button><button class="btn" data-apply="discard">${$t("Discard")}</button></div>`;
+    deps.announce($t("Suggestion ready"));
     panel.querySelector("[data-apply]").focus();
     panel
       .querySelectorAll("[data-apply]")
@@ -209,7 +208,7 @@ export function createWritingAssist(deps) {
     if (how === "back") return menu(target);
     if (how === "copy") {
       await navigator.clipboard.writeText(text);
-      return deps.announce("Copied");
+      return deps.announce($t("Copied"));
     }
     close();
     if (how === "discard") return deps.editBlock(target.id);
@@ -228,7 +227,7 @@ export function createWritingAssist(deps) {
     );
     if (!range)
       throw new Error(
-        "The selected text changed meanwhile. Nothing was replaced.",
+        $t("The selected text changed meanwhile. Nothing was replaced."),
       );
     const insert =
       how === "after"
@@ -242,7 +241,9 @@ export function createWritingAssist(deps) {
       selStart: at,
       selEnd: at + insert.length,
     });
-    deps.announce(how === "after" ? "Text added" : "Selection replaced");
+    deps.announce(
+      how === "after" ? $t("Text added") : $t("Selection replaced"),
+    );
   }
 
   return { open, close };

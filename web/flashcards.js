@@ -1,7 +1,8 @@
+import { $t } from "./i18n.js";
 // Personal study workspace. Card contents are plain text, never executable markup.
 export async function renderFlashcards({ api, esc, data, error }) {
   const root = document.querySelector("#content");
-  document.querySelector("#breadcrumb").textContent = "Flashcards";
+  document.querySelector("#breadcrumb").textContent = $t("Flashcards");
   let deck = null,
     serverNow = Date.now() / 1000,
     receivedAt = Date.now(),
@@ -13,7 +14,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     `<button class="btn ${primary ? "primary" : ""}" id="${id}">${label}</button>`;
   const shell = (body) => {
     if (live())
-      root.innerHTML = `<section class="page flashcards-page"><div class="eyebrow">A LITTLE PRACTICE, LASTING KNOWLEDGE</div><div class="page-heading"><div><h1>Flashcards</h1><p class="subtitle">Recall it. Check it. Give it time to stick.</p></div>${deck ? button("All decks", "fc-home") : ""}</div><div aria-live="polite" id="fc-status"></div>${body}</section>`;
+      root.innerHTML = `<section class="page flashcards-page"><div class="eyebrow">${$t("A LITTLE PRACTICE, LASTING KNOWLEDGE")}</div><div class="page-heading"><div><h1>${$t("Flashcards")}</h1><p class="subtitle">${$t("Recall it. Check it. Give it time to stick.")}</p></div>${deck ? button("All decks", "fc-home") : ""}</div><div aria-live="polite" id="fc-status"></div>${body}</section>`;
     bind("fc-home", list);
   };
   const bind = (id, fn, event = "click") => {
@@ -58,11 +59,11 @@ export async function renderFlashcards({ api, esc, data, error }) {
   }
   async function list() {
     deck = null;
-    shell("<p>Loading your decks…</p>");
+    shell(`<p>${$t("Loading your decks…")}</p>`);
     const result = await api("flashcards/decks");
     if (!live()) return;
     shell(
-      `<div class="fc-intro"><p>Your decks and study history are private to your account on this server.</p><div class="fc-actions">${button("Create a deck", "fc-create", true)}${button("Import from Anki", "fc-import")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong><p>${esc(d.description)}</p><span>${d.count} cards · <b>${d.due} due</b></span></button>`).join("")}</div>${!result.decks.length ? '<div class="empty"><h3>Make your first deck.</h3>Add your own questions, or turn a note, folder, or researched topic into cards with AI.</div>' : ""}`,
+      `<div class="fc-intro"><p>${$t("Your decks and study history are private to your account on this server.")}</p><div class="fc-actions">${button("Create a deck", "fc-create", true)}${button("Import from Anki", "fc-import")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong><p>${esc(d.description)}</p><span>${d.count} cards · <b>${d.due} due</b></span></button>`).join("")}</div>${!result.decks.length ? `<div class="empty"><h3>${$t("Make your first deck.")}</h3>${$t("Add your own questions, or turn a note, folder, or researched topic into cards with AI.")}</div>` : ""}`,
     );
     bind("fc-create", () => deckForm());
     bind("fc-import", importForm);
@@ -73,7 +74,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
   // Anki packages (.apkg, .colpkg) or plain-text exports, read by the server.
   function importForm() {
     shell(
-      `<form id="fc-import-form" class="fc-form"><h2>Import from Anki</h2><p>In Anki, choose <b>File → Export</b>, then <b>Anki Deck Package (.apkg)</b>, with media included to keep pictures. A <b>Notes in Plain Text</b> export or a CSV file with question and answer columns works too.</p><p>Looking for ready-made decks? Browse thousands of free shared decks on <a href="https://ankiweb.net/shared/decks" target="_blank" rel="noopener noreferrer">AnkiWeb ↗</a>, download one, and import the .apkg file here.</p><label>File<input type="file" name="file" accept=".apkg,.colpkg,.txt,.csv,.tsv" required></label><label class="checkbox-label"><input type="checkbox" name="progress" checked> Keep my review progress from Anki</label><p class="hint">Each Anki deck becomes a deck here. Cards keep their text, pictures, and links; other formatting becomes plain text, and sounds show as [audio]. Export with media to keep the pictures.</p><div class="fc-actions"><button class="btn primary" id="fc-import-button">Import</button>${button("Cancel", "fc-cancel")}</div><p role="status" id="fc-importing"></p></form>`,
+      `<form id="fc-import-form" class="fc-form"><h2>${$t("Import from Anki")}</h2><p>${$t("In Anki, choose")} <b>${$t("File → Export")}</b>${$t(", then")} <b>${$t("Anki Deck Package (.apkg)")}</b>${$t(", with media included to keep pictures. A")} <b>${$t("Notes in Plain Text")}</b> ${$t("export or a CSV file with question and answer columns works too.")}</p><p>${$t("Looking for ready-made decks? Browse thousands of free shared decks on")} <a href="https://ankiweb.net/shared/decks" target="_blank" rel="noopener noreferrer">${$t("AnkiWeb ↗")}</a>${$t(", download one, and import the .apkg file here.")}</p><label>${$t("File")}<input type="file" name="file" accept=".apkg,.colpkg,.txt,.csv,.tsv" required></label><label class="checkbox-label"><input type="checkbox" name="progress" checked> ${$t("Keep my review progress from Anki")}</label><p class="hint">${$t("Each Anki deck becomes a deck here. Cards keep their text, pictures, and links; other formatting becomes plain text, and sounds show as [audio]. Export with media to keep the pictures.")}</p><div class="fc-actions"><button class="btn primary" id="fc-import-button">${$t("Import")}</button>${button("Cancel", "fc-cancel")}</div><p role="status" id="fc-importing"></p></form>`,
     );
     bind("fc-cancel", list);
     bind(
@@ -81,14 +82,16 @@ export async function renderFlashcards({ api, esc, data, error }) {
       async (e) => {
         const form = e.target;
         const file = form.file.files[0];
-        if (!file) throw new Error("Choose a file to import.");
+        if (!file) throw new Error($t("Choose a file to import."));
         if (file.size > 100 * 1024 * 1024)
           throw new Error(
-            "This file is larger than 100 MB. Export it again from Anki without media.",
+            $t(
+              "This file is larger than 100 MB. Export it again from Anki without media.",
+            ),
           );
         const status = root.querySelector("#fc-importing");
         root.querySelector("#fc-import-button").disabled = true;
-        status.textContent = "Importing… Large decks can take a moment.";
+        status.textContent = $t("Importing… Large decks can take a moment.");
         try {
           const query = new URLSearchParams({
             name: file.name,
@@ -103,7 +106,9 @@ export async function renderFlashcards({ api, esc, data, error }) {
           });
           const result = await response.json().catch(() => ({}));
           if (!response.ok)
-            throw new Error(result.error || "The file could not be imported.");
+            throw new Error(
+              result.error || $t("The file could not be imported."),
+            );
           if (!live()) return;
           await list();
           const skipped = result.skipped
@@ -137,10 +142,10 @@ export async function renderFlashcards({ api, esc, data, error }) {
   function deckForm() {
     const sources = deck ? [] : noteSources();
     const follow = sources.length
-      ? `<fieldset class="fc-source"><legend>Cards</legend><label><input type="radio" name="origin" value="own" checked> I’ll write or generate them here</label><label><input type="radio" name="origin" value="notes"> Follow the cards written in my notes</label><select name="source" aria-label="Notes to follow" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select><p class="hint">In a note, tag a question <code>#card</code> and indent its answer below it, or write <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> become cards too. The deck keeps up with your notes each time you open it.</p></fieldset>`
+      ? `<fieldset class="fc-source"><legend>${$t("Cards")}</legend><label><input type="radio" name="origin" value="own" checked> ${$t("I’ll write or generate them here")}</label><label><input type="radio" name="origin" value="notes"> ${$t("Follow the cards written in my notes")}</label><select name="source" aria-label="${$t("Notes to follow")}" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select><p class="hint">${$t("In a note, tag a question")} <code>#card</code> ${$t("and indent its answer below it, or write")} <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> ${$t("become cards too. The deck keeps up with your notes each time you open it.")}</p></fieldset>`
       : "";
     shell(
-      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? "Edit deck" : "Create a deck"}</h2>${field("Deck name", "name", deck?.name || "")}${field("Description", "description", deck?.description || "", true, false)}${follow}<div class="fc-actions"><button class="btn primary">Save deck</button>${button("Cancel", "fc-cancel")}</div></form>`,
+      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? $t("Edit deck") : $t("Create a deck")}</h2>${field("Deck name", "name", deck?.name || "")}${field("Description", "description", deck?.description || "", true, false)}${follow}<div class="fc-actions"><button class="btn primary">${$t("Save deck")}</button>${button("Cancel", "fc-cancel")}</div></form>`,
     );
     root
       .querySelectorAll('[name="origin"]')
@@ -183,7 +188,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
       (c) => !c.suspended && c.due <= dueNow(),
     ).length;
     shell(
-      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p>${deck.source ? `<p class="hint">Follows the cards written in ${esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || "notes you can no longer open")}: tag a question <code>#card</code>, or write a cloze such as <code>{{c1::Rome}}</code>.</p>` : ""}</div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">Reveal the answer before rating your recall. Cards return when their next review is due.</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${c.suspended ? "Paused" : c.due <= dueNow() ? "Ready to study" : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews${c.origin ? " · from a note" : ""}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">Edit</button></article>`).join("")}</div>${!deck.cards.length ? '<div class="empty">This deck is ready for its first question.</div>' : ""}`,
+      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${deck.cards.length} cards · <strong>${due} due now</strong></p>${deck.source ? `<p class="hint">Follows the cards written in ${esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || "notes you can no longer open")}: tag a question <code>#card</code>${$t(", or write a cloze such as")} <code>{{c1::Rome}}</code>.</p>` : ""}</div><div class="fc-actions">${button("Study due cards", "fc-study", true)}${button("Add card", "fc-add")}${button("Create with AI", "fc-ai")}${button("Edit deck", "fc-edit")}${button("Export JSON", "fc-export")}${button("Delete deck", "fc-delete")}</div></div><p class="subtitle">${$t("Reveal the answer before rating your recall. Cards return when their next review is due.")}</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${c.suspended ? $t("Paused") : c.due <= dueNow() ? $t("Ready to study") : "Next review: " + new Date(c.due * 1000).toLocaleString()} · ${c.reviews} reviews${c.origin ? $t(" · from a note") : ""}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">${$t("Edit")}</button></article>`).join("")}</div>${!deck.cards.length ? `<div class="empty">${$t("This deck is ready for its first question.")}</div>` : ""}`,
     );
     root.querySelector("#fc-study").disabled = !due;
     bind("fc-study", () => {
@@ -233,7 +238,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     // A card written in a note changes there; here it can only be paused.
     const fromNote = !!card?.origin;
     shell(
-      `<form class="fc-form" id="fc-card-form"><h2>${card ? "Edit card" : "Add a card"}</h2>${fromNote ? `<p class="hint">This card comes from a note: <a href="${esc(card.sources[0] || "#")}">open the note</a> to change it.</p>` : ""}${field("Question / front", "front", card?.front || "", true)}${field("Answer / back", "back", card?.back || "", true)}${fromNote ? "" : field("Sources (one HTTP(S) URL or #note/id per line)", "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> Pause reviews for this card</label>` : ""}<div class="fc-actions"><button class="btn primary">Save card</button>${button("Cancel", "fc-cancel")}${card && !fromNote ? button("Delete card", "fc-remove") : ""}</div></form>`,
+      `<form class="fc-form" id="fc-card-form"><h2>${card ? $t("Edit card") : $t("Add a card")}</h2>${fromNote ? `<p class="hint">${$t("This card comes from a note:")} <a href="${esc(card.sources[0] || "#")}">${$t("open the note")}</a> ${$t("to change it.")}</p>` : ""}${field("Question / front", "front", card?.front || "", true)}${field("Answer / back", "back", card?.back || "", true)}${fromNote ? "" : field("Sources (one HTTP(S) URL or #note/id per line)", "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> ${$t("Pause reviews for this card")}</label>` : ""}<div class="fc-actions"><button class="btn primary">${$t("Save card")}</button>${button("Cancel", "fc-cancel")}${card && !fromNote ? button("Delete card", "fc-remove") : ""}</div></form>`,
     );
     if (fromNote)
       root
@@ -241,7 +246,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
         .forEach((el) => (el.readOnly = true));
     bind("fc-cancel", detail);
     bind("fc-remove", async () => {
-      if (!confirm("Delete this card and its review progress?")) return;
+      if (!confirm($t("Delete this card and its review progress?"))) return;
       setDeck(
         await api(`flashcards/decks/${deck.id}/cards/${card.id}`, "DELETE", {
           revision: card.revision,
@@ -278,14 +283,14 @@ export async function renderFlashcards({ api, esc, data, error }) {
   function study() {
     if (!queue.length) {
       shell(
-        `<div class="fc-study"><h2>A little more knowledge, yours.</h2><p>You reviewed ${reviewed} cards. Cards rated Again return in ten minutes; other cards return on their scheduled day.</p>${button("Back to deck", "fc-back", true)}</div>`,
+        `<div class="fc-study"><h2>${$t("A little more knowledge, yours.")}</h2><p>You reviewed ${reviewed} cards. Cards rated Again return in ten minutes; other cards return on their scheduled day.</p>${button("Back to deck", "fc-back", true)}</div>`,
       );
       bind("fc-back", () => load(deck.id));
       return;
     }
     const c = deck.cards.find((c) => c.id === queue[0]);
     shell(
-      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">QUESTION</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">ANSWER</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>How well did you remember?</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
+      `<div class="fc-review-meta">${reviewed} reviewed · ${queue.length} left in this session ${button("Finish for now", "fc-back")}</div><article class="fc-study"><div class="eyebrow">${$t("QUESTION")}</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button("Reveal answer", "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">${$t("ANSWER")}</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>${$t("How well did you remember?")}</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
     );
     bind("fc-back", () => load(deck.id));
     bind("fc-reveal", () => {
@@ -318,13 +323,13 @@ export async function renderFlashcards({ api, esc, data, error }) {
     );
   }
   async function generateForm() {
-    shell("<p>Loading AI providers…</p>");
+    shell(`<p>${$t("Loading AI providers…")}</p>`);
     const config = await api("ai/providers");
     if (!live()) return;
     const providers = Array.isArray(config) ? config : config.providers || [];
     if (!providers.length) {
       shell(
-        `<div class="empty"><h2>Connect an AI provider first.</h2><p>Your administrator can add one in AI providers. You can still make cards by hand.</p>${button("Back to deck", "fc-back")}</div>`,
+        `<div class="empty"><h2>${$t("Connect an AI provider first.")}</h2><p>${$t("Your administrator can add one in AI providers. You can still make cards by hand.")}</p>${button("Back to deck", "fc-back")}</div>`,
       );
       bind("fc-back", detail);
       return;
@@ -333,7 +338,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
       (n) => !n.trashed,
     );
     shell(
-      `<form class="fc-form" id="fc-generate"><h2>Turn understanding into practice.</h2><p>Selected source content is sent to your chosen AI provider. Review the drafts before saving. Provider charges may apply.</p><label>AI provider<select name="provider_id">${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.web_search ? " · web search" : ""}</option>`).join("")}</select></label><label>Make cards from<select name="kind" id="fc-kind"><option value="note">A note</option><option value="folder">A folder and its subfolders</option><option value="topic">Research a topic on the web</option></select></label><label id="fc-note-label">Note<select name="note">${notes.map((n) => `<option value="${esc(n.id)}">${esc(n.title)}</option>`).join("")}</select></label><label id="fc-folder-label" hidden>Folder<select name="folder">${data.folders.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label><label id="fc-topic-label" hidden>Topic<textarea name="topic" rows="3" maxlength="1000" placeholder="For example: the causes of the French Revolution"></textarea><small>Requires an OpenAI or Anthropic profile with web search enabled.</small></label><label>Number of cards<input name="count" type="number" min="1" max="20" value="10" required></label><div class="fc-actions"><button class="btn primary" id="fc-generate-button">Generate drafts</button>${button("Cancel", "fc-cancel")}</div><p role="status" id="fc-generating"></p></form>`,
+      `<form class="fc-form" id="fc-generate"><h2>${$t("Turn understanding into practice.")}</h2><p>${$t("Selected source content is sent to your chosen AI provider. Review the drafts before saving. Provider charges may apply.")}</p><label>${$t("AI provider")}<select name="provider_id">${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.web_search ? $t(" · web search") : ""}</option>`).join("")}</select></label><label>${$t("Make cards from")}<select name="kind" id="fc-kind"><option value="note">${$t("A note")}</option><option value="folder">${$t("A folder and its subfolders")}</option><option value="topic">${$t("Research a topic on the web")}</option></select></label><label id="fc-note-label">${$t("Note")}<select name="note">${notes.map((n) => `<option value="${esc(n.id)}">${esc(n.title)}</option>`).join("")}</select></label><label id="fc-folder-label" hidden>${$t("Folder")}<select name="folder">${data.folders.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label><label id="fc-topic-label" hidden>${$t("Topic")}<textarea name="topic" rows="3" maxlength="1000" placeholder="${$t("For example: the causes of the French Revolution")}"></textarea><small>${$t("Requires an OpenAI or Anthropic profile with web search enabled.")}</small></label><label>${$t("Number of cards")}<input name="count" type="number" min="1" max="20" value="10" required></label><div class="fc-actions"><button class="btn primary" id="fc-generate-button">${$t("Generate drafts")}</button>${button("Cancel", "fc-cancel")}</div><p role="status" id="fc-generating"></p></form>`,
     );
     bind("fc-cancel", detail);
     bind(
@@ -356,8 +361,9 @@ export async function renderFlashcards({ api, esc, data, error }) {
         const formEl = e.target;
         const btn = root.querySelector("#fc-generate-button");
         btn.disabled = true;
-        root.querySelector("#fc-generating").textContent =
-          "Preparing drafts… This can take a minute.";
+        root.querySelector("#fc-generating").textContent = $t(
+          "Preparing drafts… This can take a minute.",
+        );
         try {
           const result = await api("flashcards/generate", "POST", {
             kind,
@@ -380,7 +386,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
   }
   function drafts(cards) {
     shell(
-      `<form id="fc-drafts"><h2>Make these cards your own.</h2><p>Check each answer against its sources, edit it, and deselect anything you don’t want to keep. Nothing has been saved yet.</p>${cards.map((c, i) => `<fieldset class="fc-draft"><legend><label><input type="checkbox" name="keep-${i}" checked> Keep card ${i + 1}</label></legend>${field("Question", "front-" + i, c.front, true)}${field("Answer", "back-" + i, c.back, true)}<div class="fc-sources">${sources(c.sources)}</div></fieldset>`).join("")}<div class="fc-actions"><button class="btn primary">Save selected cards</button>${button("Discard drafts", "fc-discard")}</div></form>`,
+      `<form id="fc-drafts"><h2>${$t("Make these cards your own.")}</h2><p>${$t("Check each answer against its sources, edit it, and deselect anything you don’t want to keep. Nothing has been saved yet.")}</p>${cards.map((c, i) => `<fieldset class="fc-draft"><legend><label><input type="checkbox" name="keep-${i}" checked> Keep card ${i + 1}</label></legend>${field("Question", "front-" + i, c.front, true)}${field("Answer", "back-" + i, c.back, true)}<div class="fc-sources">${sources(c.sources)}</div></fieldset>`).join("")}<div class="fc-actions"><button class="btn primary">${$t("Save selected cards")}</button>${button("Discard drafts", "fc-discard")}</div></form>`,
     );
     bind("fc-discard", detail);
     bind(
@@ -399,7 +405,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
             : [],
         );
         if (!selected.length)
-          throw new Error("Select at least one card to save.");
+          throw new Error($t("Select at least one card to save."));
         setDeck(
           await api(`flashcards/decks/${deck.id}/cards`, "POST", {
             cards: selected,
