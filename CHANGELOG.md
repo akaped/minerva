@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-03
+
 ### Added
 
 - **Minerva in Italian.** The interface follows your browser's language, or the one you choose in Account → This device (English or Italiano): menus, buttons, dialogs, pages and messages, text with numbers and names in it (with Italian plurals), block types, widgets, the quick-capture page, the server's error messages (also those with names or numbers in them), the names and descriptions of the bundled themes and PDF templates (and of other plugins, which can now bring their own translations with `name.it:`), formula errors with their explanation, and key names in shortcuts (Maiusc, Invio). Emails are written in the language each person uses the app in, published pages in each visitor's, and exports in the exporting person's. New accounts get their first folder and the Getting Started guide in Italian when made from an Italian browser (or with `MINERVA_LANGUAGE=it`).
