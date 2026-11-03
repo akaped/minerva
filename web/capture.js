@@ -3,7 +3,7 @@
  * and save it as a new note or into today's journal. Without a connection,
  * captures wait on the device and are sent when it is back.
  */
-import { $t } from "./i18n.js";
+import { $t, $tn } from "./i18n.js";
 import {
   sharedText,
   noteFrom,
@@ -22,6 +22,13 @@ const esc = (s) =>
       ],
   );
 const LAST = "minerva-capture-target";
+
+// The page's own text, in the reader's language.
+for (const el of document.querySelectorAll("[data-t]"))
+  el.textContent = $t(el.dataset.t);
+for (const name of ["placeholder", "aria-label"])
+  for (const el of document.querySelectorAll(`[data-t-${name}]`))
+    el.setAttribute(name, $t(el.getAttribute(`data-t-${name}`)));
 
 // The light or dark look chosen in the app (a plugin theme's base).
 try {
@@ -46,7 +53,7 @@ async function api(path, method = "GET", body) {
   });
   const v = await r.json().catch(() => ({}));
   if (!r.ok || r.headers.get("x-minerva-offline")) {
-    const e = new Error(v.error || $t("Request failed"));
+    const e = new Error(v.error ? $t(v.error) : $t("Request failed"));
     e.status = r.headers.get("x-minerva-offline") ? 0 : r.status;
     throw e;
   }
@@ -84,19 +91,30 @@ async function flush() {
       // Kept only while the server cannot be reached; refused ones are dropped
       // after saying so, since retrying will not help.
       if (!e.status) left.push(item);
-      else status(`One waiting note could not be saved: ${e.message}`);
+      else
+        status(
+          $t("One waiting note could not be saved: {message}", {
+            message: e.message,
+          }),
+        );
     }
   }
   setQueued(left);
   const sent = waiting.length - left.length;
-  if (sent) status(`${sent} waiting note${sent === 1 ? "" : "s"} saved.`);
+  if (sent)
+    status(
+      $tn(sent, "{count} waiting note saved.", "{count} waiting notes saved."),
+    );
 }
 
 function targets(data) {
   const out = [];
   for (const w of data.workspaces)
     if (w.can_edit)
-      out.push([`journal:${w.id}`, `Today’s journal · ${w.name}`]);
+      out.push([
+        `journal:${w.id}`,
+        $t("Today’s journal · {workspace}", { workspace: w.name }),
+      ]);
   const special = new Set([
     ...Object.values(data.journal_folders || {}),
     ...Object.values(data.template_folders || {}),
@@ -106,7 +124,7 @@ function targets(data) {
     const w = data.workspaces.find((x) => x.id === f.workspace_id);
     out.push([
       `folder:${f.id}`,
-      `New note in ${f.name}${w ? ` · ${w.name}` : ""}`,
+      `${$t("New note in {name}", { name: f.name })}${w ? ` · ${w.name}` : ""}`,
     ]);
   }
   return out;
@@ -137,7 +155,9 @@ async function start() {
       );
   } catch {}
   if (!options.length) {
-    status(data ? "You cannot add notes anywhere yet." : "You are offline.");
+    status(
+      data ? $t("You cannot add notes anywhere yet.") : $t("You are offline."),
+    );
     return;
   }
   select.innerHTML = options
@@ -170,22 +190,30 @@ async function start() {
     button.disabled = true;
     try {
       const saved = await send(item);
-      const place = select.selectedOptions[0].textContent.replace(/ · .*/, "");
+      const folder = data?.folders.find(
+        (f) => `folder:${f.id}` === item.target,
+      );
       done(
         item.target.startsWith("journal:")
-          ? "Added to today’s journal."
-          : `Saved as a ${place.charAt(0).toLowerCase()}${place.slice(1)}.`,
+          ? $t("Added to today’s journal.")
+          : $t("Saved as a new note in {folder}.", {
+              folder: folder?.name || "",
+            }),
         saved.id,
       );
     } catch (err) {
       if (err.status) status(err.message);
       else if (setQueued([...queued(), { ...item, at: Date.now() }]))
         done(
-          "Saved on this device. It will be sent when you are online again.",
+          $t(
+            "Saved on this device. It will be sent when you are online again.",
+          ),
         );
       else
         status(
-          "Could not keep it on this device either. Copy your text before leaving.",
+          $t(
+            "Could not keep it on this device either. Copy your text before leaving.",
+          ),
         );
     } finally {
       button.disabled = false;

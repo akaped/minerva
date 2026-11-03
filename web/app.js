@@ -1,5 +1,5 @@
 import {
-  $t,
+  $t, $tn, msg,
   LANGUAGES,
   pickLanguage,
   chosenLanguage,
@@ -94,9 +94,9 @@ const systemTheme = matchMedia("(prefers-color-scheme: dark)");
 // A plugin theme extends a base: `data-theme` stays light or dark, so every rule
 // for that mode still applies, and `data-variant` scopes the plugin's own rules.
 const BUILTIN_THEMES = [
-  ["system", "System theme"],
-  ["light", "Light theme"],
-  ["dark", "Dark theme"],
+  ["system", $t("System theme")],
+  ["light", $t("Light theme")],
+  ["dark", $t("Dark theme")],
 ];
 let pluginThemes = [],
   publicThemes = [],
@@ -691,7 +691,7 @@ async function openJournal(date, ws = workspaceId) {
   await refresh();
   await openNote(entry.id);
   if (entry.created)
-    announce(`Created the journal entry for ${longDate(date)}`);
+    announce($t("Created the journal entry for {longDate}", { longDate: longDate(date) }));
 }
 function noteTags(n) {
   return [...new Set([...(n.tags || []), ...(n.inline_tags || [])])];
@@ -835,7 +835,8 @@ async function api(path, method = "GET", body) {
   const kept = !!r.headers.get("x-minerva-offline");
   if (kept || !r.ok) showOffline(kept);
   if (!r.ok) {
-    const e = new Error(v.error || $t("Request failed"));
+    // The server writes its messages in English; the catalog has them too.
+    const e = new Error(v.error ? $t(v.error) : $t("Request failed"));
     e.status = kept ? 0 : r.status;
     throw e;
   }
@@ -1058,7 +1059,7 @@ function changesSidebar(path, method, body, result) {
 function firstSignIn() {
   if (!data?.must_change_password || localMode) return;
   const workspace = false;
-  modal.innerHTML = `<form id="first-sign-in"><h2>Welcome to Minerva, ${esc(data.user.name)}</h2><p>Before you start, replace the temporary password your administrator gave you${workspace ? $t(", and name your personal workspace: a private place for your own notes") : ""}.</p><label>${$t("Temporary password")}<input name="current_password" type="password" autocomplete="current-password" required></label><label>${$t("New password")}<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>${$t("Repeat new password")}<input name="repeat" type="password" autocomplete="new-password" required></label>${workspace ? `<label>${$t("Personal workspace")}<input name="workspace_name" value="Personal" maxlength="200" required></label>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="first-sign-out">${$t("Sign out")}</button><button class="btn primary" type="submit">${$t("Get started")}</button></footer></form>`;
+  modal.innerHTML = `<form id="first-sign-in"><h2>${$t("Welcome to Minerva, {name}", { name: esc(data.user.name) })}</h2><p>${$t("Before you start, replace the temporary password your administrator gave you{value}.", { value: workspace ? $t(", and name your personal workspace: a private place for your own notes") : "" })}</p><label>${$t("Temporary password")}<input name="current_password" type="password" autocomplete="current-password" required></label><label>${$t("New password")}<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>${$t("Repeat new password")}<input name="repeat" type="password" autocomplete="new-password" required></label>${workspace ? `<label>${$t("Personal workspace")}<input name="workspace_name" value="Personal" maxlength="200" required></label>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="first-sign-out">${$t("Sign out")}</button><button class="btn primary" type="submit">${$t("Get started")}</button></footer></form>`;
   const keep = (e) => e.preventDefault();
   modal.addEventListener("cancel", keep);
   modal.showModal();
@@ -1107,14 +1108,14 @@ function replicaFor(id = workspaceId) {
 function syncLabel(r) {
   const state = r.status?.state;
   const waiting = r.pending
-    ? ` · ${r.pending} change${r.pending === 1 ? "" : "s"} waiting`
+    ? $tn(r.pending, " · {count} change waiting", " · {count} changes waiting")
     : "";
   if (r.conflicts) return `${r.conflicts} to review${waiting}`;
   if (r.revoked || state === "revoked") return "Access removed · read only";
   if (state === "offline") return `Offline${waiting}`;
-  if (state === "signed_out") return `Sign in to sync${waiting}`;
+  if (state === "signed_out") return $t("Sign in to sync{waiting}", { waiting });
   if (state === "synced") return waiting ? `Syncing${waiting}` : "Synced";
-  if (state) return `Sync paused${waiting}`;
+  if (state) return $t("Sync paused{waiting}", { waiting });
   return "Waiting for first sync";
 }
 function workspaceBadge() {
@@ -1171,7 +1172,7 @@ async function syncDialog() {
       : c.kept
         ? "You deleted it while offline, but it changed on the server, so it was restored."
         : c.status === "merged"
-          ? `Your change to ${c.lost.map((f) => f.replace("cells/", "a property")).join(", ")} was replaced by a newer one from the server.`
+          ? $t("Your change to {fields} was replaced by a newer one from the server.", { fields: c.lost.map((f) => f.replace("cells/", $t("a property"))).join(", ") })
           : `${c.incoming ? "A change from the server could not be applied here" : "The server refused this change"}: ${c.error || c.status}.`;
   const actions = (c) =>
     c.copy_id
@@ -1261,7 +1262,7 @@ function forgotPassword() {
       await api("password-reset", "POST", {
         email: form.email.value.trim(),
       });
-      form.innerHTML = `<div class="eyebrow">${$t("CHECK YOUR EMAIL")}</div><h2>${$t("Look in your inbox")}</h2><p>If an account uses ${esc(form.email.value.trim())}, an email with a link to choose a new password is on its way. The link works for one hour.</p><p class="footnote"><button type="button" class="text-link" id="back-to-login">${$t("Back to sign in")}</button></p>`;
+      form.innerHTML = `<div class="eyebrow">${$t("CHECK YOUR EMAIL")}</div><h2>${$t("Look in your inbox")}</h2><p>${$t("If an account uses {value}, an email with a link to choose a new password is on its way. The link works for one hour.", { value: esc(form.email.value.trim()) })}</p><p class="footnote"><button type="button" class="text-link" id="back-to-login">${$t("Back to sign in")}</button></p>`;
       $("#back-to-login").onclick = login;
     } catch (err) {
       $(".form-error", form).textContent = err.message;
@@ -1401,7 +1402,7 @@ async function shareWorkspace(wid = workspaceId) {
           }</li>`,
       )
       .join("");
-    modal.innerHTML = `<div class="share-workspace"><header><h2>Share ${esc(name)}</h2><p>${info.can_edit ? `People with <strong>${$t("Edit")}</strong> ${$t("manage folders, notes, the journal, sites and sharing, like you.")} <strong>${$t("Read only")}</strong> lets them read everything.` : $t("You can read this workspace. People who can edit it manage who has access.")}</p></header>${
+    modal.innerHTML = `<div class="share-workspace"><header><h2>${$t("Share {name}", { name: esc(name) })}</h2><p>${info.can_edit ? `People with <strong>${$t("Edit")}</strong> ${$t("manage folders, notes, the journal, sites and sharing, like you.")} <strong>${$t("Read only")}</strong> lets them read everything.` : $t("You can read this workspace. People who can edit it manage who has access.")}</p></header>${
       info.can_edit
         ? outside.length
           ? `<form class="share-invite" id="share-invite"><select name="user_id" aria-label="${$t("Person to invite")}" required>${outside.map((m) => `<option value="${m.id}">${esc(m.name)} · ${esc(m.email)}</option>`).join("")}</select>${roleSelect('name="role" aria-label="Access"', "editor")}<button class="btn primary" ${busy ? "disabled" : ""}>${$t("Invite")}</button></form>`
@@ -1434,13 +1435,13 @@ async function shareWorkspace(wid = workspaceId) {
         save(
           form.user_id.value,
           form.role.value,
-          `${who?.name || "They"} can now open ${name}`,
+          $t("{who} can now open {name}", { who: who?.name || $t("They"), name }),
         );
       };
     $$("[data-member-role]", modal).forEach(
       (select) =>
         (select.onchange = () =>
-          save(select.dataset.memberRole, select.value, "Access updated")),
+          save(select.dataset.memberRole, select.value, $t("Access updated"))),
     );
     $$("[data-member-remove]", modal).forEach(
       (button) =>
@@ -1451,7 +1452,7 @@ async function shareWorkspace(wid = workspaceId) {
           save(
             button.dataset.memberRemove,
             "none",
-            `${who?.name || "They"} no longer has access`,
+            $t("{who} no longer has access", { who: who?.name || $t("They") }),
           );
         }),
     );
@@ -1483,7 +1484,7 @@ function shell() {
   // Redrawing keeps the sidebar where it was scrolled to.
   const sidebarTop = $(".sidebar-scroll")?.scrollTop || 0;
   $("#app").innerHTML =
-    `<a class="skip-link" href="#content">${$t("Skip to content")}</a><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || "No workspace")}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="${$t("Workspaces")}" hidden>${workspaceMenuItems()}</div></div><div class="search-row"><button id="search">${icon("search")}${$t("Search")} <span class="shortcut">${$t("Ctrl K")}</span></button><button id="quick-note" aria-label="${$t("New note")}" title="${$t("New note")}">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="${$t("Main navigation")}">${[
+    `<a class="skip-link" href="#content">${$t("Skip to content")}</a><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || $t("No workspace"))}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="${$t("Workspaces")}" hidden>${workspaceMenuItems()}</div></div><div class="search-row"><button id="search">${icon("search")}${$t("Search")} <span class="shortcut">${$t("Ctrl K")}</span></button><button id="quick-note" aria-label="${$t("New note")}" title="${$t("New note")}">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="${$t("Main navigation")}">${[
       ["home", "home", $t("Overview")],
       ["all", "note", $t("All notes")],
       ["journal", "calendar", $t("Journal")],
@@ -1500,7 +1501,7 @@ function shell() {
       )
       .join(
         "",
-      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${esc(data.user.name.slice(0, 2).toUpperCase())}</span>${localMode ? `<div class="profile-link"><div class="profile-name">${$t("On this computer")}</div><div class="profile-role">${$t("Personal notes · offline copies")}</div></div>` : `<button class="profile-link" data-view="account" title="${$t("Account security")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${data.user.admin ? $t("Server administrator") : $t("Member")} · Security</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || "Your server")}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${themeSelect()}${workspaceBadge()}<span class="avatar">${esc(data.user.name[0])}</span></div></header><div id="content" tabindex="-1"></div></main></div>`;
+      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${esc(data.user.name.slice(0, 2).toUpperCase())}</span>${localMode ? `<div class="profile-link"><div class="profile-name">${$t("On this computer")}</div><div class="profile-role">${$t("Personal notes · offline copies")}</div></div>` : `<button class="profile-link" data-view="account" title="${$t("Account security")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${$t("{value} · Security", { value: data.user.admin ? $t("Server administrator") : $t("Member") })}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${themeSelect()}${workspaceBadge()}<span class="avatar">${esc(data.user.name[0])}</span></div></header><div id="content" tabindex="-1"></div></main></div>`;
   $$("[data-view]").forEach((b) =>
     action(b, "click", () => navigate(b.dataset.view)),
   );
@@ -1630,9 +1631,9 @@ async function appendBlocks(
     block: "center",
     behavior: "smooth",
   });
-  announce(`Added ${extra.length} block${extra.length === 1 ? "" : "s"}`);
+  announce($tn(extra.length, "Added {count} block", "Added {count} blocks"));
   toast(
-    `Added ${extra.length} block${extra.length === 1 ? "" : "s"} from ${source}`,
+    $tn(extra.length, "Added {count} block from {source}", "Added {count} blocks from {source}", { source }),
   );
   return extra.length;
 }
@@ -1761,9 +1762,9 @@ function overview() {
             .join(" / ")
         : title;
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${view === "home" ? $t("YOUR WORKSPACE, AT A GLANCE") : $t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "home" ? $t("Collect your thoughts. Connect the dots. Make something great.") : view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : `${notes.length} note${notes.length === 1 ? "" : "s"} · Space to think, write, and explore.`}</p></div>${view !== "trash" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
+    `<section class="page"><div class="eyebrow">${view === "home" ? $t("YOUR WORKSPACE, AT A GLANCE") : $t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "home" ? $t("Collect your thoughts. Connect the dots. Make something great.") : view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : $tn(notes.length, "{count} note · Space to think, write, and explore.", "{count} notes · Space to think, write, and explore.")}</p></div>${view !== "trash" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
       view === "home"
-        ? `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("A FRESH START")}</div><h2>${$t("Good ideas start with a little space.")}</h2><p>${$t("A quick thought, a detailed plan, your next big thing.")}<br>${$t("Bring it all together in your workspace.")}</p><button class="text-link" id="start-writing">${$t("Start writing")} <span>↗</span></button></div>${art()}</div><div class="section-title"><h2>${$t("Your folders")}</h2><span>${folderChildren(treeFolders(), null).length} spaces to keep things together</span></div><div class="folder-grid">${
+        ? `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("A FRESH START")}</div><h2>${$t("Good ideas start with a little space.")}</h2><p>${$t("A quick thought, a detailed plan, your next big thing.")}<br>${$t("Bring it all together in your workspace.")}</p><button class="text-link" id="start-writing">${$t("Start writing")} <span>↗</span></button></div>${art()}</div><div class="section-title"><h2>${$t("Your folders")}</h2><span>${$t("{count} spaces to keep things together", { count: folderChildren(treeFolders(), null).length })}</span></div><div class="folder-grid">${
             folderChildren(treeFolders(), null).map(folderCard).join("") ||
             `<div class="empty">${$t("Your administrator can grant you folder access.")}</div>`
           }</div>`
@@ -1795,7 +1796,7 @@ function overview() {
     const doomed = notes.filter((n) => data.roles[n.folder_id] === "editor");
     formDialog(
       $t("Empty the trash?"),
-      `${doomed.length} note${doomed.length === 1 ? " is" : "s are"} deleted permanently, with history, files, shares, and published pages.${doomed.length < notes.length ? " Notes in folders you can only view stay." : ""} This cannot be undone.`,
+      `${$tn(doomed.length, "{count} note is deleted permanently, with history, files, shares, and published pages.", "{count} notes are deleted permanently, with history, files, shares, and published pages.")}${doomed.length < notes.length ? $t(" Notes in folders you can only view stay.") : ""} ${$t("This cannot be undone.")}`,
       "",
       async () => {
         for (const n of doomed) await api("notes/" + n.id, "DELETE");
@@ -1813,7 +1814,7 @@ function folderCard(f) {
     (n) => n.folder_id === f.id && !n.trashed,
   ).length;
   const subfolders = data.folders.filter((x) => x.parent_id === f.id).length;
-  return `<button class="folder-card" data-open-folder="${f.id}"><span class="folder-icon">${icon("folder")}</span><div><strong>${esc(f.name)}</strong><small>${notes} note${notes === 1 ? "" : "s"}${subfolders ? ` · ${subfolders} subfolder${subfolders === 1 ? "" : "s"}` : ""} · ${data.roles[f.id] === "editor" ? $t("Can edit") : $t("Read only")}</small></div></button>`;
+  return `<button class="folder-card" data-open-folder="${f.id}"><span class="folder-icon">${icon("folder")}</span><div><strong>${esc(f.name)}</strong><small>${$tn(notes, "{count} note{value} · {value2}", "{count} notes{value} · {value2}", { value: subfolders ? ` · ${$tn(subfolders, "{count} subfolder", "{count} subfolders")}` : "", value2: data.roles[f.id] === "editor" ? $t("Can edit") : $t("Read only") })}</small></div></button>`;
 }
 function formDialog(title, desc, fields, onSubmit, label = "Create") {
   modal.innerHTML = `<form><h2>${esc(title)}</h2><p>${esc(desc)}</p>${fields}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${esc(label)}</button></footer></form>`;
@@ -1876,7 +1877,7 @@ function createWorkspace() {
 // Administrators delete any workspace; owners delete their personal ones.
 function deleteWorkspace(w, after = null) {
   formDialog(
-    `Delete “${w.name}”?`,
+    $t("Delete “{name}”?", { name: w.name }),
     $t("Every folder, note, database, site, published page, and file in this workspace is deleted permanently, and members lose access. This cannot be undone."),
     `<label>${$t("Type the workspace name to confirm")}<input name="confirm" required autocomplete="off"></label>`,
     async (v) => {
@@ -2065,7 +2066,7 @@ function receiveLive(snapshot, result) {
     open.blur();
     // A window in the background gets no blur event; close the block anyway.
     if (open.isConnected) open.onblur?.();
-    toast(`${holder ? holder.name : "Someone"} is already editing this block.`);
+    toast($t("{value} is already editing this block.", { value: holder ? holder.name : $t("Someone") }));
   }
   if ($("#presence"))
     $("#presence").innerHTML =
@@ -2102,7 +2103,7 @@ function lockedBy(id) {
 function blockLocked(id) {
   const holder = lockedBy(id);
   if (holder)
-    toast(`${holder.name} is editing this block. Try again when they move on.`);
+    toast($t("{name} is editing this block. Try again when they move on.", { name: holder.name }));
   return Boolean(holder);
 }
 const PEER_COLORS = [
@@ -2153,7 +2154,7 @@ function drawPeers() {
       el.style.setProperty("--peer", color);
       $(".block-body", el)?.setAttribute(
         "title",
-        `${p.name} is editing this block`,
+        $t("{name} is editing this block", { name: p.name }),
       );
     }
     const rect = el.getBoundingClientRect();
@@ -2167,7 +2168,7 @@ function drawPeers() {
       layer.append(tag);
     }
     tag.textContent = p.editing ? `✎ ${p.name}` : p.name;
-    tag.title = `${p.name} is ${p.editing ? "editing" : "reading"} this block`;
+    tag.title = p.editing ? $t("{name} is editing this block", { name: p.name }) : $t("{name} is reading this block", { name: p.name });
     tag.classList.toggle("editing", p.editing);
     tag.style.setProperty("--peer", color);
     tag.style.top = `${rect.top - base.top + 4 + row * 22}px`;
@@ -2265,11 +2266,11 @@ function renderEditor() {
   $("#breadcrumb").textContent = note.title;
   const sharing = note.sharing || {};
   const shareState = sharing.published
-    ? `<a class="public-indicator" href="${esc(serverOrigin())}/${esc(sharing.published)}" target="_blank" rel="noopener">Published at /${esc(sharing.published)}</a>`
+    ? `<a class="public-indicator" href="${esc(serverOrigin())}/${esc(sharing.published)}" target="_blank" rel="noopener">${$t("Published at /{published}", { published: esc(sharing.published) })}</a>`
     : sharing.links
       ? `<span class="public-indicator">${$t("Anyone with a link can open this note")}</span>`
       : sharing.members
-        ? `<span class="share-indicator">Shared with ${sharing.members} member${sharing.members === 1 ? "" : "s"}</span>`
+        ? `<span class="share-indicator">${$tn(sharing.members, "Shared with {count} member", "Shared with {count} members")}</span>`
         : "";
   const editor = data.roles?.[note.folder_id] === "editor";
   const item = (id, iconName, label, extra = "", keys = "") =>
@@ -2345,7 +2346,7 @@ function renderEditor() {
       : `<button class="btn icon-btn" id="favorite" aria-label="${$t("Favorite")}" aria-pressed="${!!note.favorite}" title="${$t("Favorite")}" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${!editor || note.trashed ? `disabled title="${$t("Folder editors can share this note")}"` : ""}>${$t("Share")}${sharing.published || sharing.links ? `<span class="share-badge public">${$t("Public")}</span>` : ""}</button>`}<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="${$t("Comments")}" title="${$t("Comments on this note")}">💬<span class="toolbar-label"> ${$t("Comments")}</span> <span class="comments-count"></span></button><button class="btn" id="ask-note" aria-label="${$t("Ask AI")}" title="${$t("Chat with AI about this note, side by side")}">${icon("brain")}<span class="toolbar-label">${$t("Ask AI")}</span></button>`
   }<div class="toolbar-more"><button class="btn icon-btn" id="note-more" aria-haspopup="menu" aria-expanded="false" aria-controls="note-menu" aria-label="${$t("More note tools")}" title="${$t("More")}">${icon("more")}</button><div class="row-menu note-menu" id="note-menu" role="menu" aria-label="${$t("Note tools")}" hidden>${menu}</div></div>`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || $t("Shared with you"))}</span>`}<span>${$t("Updated {date}", { date: date(note.updated_at) })}</span><span>${$t("Revision {revision}", { revision: note.revision })}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2618,7 +2619,7 @@ function renderTagBar() {
         "tags",
         own.filter((t) => t !== b.dataset.removeTag),
       );
-      announce(`Removed tag ${b.dataset.removeTag}`);
+      announce($t("Removed tag {removeTag}", { removeTag: b.dataset.removeTag }));
     }),
   );
   $$(".tag-chip", bar).forEach((chip) =>
@@ -2638,7 +2639,7 @@ function renderTagBar() {
       if (own.includes(tag)) return;
       if (own.length >= 20) return toast($t("A note can have up to 20 tags"));
       setNoteField("tags", [...own, tag]);
-      announce(`Added tag ${tag}`);
+      announce($t("Added tag {tag}", { tag }));
       $(".tag-add input")?.focus();
     };
 }
@@ -2648,7 +2649,7 @@ function renderBacklinks() {
   const links = shareMode ? [] : note.backlinks || [];
   const linksOut = note.blocks.some((b) => b.markdown.includes("](#note/"));
   panel.hidden = !links.length && !linksOut;
-  panel.innerHTML = `${links.length ? `<h2>Linked from ${links.length} note${links.length === 1 ? "" : "s"}</h2>${links.map((l) => `<a class="backlink" href="#note/${esc(l.id)}">${esc(l.icon)} ${esc(l.title)}</a>`).join("")}` : ""}${shareMode ? "" : `<button class="text-link graph-link" id="show-graph">${icon("graph")}${$t("Show in the graph")}</button>`}`;
+  panel.innerHTML = `${links.length ? `<h2>${$tn(links.length, "Linked from {count} note", "Linked from {count} notes")}</h2>${links.map((l) => `<a class="backlink" href="#note/${esc(l.id)}">${esc(l.icon)} ${esc(l.title)}</a>`).join("")}` : ""}${shareMode ? "" : `<button class="text-link graph-link" id="show-graph">${icon("graph")}${$t("Show in the graph")}</button>`}`;
   $("#show-graph", panel)?.addEventListener("click", () => showGraph(note.id));
 }
 /** The graph around a note: in the main page when the note is in a tab. */
@@ -2676,7 +2677,7 @@ async function renderGraph(focus = null) {
   const folderIds = [...new Set(raw.nodes.map((n) => n.folder_id))];
   const folderName = (id) => data.folders.find((f) => f.id === id)?.name || "";
   const notes = graph.nodes.filter((n) => n.kind === "note").length;
-  $("#content").innerHTML = `<section class="page graph-page"><div class="page-heading"><div><h1>${around ? `Around “${esc(around.label)}”` : $t("Graph")}</h1><p class="subtitle">${notes} note${notes === 1 ? "" : "s"} · ${graph.edges.length} link${graph.edges.length === 1 ? "" : "s"}. Drag to move, scroll to zoom, click a note to open it.</p></div></div><div class="graph-toolbar"><div class="graph-find"><input type="search" id="graph-search" placeholder="${$t("Find a note…")}" aria-label="${$t("Find a note in the graph")}" autocomplete="off"><div class="graph-results" id="graph-results" role="listbox" aria-label="${$t("Matching notes")}"></div></div>${around ? `<label class="cal-by">${$t("Links away")}<select id="graph-depth">${[1, 2, 3].map((d) => `<option ${d === graphChoices.depth ? "selected" : ""}>${d}</option>`).join("")}</select></label><button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}${[
+  $("#content").innerHTML = `<section class="page graph-page"><div class="page-heading"><div><h1>${around ? $t("Around “{label}”", { label: esc(around.label) }) : $t("Graph")}</h1><p class="subtitle">${$tn(notes, "{count} note", "{count} notes")} · ${$tn(graph.edges.length, "{count} link", "{count} links")}. ${$t("Drag to move, scroll to zoom, click a note to open it.")}</p></div></div><div class="graph-toolbar"><div class="graph-find"><input type="search" id="graph-search" placeholder="${$t("Find a note…")}" aria-label="${$t("Find a note in the graph")}" autocomplete="off"><div class="graph-results" id="graph-results" role="listbox" aria-label="${$t("Matching notes")}"></div></div>${around ? `<label class="cal-by">${$t("Links away")}<select id="graph-depth">${[1, 2, 3].map((d) => `<option ${d === graphChoices.depth ? "selected" : ""}>${d}</option>`).join("")}</select></label><button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}${[
     ["tags", "Tags"],
     ["orphans", "Unlinked notes"],
     ["journal", "Journal"],
@@ -2775,7 +2776,7 @@ function updateStats() {
     if (!el || !note) return;
     const { words, characters, minutes } = countWords(note.blocks);
     el.textContent = words
-      ? `${words.toLocaleString()} word${words === 1 ? "" : "s"} · ${minutes} min read`
+      ? $tn(words, "{count} word · {minutes} min read", "{count} words · {minutes} min read", { count: words.toLocaleString(), minutes })
       : $t("No words yet");
     el.title = `${characters.toLocaleString()} characters`;
   }, 150);
@@ -2909,7 +2910,7 @@ async function replaceMatches(everything) {
   markDirty();
   renderBlocks();
   queueSave().catch(() => {});
-  announce(`Replaced ${replaced} match${replaced === 1 ? "" : "es"}`);
+  announce($tn(replaced, "Replaced {count} match", "Replaced {count} matches"));
   runFind();
 }
 function closeFind() {
@@ -3080,7 +3081,7 @@ async function moveBlock(i, j) {
   note.rendered.splice(j, 0, html);
   markDirty();
   renderBlocks();
-  announce(`Block moved to position ${j + 1}`);
+  announce($t("Block moved to position {value}", { value: j + 1 }));
   await queueSave();
 }
 /** Drags a block by its handle; a line shows where it will land. */
@@ -3192,7 +3193,7 @@ function selectBlockRange(from, to) {
   getSelection().removeAllRanges();
   drawBlockSelection();
   announce(
-    `${selectedBlocks.length} block${selectedBlocks.length === 1 ? "" : "s"} selected`,
+    $tn(selectedBlocks.length, "{count} block selected", "{count} blocks selected"),
   );
 }
 function clearBlockSelection() {
@@ -3229,8 +3230,8 @@ function drawBlockSelection() {
     document.body.append(bar);
   }
   const can = editable();
-  bar.setAttribute("aria-label", `${selectedBlocks.length} blocks selected`);
-  bar.innerHTML = `<strong>${selectedBlocks.length} block${selectedBlocks.length === 1 ? "" : "s"}</strong>${
+  bar.setAttribute("aria-label", $tn(selectedBlocks.length, "{count} block selected", "{count} blocks selected"));
+  bar.innerHTML = `<strong>${$tn(selectedBlocks.length, "{count} block", "{count} blocks")}</strong>${
     can
       ? `<select data-turn aria-label="${$t("Turn into")}"><option value="">${$t("Turn into…")}</option>${BLOCK_KINDS.map(([kind, label]) => `<option value="${kind}">${label}</option>`).join("")}</select><button data-act="outdent" title="${$t("Move out (Shift+Tab)")}">⇤</button><button data-act="indent" title="${$t("Indent (Tab)")}">⇥</button><button data-act="up" title="${$t("Move up (Alt+Shift+↑)")}">↑</button><button data-act="down" title="${$t("Move down (Alt+Shift+↓)")}">↓</button>`
       : ""
@@ -3324,7 +3325,7 @@ async function deleteSelectedBlocks() {
   renderBlocks();
   drawBlockSelection();
   $$(".block-body")[Math.min(first, note.blocks.length - 1)]?.focus();
-  announce(`${count} blocks deleted. Press Ctrl+Z to undo.`);
+  announce($t("{count} blocks deleted. Press Ctrl+Z to undo.", { count }));
   await queueSave();
 }
 async function moveSelectedBlocks(step) {
@@ -3501,7 +3502,7 @@ function drawFolding() {
       const label = isFolded ? "Show nested blocks" : "Hide nested blocks";
       arrow.setAttribute("aria-expanded", String(!isFolded));
       arrow.setAttribute("aria-label", label);
-      arrow.title = `${label} (Ctrl+${isFolded ? "↓" : "↑"})`;
+      arrow.title = $t("{label} (Ctrl+{value})", { label, value: isFolded ? "↓" : "↑" });
     }
     let count = $(":scope > .fold-count", el);
     if (isFolded) {
@@ -3778,7 +3779,7 @@ function renderBlocks() {
     .map((b, i) =>
       mode === "document"
         ? blockHTML(b, i)
-        : `<div class="canvas-card" data-card="${esc(b.id)}" style="left:${b.x}px;top:${b.y}px"><div class="canvas-handle">⠿ &nbsp; Block ${i + 1} · drag to arrange</div>${blockHTML(b, i)}</div>`,
+        : `<div class="canvas-card" data-card="${esc(b.id)}" style="left:${b.x}px;top:${b.y}px"><div class="canvas-handle">${$t("⠿ &nbsp; Block {value} · drag to arrange", { value: i + 1 })}</div>${blockHTML(b, i)}</div>`,
     )
     .join("");
   drawPeers();
@@ -4132,7 +4133,7 @@ async function updateMentionPicker(ta, query) {
     )
     .slice(0, 8)
     .map((p) => ({ ...p, icon: "@", title: p.name }));
-  showPicker(ta, query, items, "Mention someone");
+  showPicker(ta, query, items, $t("Mention someone"));
 }
 function showPicker(ta, query, items, label) {
   const block = ta.closest(".block");
@@ -4164,7 +4165,7 @@ async function updateLinkPicker(ta) {
   if (linkQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
   const items = results.filter((n) => n.id !== note.id).slice(0, 8);
   query.embed = ta.value[query.start - 1] === "!";
-  if (query.embed) return showPicker(ta, query, items, "Embed a note");
+  if (query.embed) return showPicker(ta, query, items, $t("Embed a note"));
   if (
     /^(u|un|unf|unc|tas|todo|jour|open)/i.test(query.query.trim()) ||
     !query.query.trim()
@@ -4174,7 +4175,7 @@ async function updateLinkPicker(ta) {
       icon: "☑",
       title: "Unfinished journal tasks (live list)",
     });
-  showPicker(ta, query, items, "Link to a note");
+  showPicker(ta, query, items, $t("Link to a note"));
 }
 function drawLinkPicker() {
   const { list, items, selected } = linkPicker;
@@ -4185,7 +4186,7 @@ function drawLinkPicker() {
           `<button role="option" aria-selected="${i === selected}" class="${i === selected ? "selected" : ""}" data-pick="${i}">${n.email ? `<span class="mention-avatar">${esc(n.name.slice(0, 1).toUpperCase())}</span>${esc(n.name)} <small>${esc(n.email)}</small>` : `${esc(n.icon)} ${esc(n.title)}`}</button>`,
       )
       .join("") ||
-    `<p class="muted">${linkPicker.list.getAttribute("aria-label") === "Mention someone" ? $t("Nobody else can open this note yet. Share it, or its workspace, first.") : $t("No matching notes")}</p>`;
+    `<p class="muted">${linkPicker.list.getAttribute("aria-label") === $t("Mention someone") ? $t("Nobody else can open this note yet. Share it, or its workspace, first.") : $t("No matching notes")}</p>`;
   $$("[data-pick]", list).forEach((b) => {
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", () => pickLink(Number(b.dataset.pick)));
@@ -4214,7 +4215,7 @@ function pickLink(index) {
       ? `Mentioned ${target.name}`
       : query.embed
         ? `Embedded ${target.title}`
-        : `Linked to ${target.title}`,
+        : $t("Linked to {title}", { title: target.title }),
   );
 }
 function closeLinkPicker() {
@@ -4277,7 +4278,7 @@ function editBlock(id, caret = null) {
     if (marker && !ta.value.slice(marker[0].length).trim() && start === end) {
       const level = indentLevel(ta.value);
       setValue(level ? reindent(ta.value, level, level - 1) : "");
-      announce(level ? `Moved out to level ${level}` : $t("List ended"));
+      announce(level ? $t("Moved out to level {level}", { level }) : $t("List ended"));
       return;
     }
     // The new block keeps the indentation and continues the list.
@@ -4359,9 +4360,9 @@ function editBlock(id, caret = null) {
     });
     announce(
       target > level
-        ? `Indented to level ${target}`
+        ? $t("Indented to level {level}", { level: target })
         : target
-          ? `Moved out to level ${target}`
+          ? $t("Moved out to level {level}", { level: target })
           : $t("Not indented"),
     );
   }
@@ -4715,7 +4716,7 @@ function editBlock(id, caret = null) {
             item.markdown,
           );
         renderBlocks();
-        announce(`Pasted ${extra.length + 1} blocks`);
+        announce($t("Pasted {value} blocks", { value: extra.length + 1 }));
       })
       .catch(error);
   };
@@ -4917,7 +4918,7 @@ async function recordingDialog(attachmentId, afterId) {
         job = await api(`ai/recordings/${job.id}`);
       }
       if (stopped) return;
-      if (job.state === "failed") throw new Error(job.error);
+      if (job.state === "failed") throw new Error($t(job.error));
       status.textContent = "";
       showResult();
     } catch (err) {
@@ -4937,12 +4938,12 @@ async function recordingDialog(attachmentId, afterId) {
       : "";
     $("#recording-result").innerHTML =
       (notes
-        ? `${notes.summary.length ? option("summary", "Key points", list(notes.summary)) : ""}${notes.decisions.length ? option("decisions", "Decisions", list(notes.decisions)) : ""}${actions}`
+        ? `${notes.summary.length ? option("summary", $t("Key points"), list(notes.summary)) : ""}${notes.decisions.length ? option("decisions", $t("Decisions"), list(notes.decisions)) : ""}${actions}`
         : "") +
       option(
         "transcript",
-        "Transcript",
-        `<small> · ${job.transcript.length} part${job.transcript.length === 1 ? "" : "s"}, folded under its heading</small>`,
+        $t("Transcript"),
+        `<small> ${$tn(job.transcript.length, "· {count} part, folded under its heading", "· {count} parts, folded under its heading")}</small>`,
         !notes,
       );
     form.provider.disabled = true;
@@ -5005,46 +5006,46 @@ function reminderDialog(existingId) {
       block_id: b.id,
       at: Math.floor(when.getTime() / 1000),
     });
-    toast(`Reminder set for ${when.toLocaleString()}`);
+    toast($t("Reminder set for {date}", { date: when.toLocaleString() }));
   };
 }
 /** How each `/` command shows in the menu: group, icon, description, shortcut. */
 const COMMAND_GROUPS = [
-  "Basic",
-  "Lists",
-  "Media & links",
-  "Advanced",
-  "People & time",
-  "Plugins",
+  msg("Basic"),
+  msg("Lists"),
+  msg("Media & links"),
+  msg("Advanced"),
+  msg("People & time"),
+  msg("Plugins"),
 ];
 const COMMAND_LOOK = {
-  Text: ["Basic", "Aa", "Plain writing", ""],
-  "Heading 1": ["Basic", "H1", "Big section title", "#"],
-  "Heading 2": ["Basic", "H2", "Medium section title", "##"],
-  "Heading 3": ["Basic", "H3", "Small section title", "###"],
-  Quote: ["Basic", "❝", "Quote someone", ">"],
-  Divider: ["Basic", "—", "Separate sections", "---"],
-  Highlight: ["Basic", "▍", "Mark important text", "=="],
-  Emoji: ["Basic", "☺", "Search every emoji", ""],
-  Task: ["Lists", "☑", "Track something to do", "[]"],
-  "Bullet list": ["Lists", "•", "A simple list", "-"],
-  "Numbered list": ["Lists", "1.", "A list in order", "1."],
-  "Unfinished journal tasks": ["Lists", "↻", "Open tasks from past days", ""],
-  "Image or file": ["Media & links", "⇪", "Upload, drop or pick a file", ""],
-  "Record audio": ["Media & links", "●", "Record from the microphone", ""],
-  Link: ["Media & links", "↗", "A link to a web page", ""],
-  "Link to note": ["Media & links", "⧉", "Link another note", "[["],
-  "Embedded note": ["Media & links", "▤", "Show another note here, kept current", "![["],
-  Table: ["Media & links", "▦", "Rows and columns", ""],
-  "Database (live)": ["Media & links", "⊞", "Embed a live database", ""],
-  Code: ["Advanced", "</>", "Code with highlighting", "```"],
-  "Math (block)": ["Advanced", "∑", "A formula in LaTeX", "$$"],
-  "Diagram (Mermaid)": ["Advanced", "⇄", "Flowcharts and more", ""],
-  "Callout · Note": ["Advanced", "ℹ", "A highlighted note", ""],
-  "Callout · Tip": ["Advanced", "✦", "A helpful tip", ""],
-  "Callout · Warning": ["Advanced", "⚠", "A warning to notice", ""],
-  "Assign to someone": ["People & time", "@", "Email a teammate", ""],
-  "Remind me": ["People & time", "⏰", "Get this block by email", ""],
+  Text: ["Basic", "Aa", $t("Plain writing"), ""],
+  "Heading 1": ["Basic", "H1", $t("Big section title"), "#"],
+  "Heading 2": ["Basic", "H2", $t("Medium section title"), "##"],
+  "Heading 3": ["Basic", "H3", $t("Small section title"), "###"],
+  Quote: ["Basic", "❝", $t("Quote someone"), ">"],
+  Divider: ["Basic", "—", $t("Separate sections"), "---"],
+  Highlight: ["Basic", "▍", $t("Mark important text"), "=="],
+  Emoji: ["Basic", "☺", $t("Search every emoji"), ""],
+  Task: ["Lists", "☑", $t("Track something to do"), "[]"],
+  "Bullet list": ["Lists", "•", $t("A simple list"), "-"],
+  "Numbered list": ["Lists", "1.", $t("A list in order"), "1."],
+  "Unfinished journal tasks": ["Lists", "↻", $t("Open tasks from past days"), ""],
+  "Image or file": ["Media & links", "⇪", $t("Upload, drop or pick a file"), ""],
+  "Record audio": ["Media & links", "●", $t("Record from the microphone"), ""],
+  Link: ["Media & links", "↗", $t("A link to a web page"), ""],
+  "Link to note": ["Media & links", "⧉", $t("Link another note"), "[["],
+  "Embedded note": ["Media & links", "▤", $t("Show another note here, kept current"), "![["],
+  Table: ["Media & links", "▦", $t("Rows and columns"), ""],
+  "Database (live)": ["Media & links", "⊞", $t("Embed a live database"), ""],
+  Code: ["Advanced", "</>", $t("Code with highlighting"), "```"],
+  "Math (block)": ["Advanced", "∑", $t("A formula in LaTeX"), "$$"],
+  "Diagram (Mermaid)": ["Advanced", "⇄", $t("Flowcharts and more"), ""],
+  "Callout · Note": ["Advanced", "ℹ", $t("A highlighted note"), ""],
+  "Callout · Tip": ["Advanced", "✦", $t("A helpful tip"), ""],
+  "Callout · Warning": ["Advanced", "⚠", $t("A warning to notice"), ""],
+  "Assign to someone": ["People & time", "@", $t("Email a teammate"), ""],
+  "Remind me": ["People & time", "⏰", $t("Get this block by email"), ""],
 };
 function blockMenu(existingId, capturedSelection = "") {
   if (!editable()) return;
@@ -5178,7 +5179,9 @@ function blockMenu(existingId, capturedSelection = "") {
     // Grouped in menu order, so arrow keys follow what is on screen.
     matches = commands
       .filter((c) =>
-        `${c[0]} ${c[2]} ${look(c)[2]}`.toLowerCase().includes(query),
+        `${c[0]} ${$t(c[0])} ${c[2]} ${look(c)[2]}`
+          .toLowerCase()
+          .includes(query),
       )
       .map((c, i) => [COMMAND_GROUPS.indexOf(look(c)[0]), i, c])
       .sort((a, b) => a[0] - b[0] || a[1] - b[1])
@@ -5191,15 +5194,13 @@ function blockMenu(existingId, capturedSelection = "") {
           const [name, glyph, description, shortcut] = look(c);
           const heading =
             name !== group
-              ? `<h3 class="command-group">${esc((group = name))}</h3>`
+              ? `<h3 class="command-group">${esc($t((group = name)))}</h3>`
               : "";
-          const label = c[1] === "@plugin" ? c[2] : c[0];
-          return `${heading}<button class="command-item ${i === selected ? "command-selected" : ""}" role="option" aria-selected="${i === selected}" data-command="${i}" ${c[3] && !c[3].available ? "disabled" : ""}><span class="command-icon" aria-hidden="true">${esc(glyph)}</span><span class="command-text"><strong>${esc(label)}</strong><small>${esc(c[3] && !c[3].available ? c[3].reason || "Configuration required" : description)}</small></span>${shortcut ? `<kbd>${esc(shortcut)}</kbd>` : ""}</button>`;
+          const label = c[1] === "@plugin" ? c[2] : $t(c[0]);
+          return `${heading}<button class="command-item ${i === selected ? "command-selected" : ""}" role="option" aria-selected="${i === selected}" data-command="${i}" ${c[3] && !c[3].available ? "disabled" : ""}><span class="command-icon" aria-hidden="true">${esc(glyph)}</span><span class="command-text"><strong>${esc(label)}</strong><small>${esc(c[3] && !c[3].available ? c[3].reason || $t("Configuration required") : description)}</small></span>${shortcut ? `<kbd>${esc(shortcut)}</kbd>` : ""}</button>`;
         })
         .join("") ||
-      '<p class="command-empty">No block matches “' +
-        esc(input.value) +
-        "”</p>";
+      `<p class="command-empty">${$t("No block matches “{query}”", { query: esc(input.value) })}</p>`;
     $$("[data-command]", modal).forEach((button) => {
       action(button, "click", () => choose(Number(button.dataset.command)));
       button.onpointermove = () => {
@@ -5283,14 +5284,14 @@ async function uploadAttachments(files, afterId = null) {
   const targetId = note.id;
   // After a block, the last file goes in first so they keep their order.
   for (const file of afterId ? [...files].reverse() : files) {
-    toast(`Uploading ${file.name}…`);
+    toast($t("Uploading {name}…", { name: file.name }));
     await insertAttachment(await uploadFile(file, targetId), targetId, afterId);
   }
   toast($t("Files saved. Originals are available for download."));
 }
 async function uploadFile(file, targetId) {
   if (!file.size || file.size > 60 * 1024 * 1024)
-    throw new Error(`${file.name} is too large: files hold up to 60 MiB.`);
+    throw new Error($t("{name} is too large: files hold up to 60 MiB.", { name: file.name }));
   const response = await fetch(
     `${shareMode ? "/api/v1/shared/attachments" : `/api/v1/notes/${targetId}/attachments`}?filename=${encodeURIComponent(file.name)}`,
     {
@@ -5306,7 +5307,7 @@ async function uploadFile(file, targetId) {
     },
   );
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || $t("Upload failed"));
+  if (!response.ok) throw new Error(result.error ? $t(result.error) : $t("Upload failed"));
   return result;
 }
 async function attachmentDialog() {
@@ -5317,7 +5318,7 @@ async function attachmentDialog() {
   modal.innerHTML = `<h2>${$t("Images and files")}</h2>
     ${editable() ? `<label class="file-drop" id="file-drop"><input id="attachment-upload" type="file" multiple class="sr-only"><span class="file-drop-icon" aria-hidden="true">⇪</span><strong>${$t("Drop files here, or click to choose")}</strong><small>${$t("Images, PDFs, audio, documents · up to 60 MB each")}</small></label>` : ""}
     <h3 class="file-list-heading">${$t("In this note")}</h3>
-    <div class="file-list">${result.attachments.map((file, i) => `<div class="attachment-row"><span class="attachment-name">${esc(file.filename)} <small>${Math.ceil(file.size / 1024)} KiB</small></span><a class="btn" href="/api/v1/attachments/${file.id}" download>${$t("Download")}</a>${editable() ? `<button class="btn" data-insert-file="${i}">${$t("Insert")}</button>` : ""}</div>`).join("") || `<p class="file-list-empty">${$t("No files yet. You can also paste an image into a block, or drop files onto the note.")}</p>`}</div>
+    <div class="file-list">${result.attachments.map((file, i) => `<div class="attachment-row"><span class="attachment-name">${esc(file.filename)} <small>${$t("{value} KiB", { value: Math.ceil(file.size / 1024) })}</small></span><a class="btn" href="/api/v1/attachments/${file.id}" download>${$t("Download")}</a>${editable() ? `<button class="btn" data-insert-file="${i}">${$t("Insert")}</button>` : ""}</div>`).join("") || `<p class="file-list-empty">${$t("No files yet. You can also paste an image into a block, or drop files onto the note.")}</p>`}</div>
     <footer><button class="btn" id="close-modal" autofocus>${$t("Close")}</button></footer>`;
   modal.showModal();
   $("#close-modal").onclick = () => modal.close();
@@ -5410,17 +5411,19 @@ function metadataDialog(templateId = note.print_template || "", after = null) {
   const chip = (k) =>
     `<button type="button" class="meta-chip" data-meta-key="${esc(k)}" ${readOnly ? "disabled" : ""} title="${esc(
       AUTOMATIC_VARIABLES[k]
-        ? `Automatic: ${AUTOMATIC_VARIABLES[k]}. Add it to use your own value.`
-        : `Used by ${printTemplates
-            .filter((t) => (t.variables || []).includes(k))
-            .map((t) => t.name)
-            .join(", ")}`,
+        ? $t("Automatic: {value}. Add it to use your own value.", { value: AUTOMATIC_VARIABLES[k] })
+        : $t("Used by {name}", {
+            name: printTemplates
+              .filter((t) => (t.variables || []).includes(k))
+              .map((t) => t.name)
+              .join(", "),
+          }),
     )}">{{${esc(k)}}}</button>`;
   const suggestions = () => {
     const free = (k) => !(k in current);
     const first = [...used].filter(free);
     const rest = known.filter((k) => free(k) && !used.has(k));
-    return `${first.length ? `<p class="meta-suggest-head">Used by ${esc(chosen.name)}</p><div class="meta-chips">${first.map(chip).join("")}</div>` : ""}${rest.length ? `<p class="meta-suggest-head">${first.length ? $t("Used by other PDF templates") : $t("Used by PDF templates")}</p><div class="meta-chips">${rest.map(chip).join("")}</div>` : ""}<p class="meta-suggest-head">${$t("Filled in automatically")}</p><div class="meta-chips">${Object.keys(
+    return `${first.length ? `<p class="meta-suggest-head">${$t("Used by {name}", { name: esc(chosen.name) })}</p><div class="meta-chips">${first.map(chip).join("")}</div>` : ""}${rest.length ? `<p class="meta-suggest-head">${first.length ? $t("Used by other PDF templates") : $t("Used by PDF templates")}</p><div class="meta-chips">${rest.map(chip).join("")}</div>` : ""}<p class="meta-suggest-head">${$t("Filled in automatically")}</p><div class="meta-chips">${Object.keys(
       AUTOMATIC_VARIABLES,
     )
       .filter(free)
@@ -5537,7 +5540,7 @@ async function exportNote() {
     saved = {};
   }
   const format = saved.format || "pdf";
-  modal.innerHTML = `<form id="export-form"><h2>Export “${esc(note.title)}”</h2><p>${$t("Exports include the latest saved version of this note.")}</p><div class="export-formats" role="radiogroup" aria-label="${$t("Format")}">${EXPORT_FORMATS.map(([value, label, help]) => `<label class="export-format"><input type="radio" name="format" value="${value}" ${value === format ? "checked" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("")}</div><fieldset class="export-options"><legend>${$t("Options")}</legend><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="cover" ${saved.cover === false ? "" : "checked"}>${$t("Include cover image")}</label><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="meta" ${saved.meta === false ? "" : "checked"}>${$t("Show date and tags under the title")}</label><label class="checkbox-label" data-for="md zip"><input type="checkbox" name="front_matter" ${saved.front_matter === false ? "" : "checked"}>${$t("Add front matter (title, tags, date)")}</label><label data-for="pdf html">${$t("Template")} <select name="template">${templateOptions(note.print_template ?? saved.template ?? "")}</select></label><p class="hint template-help" data-for="pdf html"></p><button type="button" class="btn" id="export-metadata" data-for="pdf html">${icon("list")}${$t("Edit metadata…")}</button><label data-for="pdf">${$t("Page size")} <select name="size"><option value="a4" ${saved.size !== "letter" ? "selected" : ""}>A4</option><option value="letter" ${saved.size === "letter" ? "selected" : ""}>${$t("US Letter")}</option></select></label></fieldset><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-export">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Export")}</button></footer></form>`;
+  modal.innerHTML = `<form id="export-form"><h2>${$t("Export “{title}”", { title: esc(note.title) })}</h2><p>${$t("Exports include the latest saved version of this note.")}</p><div class="export-formats" role="radiogroup" aria-label="${$t("Format")}">${EXPORT_FORMATS.map(([value, label, help]) => `<label class="export-format"><input type="radio" name="format" value="${value}" ${value === format ? "checked" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("")}</div><fieldset class="export-options"><legend>${$t("Options")}</legend><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="cover" ${saved.cover === false ? "" : "checked"}>${$t("Include cover image")}</label><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="meta" ${saved.meta === false ? "" : "checked"}>${$t("Show date and tags under the title")}</label><label class="checkbox-label" data-for="md zip"><input type="checkbox" name="front_matter" ${saved.front_matter === false ? "" : "checked"}>${$t("Add front matter (title, tags, date)")}</label><label data-for="pdf html">${$t("Template")} <select name="template">${templateOptions(note.print_template ?? saved.template ?? "")}</select></label><p class="hint template-help" data-for="pdf html"></p><button type="button" class="btn" id="export-metadata" data-for="pdf html">${icon("list")}${$t("Edit metadata…")}</button><label data-for="pdf">${$t("Page size")} <select name="size"><option value="a4" ${saved.size !== "letter" ? "selected" : ""}>A4</option><option value="letter" ${saved.size === "letter" ? "selected" : ""}>${$t("US Letter")}</option></select></label></fieldset><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-export">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Export")}</button></footer></form>`;
   modal.showModal();
   const form = $("#export-form");
   const sync = () => {
@@ -5658,7 +5661,7 @@ function importMarkdown() {
       const totals = { notes: 0, folders: 0, databases: 0, attachments: 0 };
       let first = null;
       for (const [i, file] of files.entries()) {
-        progress.textContent = `Importing ${i + 1} of ${files.length}: ${file.name}…`;
+        progress.textContent = $t("Importing {value} of {count}: {name}…", { value: i + 1, count: files.length, name: file.name });
         try {
           if (file.size > 200 * 1024 * 1024)
             throw new Error($t("larger than 200 MB"));
@@ -5671,7 +5674,7 @@ function importMarkdown() {
             },
           );
           const report = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(report.error || $t("could not be read"));
+          if (!r.ok) throw new Error(report.error ? $t(report.error) : $t("could not be read"));
           for (const key of Object.keys(totals)) totals[key] += report[key];
           warnings.push(...report.warnings);
           first ??= report.first_note;
@@ -5690,7 +5693,7 @@ function importMarkdown() {
       toast(
         [
           `Imported ${parts.join(", ")}.`,
-          failed.length && `Not imported: ${failed.join(", ")}.`,
+          failed.length && $t("Not imported: {files}.", { files: failed.join(", ") }),
           ...warnings.slice(0, 3),
         ]
           .filter(Boolean)
@@ -5710,7 +5713,7 @@ async function history() {
       .reverse()
       .map(
         (n) =>
-          `<div class="history-row"><span>Revision ${n.revision}<br><small>${new Date(n.updated_at * 1000).toLocaleString()}</small></span><button class="btn" data-restore="${n.revision}" ${!editable() ? "disabled" : ""}>${$t("Restore")}</button></div>`,
+          `<div class="history-row"><span>${$t("Revision {revision}", { revision: n.revision })}<br><small>${new Date(n.updated_at * 1000).toLocaleString()}</small></span><button class="btn" data-restore="${n.revision}" ${!editable() ? "disabled" : ""}>${$t("Restore")}</button></div>`,
       )
       .join("") || `<p>${$t("No previous versions yet.")}</p>`
   }</div><footer><button class="btn" id="close-modal">${$t("Close")}</button></footer>`;
@@ -5800,7 +5803,7 @@ function renderJournal() {
   const configured = data.journal_templates?.[workspaceId] || "";
   $("#breadcrumb").textContent = $t("Journal");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("ONE NOTE PER DAY")}</div><div class="page-heading"><div><h1>${$t("Journal")}</h1><p class="subtitle">${$t("Capture the day. Unfinished tasks can follow you with [[uncompleted_journal_tasks]].")}</p></div><div class="toolbar-group"><input type="date" id="journal-date" value="${today}" aria-label="${$t("Journal date")}"><button class="btn" id="journal-open">${$t("Open date")}</button><button class="btn primary" id="journal-today">${icon("calendar")}${$t("Today")}</button></div></div><div class="journal-layout"><section class="panel calendar" aria-label="${$t("Calendar")}"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="${$t("Previous month")}">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="${$t("Next month")}">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>${$t("Recent entries")}</h2><p>${entries.size} entr${entries.size === 1 ? "y" : "ies"} in this workspace</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || `<div class="empty">${$t("No entries yet. Start with today.")}</div>`}</div>${editsWorkspace() ? `<form class="journal-settings" id="journal-settings"><label>${$t("Template for new days")}<select name="template_id"><option value="">${$t("Blank page")}</option>${templates.map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label><button class="btn">${$t("Save")}</button></form>` : ""}</section></div></section>`;
+    `<section class="page"><div class="eyebrow">${$t("ONE NOTE PER DAY")}</div><div class="page-heading"><div><h1>${$t("Journal")}</h1><p class="subtitle">${$t("Capture the day. Unfinished tasks can follow you with [[uncompleted_journal_tasks]].")}</p></div><div class="toolbar-group"><input type="date" id="journal-date" value="${today}" aria-label="${$t("Journal date")}"><button class="btn" id="journal-open">${$t("Open date")}</button><button class="btn primary" id="journal-today">${icon("calendar")}${$t("Today")}</button></div></div><div class="journal-layout"><section class="panel calendar" aria-label="${$t("Calendar")}"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="${$t("Previous month")}">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="${$t("Next month")}">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>${$t("Recent entries")}</h2><p>${$tn(entries.size, "{count} entry in this workspace", "{count} entries in this workspace")}</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || `<div class="empty">${$t("No entries yet. Start with today.")}</div>`}</div>${editsWorkspace() ? `<form class="journal-settings" id="journal-settings"><label>${$t("Template for new days")}<select name="template_id"><option value="">${$t("Blank page")}</option>${templates.map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label><button class="btn">${$t("Save")}</button></form>` : ""}</section></div></section>`;
   action($("#journal-today"), "click", () => openJournal(today));
   action($("#journal-open"), "click", () => {
     const value = $("#journal-date").value;
@@ -5929,7 +5932,7 @@ async function renderJournalTasks() {
           $$("#blocks .journal-tasks").forEach((s) => delete s.dataset.state);
           renderJournalTasks().catch(error);
           announce(
-            `Marked done in ${result.completed} entr${result.completed === 1 ? "y" : "ies"}`,
+            $tn(result.completed, "Marked done in {count} entry", "Marked done in {count} entries"),
           );
         } catch (err) {
           button.disabled = false;
@@ -5986,7 +5989,7 @@ async function renderAccount() {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("Account security")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
       status.enabled
-        ? `<p>On since ${esc(new Date(status.enabled_at * 1000).toLocaleDateString())}. ${status.recovery_remaining} of 10 recovery codes left.</p><div class="toolbar-group"><button class="btn" id="new-recovery">${$t("New recovery codes")}</button><button class="btn danger" id="disable-2fa">${$t("Turn off")}</button></div>`
+        ? `<p>${$t("On since {date}. {recovery_remaining} of 10 recovery codes left.", { date: esc(new Date(status.enabled_at * 1000).toLocaleDateString()), recovery_remaining: status.recovery_remaining })}</p><div class="toolbar-group"><button class="btn" id="new-recovery">${$t("New recovery codes")}</button><button class="btn danger" id="disable-2fa">${$t("Turn off")}</button></div>`
         : `<p>${$t("Two-factor authentication protects your notes even if your password is stolen.")}</p><button class="btn primary" id="setup-2fa">${$t("Set up two-factor authentication")}</button>`
     }</div></section>${deviceHTML()}</section>`;
   bindDevice();
@@ -6036,7 +6039,7 @@ async function renderAccount() {
 }
 async function setupTwoFactor() {
   const setup = await api("account/2fa/setup", "POST", {});
-  modal.innerHTML = `<form id="totp-form"><h2>${$t("Set up two-factor authentication")}</h2><ol class="totp-steps"><li><strong>${$t("Scan this QR code")}</strong> ${$t("with your authenticator app.")}<div class="totp-qr" aria-label="${$t("QR code for your authenticator app")}">${setup.qr_svg}</div><details><summary>${$t("Can't scan? Enter the key manually")}</summary><code class="totp-secret">${esc(setup.secret)}</code><button type="button" class="btn" id="copy-secret">${$t("Copy key")}</button><p>Account: ${esc(data.user.email)} · Time-based · 6 digits</p></details></li><li><strong>${$t("Enter the 6-digit code")}</strong> ${$t("the app shows for Minerva.")}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" maxlength="7" required aria-label="${$t("Authentication code")}"></li></ol><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-totp">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Turn on")}</button></footer></form>`;
+  modal.innerHTML = `<form id="totp-form"><h2>${$t("Set up two-factor authentication")}</h2><ol class="totp-steps"><li><strong>${$t("Scan this QR code")}</strong> ${$t("with your authenticator app.")}<div class="totp-qr" aria-label="${$t("QR code for your authenticator app")}">${setup.qr_svg}</div><details><summary>${$t("Can't scan? Enter the key manually")}</summary><code class="totp-secret">${esc(setup.secret)}</code><button type="button" class="btn" id="copy-secret">${$t("Copy key")}</button><p>${$t("Account: {email} · Time-based · 6 digits", { email: esc(data.user.email) })}</p></details></li><li><strong>${$t("Enter the 6-digit code")}</strong> ${$t("the app shows for Minerva.")}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" maxlength="7" required aria-label="${$t("Authentication code")}"></li></ol><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-totp">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Turn on")}</button></footer></form>`;
   modal.showModal();
   $("#cancel-totp").onclick = () => modal.close();
   action($("#copy-secret"), "click", async () => {
@@ -6060,7 +6063,7 @@ async function setupTwoFactor() {
 }
 function showRecoveryCodes(codes, justEnabled = false) {
   const text = codes.join("\n");
-  modal.innerHTML = `<h2>${justEnabled ? $t("Two-factor authentication is on") : $t("Your new recovery codes")}</h2><p>Save these recovery codes somewhere safe. Each one signs you in once if you lose your phone. They will not be shown again.${justEnabled ? $t(" Your other sessions were signed out.") : ""}</p><div class="recovery-codes">${codes.map((c) => `<code>${esc(c)}</code>`).join("")}</div><footer><button class="btn" id="copy-codes">${$t("Copy")}</button><button class="btn" id="download-codes">${$t("Download")}</button><button class="btn primary" id="done-codes">${$t("I saved them")}</button></footer>`;
+  modal.innerHTML = `<h2>${justEnabled ? $t("Two-factor authentication is on") : $t("Your new recovery codes")}</h2><p>${$t("Save these recovery codes somewhere safe. Each one signs you in once if you lose your phone. They will not be shown again.{value}", { value: justEnabled ? $t(" Your other sessions were signed out.") : "" })}</p><div class="recovery-codes">${codes.map((c) => `<code>${esc(c)}</code>`).join("")}</div><footer><button class="btn" id="copy-codes">${$t("Copy")}</button><button class="btn" id="download-codes">${$t("Download")}</button><button class="btn primary" id="done-codes">${$t("I saved them")}</button></footer>`;
   if (!modal.open) modal.showModal();
   action($("#copy-codes"), "click", async () => {
     await navigator.clipboard.writeText(text);
@@ -6069,7 +6072,7 @@ function showRecoveryCodes(codes, justEnabled = false) {
   action($("#download-codes"), "click", () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
-      new Blob([`Minerva recovery codes for ${data.user.email}\n\n${text}\n`], {
+      new Blob([`${$t("Minerva recovery codes for {email}", { email: data.user.email })}\n\n${text}\n`], {
         type: "text/plain",
       }),
     );
@@ -6121,12 +6124,12 @@ async function renderSharing() {
       ? `<div class="sharing-rows">${info.workspaces_shared
           .map(
             (w) =>
-              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>Yours · shared with ${w.members.length} ${w.members.length === 1 ? "person" : "people"}</small></div></div><div class="sharing-who">${people(w.members)}</div><div class="sharing-actions"><button class="btn" data-manage-workspace="${w.id}">${$t("Manage")}</button><button class="btn" data-open-workspace="${w.id}">${$t("Open")}</button></div></div>`,
+              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>${$tn(w.members.length, "Yours · shared with {count} person", "Yours · shared with {count} people")}</small></div></div><div class="sharing-who">${people(w.members)}</div><div class="sharing-actions"><button class="btn" data-manage-workspace="${w.id}">${$t("Manage")}</button><button class="btn" data-open-workspace="${w.id}">${$t("Open")}</button></div></div>`,
           )
           .join("")}${info.workspaces_received
           .map(
             (w) =>
-              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>Shared with you by ${esc(w.owner)}</small></div></div><div class="sharing-who"><span class="pill">${role(w.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-workspace="${w.id}">${$t("Open")}</button></div></div>`,
+              `<div class="sharing-row"><div class="sharing-what"><span class="square">${esc(w.name.slice(0, 1))}</span><div><strong>${esc(w.name)}</strong><small>${$t("Shared with you by {owner}", { owner: esc(w.owner) })}</small></div></div><div class="sharing-who"><span class="pill">${role(w.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-workspace="${w.id}">${$t("Open")}</button></div></div>`,
           )
           .join("")}</div>`
       : `<p class="sharing-empty">${$t("No shared workspaces yet. Open a workspace and use the badge at the top right to invite people.")}</p>`
@@ -6148,7 +6151,7 @@ async function renderSharing() {
     groups.get(key).push(n);
   }
   const noteRow = (n) =>
-    `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button>${n.trashed ? `<small>${$t("In the trash")}</small>` : `<small>Updated ${date(n.updated_at)}</small>`}</div></div><div class="sharing-who">${people(n.people)}${n.sharing.links ? `<span class="pill">${icon("link")}${n.sharing.links} link${n.sharing.links === 1 ? "" : "s"}</span>` : ""}${n.sharing.published ? `<a class="pill pill-public" href="${esc(origin)}/${esc(n.sharing.published)}" target="_blank" rel="noopener">${icon("globe")}/${esc(n.sharing.published)}</a>` : ""}</div><div class="sharing-actions">${n.sharing.published ? `<button class="btn" data-copy-url="${esc(origin)}/${esc(n.sharing.published)}" title="${$t("Copy the public address")}">${icon("copy")}${$t("Copy")}</button>` : ""}<button class="btn" data-open-note="${n.id}">${$t("Open")}</button></div></div>`;
+    `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button>${n.trashed ? `<small>${$t("In the trash")}</small>` : `<small>${$t("Updated {date}", { date: date(n.updated_at) })}</small>`}</div></div><div class="sharing-who">${people(n.people)}${n.sharing.links ? `<span class="pill">${icon("link")}${$tn(n.sharing.links, "{count} link", "{count} links")}</span>` : ""}${n.sharing.published ? `<a class="pill pill-public" href="${esc(origin)}/${esc(n.sharing.published)}" target="_blank" rel="noopener">${icon("globe")}/${esc(n.sharing.published)}</a>` : ""}</div><div class="sharing-actions">${n.sharing.published ? `<button class="btn" data-copy-url="${esc(origin)}/${esc(n.sharing.published)}" title="${$t("Copy the public address")}">${icon("copy")}${$t("Copy")}</button>` : ""}<button class="btn" data-open-note="${n.id}">${$t("Open")}</button></div></div>`;
   const notesHTML = `<section class="panel sharing-section"><div class="panel-heading"><div><h2>${$t("Notes you share")}</h2><p>${$t("Notes in folders you edit that are shared with people, by link, or published. Open a note and use Share to change or revoke access.")}</p></div><div class="segmented" role="tablist" aria-label="${$t("Show")}">${filters.map(([id, label]) => `<button role="tab" data-sharing-filter="${id}" aria-selected="${id === sharingFilter}" class="${id === sharingFilter ? "active" : ""}">${label}</button>`).join("")}</div></div>${
     notes.length
       ? [...groups]
@@ -6166,7 +6169,7 @@ async function renderSharing() {
       ? `<div class="sharing-rows">${info.shared_with_me
           .map(
             (n) =>
-              `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button><small>${esc(n.workspace || "")} · updated ${date(n.updated_at)}</small></div></div><div class="sharing-who"><span class="pill">${role(n.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-note="${n.id}">${$t("Open")}</button></div></div>`,
+              `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${esc(n.icon || "▤")}</span><div><button class="text-link" data-open-note="${n.id}">${esc(n.title)}</button><small>${$t("{value} · updated {date}", { value: esc(n.workspace || ""), date: date(n.updated_at) })}</small></div></div><div class="sharing-who"><span class="pill">${role(n.role)}</span></div><div class="sharing-actions"><button class="btn" data-open-note="${n.id}">${$t("Open")}</button></div></div>`,
           )
           .join("")}</div>`
       : `<p class="sharing-empty">${$t("Nothing has been shared with you yet.")}</p>`
@@ -6238,10 +6241,10 @@ function sitesPanel(origin) {
   const rows = sites
     .map(
       (s) =>
-        `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${icon("globe")}</span><div><a href="${esc(origin)}/${esc(s.path)}/" target="_blank" rel="noopener"><strong>${esc(s.title || s.path)}</strong></a><small>/${esc(s.path)}/ · ${s.layout === "wiki" ? $t("Wiki") : $t("Blog")}${s.theme ? ` · ${esc(publicThemes.find((t) => t.id === s.theme)?.name || s.theme)}` : ""} · ${esc(workspaceName(s.workspace_id))}</small></div></div><div class="sharing-who"><span class="pill">${s.pages} page${s.pages === 1 ? "" : "s"}</span></div><div class="sharing-actions">${editable.has(s.workspace_id) ? `<button class="btn" data-edit-site="${s.id}">${$t("Edit")}</button><button class="btn danger" data-delete-site="${s.id}" ${s.pages ? 'disabled title="Move or unpublish its pages first"' : ""}>${$t("Delete")}</button>` : ""}</div></div>`,
+        `<div class="sharing-row"><div class="sharing-what"><span class="sharing-icon">${icon("globe")}</span><div><a href="${esc(origin)}/${esc(s.path)}/" target="_blank" rel="noopener"><strong>${esc(s.title || s.path)}</strong></a><small>/${esc(s.path)}/ · ${s.layout === "wiki" ? $t("Wiki") : $t("Blog")}${s.theme ? ` · ${esc(publicThemes.find((t) => t.id === s.theme)?.name || s.theme)}` : ""} · ${esc(workspaceName(s.workspace_id))}</small></div></div><div class="sharing-who"><span class="pill">${$tn(s.pages, "{count} page", "{count} pages")}</span></div><div class="sharing-actions">${editable.has(s.workspace_id) ? `<button class="btn" data-edit-site="${s.id}">${$t("Edit")}</button><button class="btn danger" data-delete-site="${s.id}" ${s.pages ? 'disabled title="Move or unpublish its pages first"' : ""}>${$t("Delete")}</button>` : ""}</div></div>`,
     )
     .join("");
-  return `<section class="panel sharing-section"><div class="panel-heading"><div><h2>${$t("Public sites")}</h2><p>${$t("Give published pages their own address, like /blog/my-post or /wiki/how-to. People who edit a workspace choose its site when publishing.")}</p></div>${editable.size ? `<button class="btn primary" id="new-site">${icon("plus")}${$t("New site")}</button>` : ""}</div>${rows ? `<div class="sharing-rows">${rows}</div>` : `<p class="sharing-empty">No sites yet.${editable.size ? $t(" Create one to publish pages under their own path.") : ""}</p>`}</section>`;
+  return `<section class="panel sharing-section"><div class="panel-heading"><div><h2>${$t("Public sites")}</h2><p>${$t("Give published pages their own address, like /blog/my-post or /wiki/how-to. People who edit a workspace choose its site when publishing.")}</p></div>${editable.size ? `<button class="btn primary" id="new-site">${icon("plus")}${$t("New site")}</button>` : ""}</div>${rows ? `<div class="sharing-rows">${rows}</div>` : `<p class="sharing-empty">${$t("No sites yet.{value}", { value: editable.size ? $t(" Create one to publish pages under their own path.") : "" })}</p>`}</section>`;
 }
 function siteDialog(site = null) {
   formDialog(
@@ -6256,7 +6259,7 @@ function siteDialog(site = null) {
                 `<option value="${w.id}" ${w.id === workspaceId ? "selected" : ""}>${esc(w.name)}</option>`,
             )
             .join("")}</select></label>`
-    }<label>${$t("Path")}<span class="slug-field">${esc(serverOrigin())}/<input name="path" required maxlength="40" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="${$t("Lowercase letters, digits and inner hyphens")}" value="${esc(site?.path || "")}" placeholder="blog" autofocus></span></label><label>${$t("Title")}<input name="title" maxlength="100" value="${esc(site?.title || "")}" placeholder="${$t("My blog")}"></label><label>${$t("Layout")}<select name="layout"><option value="blog" ${site?.layout !== "wiki" ? "selected" : ""}>${$t("Blog: newest first, with a feed")}</option><option value="wiki" ${site?.layout === "wiki" ? "selected" : ""}>${$t("Wiki: alphabetical pages")}</option></select></label><label>${$t("Look")}<select name="theme"><option value="">${$t("Default")}</option>${publicThemes.map((t) => `<option value="${esc(t.id)}" ${site?.theme === t.id ? "selected" : ""}>${esc(t.name)}${t.description ? ` · ${esc(t.description)}` : ""}</option>`).join("")}${site?.theme && !publicThemes.some((t) => t.id === site.theme) ? `<option value="${esc(site.theme)}" selected>${esc(site.theme)} (not installed)</option>` : ""}</select></label><label>${$t("Description")} <small>${$t("(optional, shown on the index)")}</small><input name="description" maxlength="300" value="${esc(site?.description || "")}"></label>${site?.pages ? `<p class="hint">${$t("Changing the path changes the address of every page in this site.")}</p>` : ""}`,
+    }<label>${$t("Path")}<span class="slug-field">${esc(serverOrigin())}/<input name="path" required maxlength="40" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="${$t("Lowercase letters, digits and inner hyphens")}" value="${esc(site?.path || "")}" placeholder="blog" autofocus></span></label><label>${$t("Title")}<input name="title" maxlength="100" value="${esc(site?.title || "")}" placeholder="${$t("My blog")}"></label><label>${$t("Layout")}<select name="layout"><option value="blog" ${site?.layout !== "wiki" ? "selected" : ""}>${$t("Blog: newest first, with a feed")}</option><option value="wiki" ${site?.layout === "wiki" ? "selected" : ""}>${$t("Wiki: alphabetical pages")}</option></select></label><label>${$t("Look")}<select name="theme"><option value="">${$t("Default")}</option>${publicThemes.map((t) => `<option value="${esc(t.id)}" ${site?.theme === t.id ? "selected" : ""}>${esc(t.name)}${t.description ? ` · ${esc(t.description)}` : ""}</option>`).join("")}${site?.theme && !publicThemes.some((t) => t.id === site.theme) ? `<option value="${esc(site.theme)}" selected>${$t("{theme} (not installed)", { theme: esc(site.theme) })}</option>` : ""}</select></label><label>${$t("Description")} <small>${$t("(optional, shown on the index)")}</small><input name="description" maxlength="300" value="${esc(site?.description || "")}"></label>${site?.pages ? `<p class="hint">${$t("Changing the path changes the address of every page in this site.")}</p>` : ""}`,
     async (v) => {
       if (site) await api(`sites/${site.id}`, "PATCH", v);
       else
@@ -6294,19 +6297,19 @@ async function shareDialog(newToken = null) {
     : '<input type="hidden" name="site_id" value="">shared/';
   const roleSelect = (name, label) =>
     `<select name="${name}" aria-label="${label}"><option value="viewer" selected>${$t("Can view")}</option><option value="editor">${$t("Can edit")}</option></select>`;
-  modal.innerHTML = `<h2>Share “${esc(note.title)}”</h2><p>${$t("Read-only access is selected by default. Only people who manage this folder can change sharing.")}</p>
+  modal.innerHTML = `<h2>${$t("Share “{title}”", { title: esc(note.title) })}</h2><p>${$t("Read-only access is selected by default. Only people who manage this folder can change sharing.")}</p>
   <section class="share-section" aria-labelledby="share-people"><h3 id="share-people">${$t("People on this server")}</h3>
-    <form id="share-member" class="share-row"><input name="email" type="email" required placeholder="${$t("name@example.com")}" aria-label="${$t("Member email")}" autocomplete="off">${roleSelect("role", "Access for this member")}<button class="btn primary">${$t("Share")}</button></form>
-    <ul class="share-list">${members.map((m) => `<li><span>${esc(m.user?.name || "Unavailable account")} <small>${esc(m.user?.email || "")}</small></span><span class="pill">${roleLabel(m.role)}</span><button class="btn danger" data-revoke-share="${m.id}" aria-label="Remove ${esc(m.user?.name || "member")}">${$t("Remove")}</button></li>`).join("") || `<li class="muted">${$t("Not shared with anyone yet.")}</li>`}</ul>
+    <form id="share-member" class="share-row"><input name="email" type="email" required placeholder="${$t("name@example.com")}" aria-label="${$t("Member email")}" autocomplete="off">${roleSelect("role", $t("Access for this member"))}<button class="btn primary">${$t("Share")}</button></form>
+    <ul class="share-list">${members.map((m) => `<li><span>${esc(m.user?.name || $t("Unavailable account"))} <small>${esc(m.user?.email || "")}</small></span><span class="pill">${roleLabel(m.role)}</span><button class="btn danger" data-revoke-share="${m.id}" aria-label="Remove ${esc(m.user?.name || "member")}">${$t("Remove")}</button></li>`).join("") || `<li class="muted">${$t("Not shared with anyone yet.")}</li>`}</ul>
   </section>
   <section class="share-section" aria-labelledby="share-links"><h3 id="share-links">${$t("Anyone with the link")}</h3>
-    <form id="share-link" class="share-row">${roleSelect("role", "Access for people with the link")}<button class="btn">${$t("Create link")}</button></form>
+    <form id="share-link" class="share-row">${roleSelect("role", $t("Access for people with the link"))}<button class="btn">${$t("Create link")}</button></form>
     ${newToken ? `<div class="new-link" role="status"><label>${$t("Copy this link now. It is shown only once.")}<input id="new-link-url" readonly value="${esc(origin)}/share#${esc(newToken)}"></label><button class="btn primary" id="copy-link" type="button">${$t("Copy link")}</button></div>` : ""}
-    <ul class="share-list">${links.map((l) => `<li><span>Link created ${date(l.created_at)}${l.created_by ? ` by ${esc(l.created_by)}` : ""}</span><span class="pill">${roleLabel(l.role)}</span><button class="btn danger" data-revoke-share="${l.id}">${$t("Revoke")}</button></li>`).join("") || `<li class="muted">${$t("No active links.")}</li>`}</ul>
+    <ul class="share-list">${links.map((l) => `<li><span>${$t("Link created {date}{value}", { date: date(l.created_at), value: l.created_by ? $t(" by {name}", { name: esc(l.created_by) }) : "" })}</span><span class="pill">${roleLabel(l.role)}</span><button class="btn danger" data-revoke-share="${l.id}">${$t("Revoke")}</button></li>`).join("") || `<li class="muted">${$t("No active links.")}</li>`}</ul>
     <p class="hint">${$t("Anyone holding a link can open this note without signing in until you revoke it. Guests do not see your workspace, folders, or member names.")}</p>
   </section>
   <section class="share-section" aria-labelledby="share-web"><h3 id="share-web">${$t("Publish to the web")}</h3>
-    ${pub ? `<p class="public-state">${$t("Public at")} <a href="${esc(origin)}/${esc(pub.path)}" target="_blank" rel="noopener">${esc(origin)}/${esc(pub.path)}</a> · ${pub.mode === "pinned" ? `pinned to revision ${pub.revision} (current: ${note.revision})` : $t("follows live edits")}</p>` : `<p>${$t("Not published. A published page is public, read-only, and omits workspace details and editing controls.")}</p>`}
+    ${pub ? `<p class="public-state">${$t("Public at")} <a href="${esc(origin)}/${esc(pub.path)}" target="_blank" rel="noopener">${esc(origin)}/${esc(pub.path)}</a> · ${pub.mode === "pinned" ? $t("pinned to revision {revision} (current: {current})", { revision: pub.revision, current: note.revision }) : $t("follows live edits")}</p>` : `<p>${$t("Not published. A published page is public, read-only, and omits workspace details and editing controls.")}</p>`}
     <form id="publish-form" class="publish-form">
       <label>${$t("Address")}<span class="slug-field">${esc(origin)}/${siteField}<input name="slug" required maxlength="80" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="${$t("Lowercase letters, digits and inner hyphens")}" value="${esc(pub?.slug || slugify(note.title))}"></span></label>
       <label>${$t("Description")} <small>${$t("(optional, shown in listings)")}</small><input name="description" maxlength="300" value="${esc(pub?.description || "")}"></label>
@@ -6596,7 +6599,7 @@ async function moveNote(id, folder) {
   await refresh();
   if (note?.id === id) note.folder_id = folder;
   shell();
-  toast(`Moved to ${data.folders.find((f) => f.id === folder)?.name}`);
+  toast($t("Moved to {value}", { value: data.folders.find((f) => f.id === folder)?.name }));
 }
 async function moveFolder(id, parent) {
   await api(`folders/${id}`, "PATCH", { parent_id: parent });
@@ -6625,7 +6628,7 @@ function moveNoteDialog(n) {
   );
   if (!options) return toast($t("There is no other folder you can move it to."));
   formDialog(
-    `Move “${n.title}”`,
+    $t("Move “{title}”", { title: n.title }),
     $t("Choose a folder in this workspace."),
     `<label>${$t("Folder")}<select name="folder_id">${options}</select></label>`,
     (v) => moveNote(n.id, v.folder_id),
@@ -6635,7 +6638,7 @@ function moveNoteDialog(n) {
 function createFolder(parent = null) {
   const parentName = parent && data.folders.find((f) => f.id === parent)?.name;
   formDialog(
-    parent ? `New folder in ${parentName}` : $t("A little more organized"),
+    parent ? $t("New folder in {name}", { name: parentName }) : $t("A little more organized"),
     $t("Folders keep related notes together."),
     `<label>${$t("Folder name")}<input name="name" placeholder="${$t("e.g. Product ideas")}" required maxlength="200" autofocus></label>`,
     async (v) => {
@@ -6780,12 +6783,14 @@ function deleteFolder(id) {
   const notes = data.notes.filter((n) => inside.has(n.folder_id)).length;
   const subfolders = inside.size - 1;
   const contents = [
-    notes && `${notes} note${notes === 1 ? "" : "s"}`,
-    subfolders && `${subfolders} subfolder${subfolders === 1 ? "" : "s"}`,
+    notes && `${$tn(notes, "{count} note", "{count} notes")}`,
+    subfolders && `${$tn(subfolders, "{count} subfolder", "{count} subfolders")}`,
   ].filter(Boolean);
   formDialog(
-    `Delete “${f.name}”?`,
-    `This permanently deletes the folder${contents.length ? ` and ${contents.join(" and ")} in it (including trashed notes and databases), with their history, files, shares, and published pages` : ""}. This cannot be undone.`,
+    $t("Delete “{name}”?", { name: f.name }),
+    contents.length
+        ? $t("This permanently deletes the folder and {contents} in it (including trashed notes and databases), with their history, files, shares, and published pages. This cannot be undone.", { contents: contents.join($t(" and ")) })
+        : $t("This permanently deletes the folder. This cannot be undone."),
     contents.length
       ? `<label>${$t("Type the folder name to confirm")}<input name="confirm" required autocomplete="off"></label>`
       : "",
@@ -7002,7 +7007,7 @@ function addServer() {
         allow_insecure_http: v.allow_insecure_http === "on",
       });
       desktopServers = null;
-      toast(`Added ${server.label}`);
+      toast($t("Added {label}", { label: server.label }));
     },
     "Add server",
   );
@@ -7201,7 +7206,7 @@ function search() {
       (matches
         .map(
           (n, i) =>
-            `<button class="search-result" id="search-result-${i}" role="option" tabindex="-1" data-result="${i}"><span class="search-icon">${esc(n.icon || "📄")}</span><span class="search-main"><span class="search-title">${esc(n.title || "Untitled")}</span>${n.snippet ? `<span class="search-snippet">${highlightSnippet(n.snippet, esc)}</span>` : ""}</span><small>${esc(place(n))}</small></button>`,
+            `<button class="search-result" id="search-result-${i}" role="option" tabindex="-1" data-result="${i}"><span class="search-icon">${esc(n.icon || "📄")}</span><span class="search-main"><span class="search-title">${esc(n.title || $t("Untitled"))}</span>${n.snippet ? `<span class="search-snippet">${highlightSnippet(n.snippet, esc)}</span>` : ""}</span><small>${esc(place(n))}</small></button>`,
         )
         .join("") || `<p>${$t("No matching notes.")}</p>`);
     $$("[data-result]").forEach((b) =>
@@ -7250,20 +7255,20 @@ async function renderAdmin() {
   ]);
   $("#breadcrumb").textContent = $t("Server administration");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR SERVER, YOUR RULES")}</div><div class="page-heading"><div><h1>${$t("People & permissions")}</h1><p class="subtitle">${$t("Give your team the right space to do their best work.")}</p></div><button class="btn primary" id="add-user">${icon("plus")}${$t("Add user")}</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>${$t("Server members")}</h2><p>${info.users.length} accounts on this server</p></div><span class="pill">${$t("Self-hosted")}</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ROLE")}</th><th>${$t("STATUS")}</th><th>${$t("2FA")}</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? $t("Administrator") : $t("Member")}</td><td>${u.admin ? `<span class="pill">${$t("Active")}</span>` : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>${$t("Active")}</option><option value="disabled" ${u.disabled ? "selected" : ""}>${$t("Disabled")}</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">${$t("On")}</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">${$t("Reset")}</button>` : ""}` : `<span class="pill">${$t("Off")}</span>`}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">${$t("Edit")}</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">${$t("Delete")}</button>` : `<small>${$t("You")}</small>`}</td></tr>`).join("")}</tbody></table></div></section></div>${storagePanel(storage)}</section>`;
+    `<section class="page"><div class="eyebrow">${$t("YOUR SERVER, YOUR RULES")}</div><div class="page-heading"><div><h1>${$t("People & permissions")}</h1><p class="subtitle">${$t("Give your team the right space to do their best work.")}</p></div><button class="btn primary" id="add-user">${icon("plus")}${$t("Add user")}</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>${$t("Server members")}</h2><p>${$t("{count} accounts on this server", { count: info.users.length })}</p></div><span class="pill">${$t("Self-hosted")}</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ROLE")}</th><th>${$t("STATUS")}</th><th>${$t("2FA")}</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? $t("Administrator") : $t("Member")}</td><td>${u.admin ? `<span class="pill">${$t("Active")}</span>` : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>${$t("Active")}</option><option value="disabled" ${u.disabled ? "selected" : ""}>${$t("Disabled")}</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">${$t("On")}</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">${$t("Reset")}</button>` : ""}` : `<span class="pill">${$t("Off")}</span>`}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">${$t("Edit")}</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">${$t("Delete")}</button>` : `<small>${$t("You")}</small>`}</td></tr>`).join("")}</tbody></table></div></section></div>${storagePanel(storage)}</section>`;
   action($("#add-user"), "click", () =>
     formDialog(
       $t("Welcome someone new"),
       mailEnabled
         ? $t("They get an email with a link to choose their own password. You can also set a temporary one to share with them yourself.")
         : $t("Create an account and share its credentials with your teammate securely."),
-      `<label>${$t("Full name")}<input name="name" required maxlength="200" autocomplete="off"></label><label>${$t("Email")}<input type="email" name="email" required autocomplete="off"></label><label>Temporary password${mailEnabled ? $t(" (optional)") : ""}<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" ${mailEnabled ? "" : "required"}></label>`,
+      `<label>${$t("Full name")}<input name="name" required maxlength="200" autocomplete="off"></label><label>${$t("Email")}<input type="email" name="email" required autocomplete="off"></label><label>${$t("Temporary password{value}", { value: mailEnabled ? $t(" (optional)") : "" })}<input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password" ${mailEnabled ? "" : "required"}></label>`,
       async (v) => {
         const created = await api("users", "POST", {
           ...v,
           can_create_workspace: true,
         });
-        if (created.invited) toast(`Invitation emailed to ${created.email}`);
+        if (created.invited) toast($t("Invitation emailed to {email}", { email: created.email }));
         await renderAdmin();
       },
       "Create account",
@@ -7286,7 +7291,7 @@ async function renderAdmin() {
     action(el, "click", () => {
       const u = info.users.find((x) => x.id === el.dataset.editUser);
       formDialog(
-        `Edit ${u.name}`,
+        $t("Edit {name}", { name: u.name }),
         $t("Changes sign this person out of their open sessions."),
         `<label>${$t("Full name")}<input name="name" required maxlength="200" value="${esc(u.name)}" autocomplete="off"></label><label>${$t("Email")}<input type="email" name="email" required value="${esc(u.email)}" autocomplete="off"></label><label>${$t("New password")} <small class="hint">${$t("(leave empty to keep it)")}</small><input type="password" name="password" minlength="12" maxlength="256" autocomplete="new-password"></label><label class="checkbox-label"><input type="checkbox" name="admin" ${u.admin ? "checked" : ""}>${$t("Server administrator")}</label>`,
         async (v) => {
@@ -7308,8 +7313,8 @@ async function renderAdmin() {
     action(el, "click", () => {
       const u = info.users.find((x) => x.id === el.dataset.deleteUser);
       formDialog(
-        `Delete ${u.name}?`,
-        `${u.email} can no longer sign in. Their personal workspaces are deleted with them; shared workspaces pass to the member you select below. Their AI conversations, flashcards, and access are deleted too. To keep everything instead, set the account to Disabled. This cannot be undone.`,
+        $t("Delete {name}?", { name: u.name }),
+        $t("{email} can no longer sign in. Their personal workspaces are deleted with them; shared workspaces pass to the member you select below. Their AI conversations, flashcards, and access are deleted too. To keep everything instead, set the account to Disabled. This cannot be undone.", { email: u.email }),
         `<label>${$t("Successor for shared workspaces")}<select name="successor_id"><option value="">${$t("Choose if this user owns shared workspaces")}</option>${info.users
           .filter((x) => !x.admin && !x.disabled && x.id !== u.id)
           .map(
@@ -7321,7 +7326,7 @@ async function renderAdmin() {
           const result = await api("users/" + u.id, "DELETE", values);
           toast(
             result.workspaces_transferred
-              ? `Account deleted · ${result.workspaces_transferred} shared workspace${result.workspaces_transferred === 1 ? "" : "s"} transferred`
+              ? $tn(result.workspaces_transferred, "Account deleted · {count} shared workspace transferred", "Account deleted · {count} shared workspaces transferred")
               : $t("Account deleted"),
           );
           await refresh();
@@ -7435,7 +7440,7 @@ async function renderAdmin() {
 // Every workspace on the server, for administrators to review and delete.
 function workspacesPanel(info) {
   const name = (id) =>
-    esc(info.users.find((u) => u.id === id)?.name || "Unavailable account");
+    esc(info.users.find((u) => u.id === id)?.name || $t("Unavailable account"));
   // Administrators manage only the workspaces they own.
   const mine = data.workspaces.filter((w) => w.owner_id === data.user.id);
   const rows = mine
@@ -7455,7 +7460,7 @@ function workspacesPanel(info) {
       const notes = data.notes.filter((n) =>
         folderIds.includes(n.folder_id),
       ).length;
-      return `<tr><td>${esc(w.name)}</td><td>${name(w.owner_id)}</td><td>${w.personal ? `<span class="pill">${$t("Personal · private")}</span>` : members.size ? `${members.size} member${members.size === 1 ? "" : "s"}` : $t("Not shared yet")}</td><td>${folderIds.length} folder${folderIds.length === 1 ? "" : "s"} · ${notes} note${notes === 1 ? "" : "s"}</td><td class="user-actions">${w.personal ? "" : `<button class="btn" data-rename-workspace="${w.id}">${$t("Rename")}</button><button class="btn danger" data-delete-workspace="${w.id}">${$t("Delete")}</button>`}</td></tr>`;
+      return `<tr><td>${esc(w.name)}</td><td>${name(w.owner_id)}</td><td>${w.personal ? `<span class="pill">${$t("Personal · private")}</span>` : members.size ? `${$tn(members.size, "{count} member", "{count} members")}` : $t("Not shared yet")}</td><td>${$tn(folderIds.length, "{count} folder", "{count} folders")} · ${$tn(notes, "{count} note", "{count} notes")}</td><td class="user-actions">${w.personal ? "" : `<button class="btn" data-rename-workspace="${w.id}">${$t("Rename")}</button><button class="btn danger" data-delete-workspace="${w.id}">${$t("Delete")}</button>`}</td></tr>`;
     })
     .join("");
   return `<section class="panel"><div class="panel-heading"><div><h2>${$t("Workspaces")}</h2><p>${$t("Workspaces you own. Share them in Workspace access. Your My Workspace is personal and cannot be shared; other people’s workspaces stay private to them.")}</p></div><button class="btn primary" id="add-workspace">${icon("plus")}${$t("Add workspace")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("WORKSPACE")}</th><th>${$t("OWNER")}</th><th>${$t("SHARED WITH")}</th><th>${$t("CONTENTS")}</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="5">${$t("No workspaces yet.")}</td></tr>`}</tbody></table></div></section>`;
@@ -7463,10 +7468,10 @@ function workspacesPanel(info) {
 // Workspace access for members, plus any older folder-level grants.
 function accessPanel(info) {
   const name = (id) =>
-    esc(info.users.find((u) => u.id === id)?.name || "Unavailable account");
+    esc(info.users.find((u) => u.id === id)?.name || $t("Unavailable account"));
   const workspace = (id) =>
     esc(
-      data.workspaces.find((w) => w.id === id)?.name || "Unavailable workspace",
+      data.workspaces.find((w) => w.id === id)?.name || $t("Unavailable workspace"),
     );
   // Everyone else, administrators included: nobody sees a workspace unasked.
   const members = info.users.filter((u) => u.id !== data.user.id);
@@ -7499,7 +7504,7 @@ function accessPanel(info) {
 }
 function storagePanel(storage) {
   const percent = Math.min(100, (storage.used / storage.server_quota) * 100);
-  return `<section class="panel storage-panel"><div class="panel-heading"><div><h2>${$t("Attachment storage")}</h2><p>${bytes(storage.used)} of ${bytes(storage.server_quota)} in ${storage.files} files · ${bytes(storage.note_quota)} per note · ${bytes(storage.file_limit)} per file</p></div></div><div class="usage-bar" role="meter" aria-label="${$t("Attachment storage used")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(0)}"><span style="width:${percent}%"></span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NOTE")}</th><th>${$t("FILES")}</th><th>${$t("SIZE")}</th></tr></thead><tbody>${
+  return `<section class="panel storage-panel"><div class="panel-heading"><div><h2>${$t("Attachment storage")}</h2><p>${$t("{size} of {size2} in {files} files · {size3} per note · {size4} per file", { size: bytes(storage.used), size2: bytes(storage.server_quota), files: storage.files, size3: bytes(storage.note_quota), size4: bytes(storage.file_limit) })}</p></div></div><div class="usage-bar" role="meter" aria-label="${$t("Attachment storage used")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(0)}"><span style="width:${percent}%"></span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NOTE")}</th><th>${$t("FILES")}</th><th>${$t("SIZE")}</th></tr></thead><tbody>${
     storage.notes
       .slice(0, 8)
       .map(
@@ -7507,7 +7512,7 @@ function storagePanel(storage) {
           `<tr><td>${esc(n.title)}${n.trashed ? ` <small>${$t("(in trash)")}</small>` : ""}</td><td>${n.files}</td><td>${bytes(n.bytes)}</td></tr>`,
       )
       .join("") || `<tr><td colspan="3">${$t("No attachments yet.")}</td></tr>`
-  }</tbody></table></div><h3>${$t("Unreferenced files")}</h3><p>Files not referenced by any note, saved version (history), or published page, and older than ${Math.round(storage.grace_seconds / 3600)} hours. Deleting them is permanent.${storage.recent_unreferenced ? ` ${storage.recent_unreferenced} newer unreferenced upload${storage.recent_unreferenced === 1 ? " is" : "s are"} kept so interrupted insertions can be recovered.` : ""}</p><form id="cleanup-form"><div class="table-wrap"><table class="admin-table"><thead><tr><th><input type="checkbox" id="select-orphans" aria-label="${$t("Select all unreferenced files")}"></th><th>${$t("FILE")}</th><th>${$t("NOTE")}</th><th>${$t("UPLOADED")}</th><th>${$t("SIZE")}</th></tr></thead><tbody>${storage.orphans.map((o) => `<tr><td><input type="checkbox" name="orphan" value="${o.id}" aria-label="Select ${esc(o.filename)}"></td><td>${esc(o.filename)}</td><td>${esc(o.note_title || "Unavailable note")}</td><td>${date(o.created_at)}</td><td>${bytes(o.size)}</td></tr>`).join("") || `<tr><td colspan="5">${$t("Nothing to clean up.")}</td></tr>`}</tbody></table></div>${storage.orphans.length ? `<button class="btn danger" id="delete-orphans" disabled>${$t("Delete selected files")}</button>` : ""}</form></section>`;
+  }</tbody></table></div><h3>${$t("Unreferenced files")}</h3><p>${$t("Files not referenced by any note, saved version (history), or published page, and older than {value} hours. Deleting them is permanent.{value2}", { value: Math.round(storage.grace_seconds / 3600), value2: storage.recent_unreferenced ? $tn(storage.recent_unreferenced, " {count} newer unreferenced upload is kept so interrupted insertions can be recovered.", " {count} newer unreferenced uploads are kept so interrupted insertions can be recovered.") : "" })}</p><form id="cleanup-form"><div class="table-wrap"><table class="admin-table"><thead><tr><th><input type="checkbox" id="select-orphans" aria-label="${$t("Select all unreferenced files")}"></th><th>${$t("FILE")}</th><th>${$t("NOTE")}</th><th>${$t("UPLOADED")}</th><th>${$t("SIZE")}</th></tr></thead><tbody>${storage.orphans.map((o) => `<tr><td><input type="checkbox" name="orphan" value="${o.id}" aria-label="${$t("Select {name}", { name: esc(o.filename) })}"></td><td>${esc(o.filename)}</td><td>${esc(o.note_title || $t("Unavailable note"))}</td><td>${date(o.created_at)}</td><td>${bytes(o.size)}</td></tr>`).join("") || `<tr><td colspan="5">${$t("Nothing to clean up.")}</td></tr>`}</tbody></table></div>${storage.orphans.length ? `<button class="btn danger" id="delete-orphans" disabled>${$t("Delete selected files")}</button>` : ""}</form></section>`;
 }
 function bindStorage(storage) {
   const boxes = () => $$("[name=orphan]");
@@ -7529,13 +7534,13 @@ function bindStorage(storage) {
       .filter((o) => ids.includes(o.id))
       .reduce((total, o) => total + o.size, 0);
     formDialog(
-      `Delete ${ids.length} file${ids.length === 1 ? "" : "s"}?`,
-      `This permanently frees ${bytes(size)}. Files that became referenced since this list loaded are kept.`,
+      `Delete ${$tn(ids.length, "{count} file", "{count} files")}?`,
+      $t("This permanently frees {size}. Files that became referenced since this list loaded are kept.", { size: bytes(size) }),
       "",
       async () => {
         const result = await api("admin/storage/cleanup", "POST", { ids });
         toast(
-          `Deleted ${result.deleted} file${result.deleted === 1 ? "" : "s"} (${bytes(result.bytes)})${result.kept ? ` · kept ${result.kept} still in use` : ""}`,
+          $tn(result.deleted, "Deleted {count} file ({size}){value}", "Deleted {count} files ({size}){value}", { size: bytes(result.bytes), value: result.kept ? $t(" · kept {count} still in use", { count: result.kept }) : "" }),
         );
         await renderAdmin();
       },
@@ -7564,7 +7569,7 @@ function renderDatabaseList() {
   const ids = new Set(folders().map((f) => f.id));
   const databases = (data.databases || []).filter((d) => ids.has(d.folder_id));
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("A LITTLE STRUCTURE, A LOT OF POSSIBILITY")}</div><div class="page-heading"><div><h1>${$t("Your databases")}</h1><p class="subtitle">${$t("Turn projects, reading lists, and team knowledge into something organized.")}</p></div><button class="btn primary" id="new-database" ${!folderOptions() ? "disabled" : ""}>${icon("plus")}${$t("New database")}</button></div><div class="folder-grid">${databases.map((db) => `<button class="folder-card" data-database="${db.id}"><span class="folder-icon">${icon("grid")}</span><div><strong>${esc(db.name)}</strong><small>${db.record_count} records · ${esc(data.folders.find((f) => f.id === db.folder_id)?.name)}</small></div></button>`).join("")}</div>${!databases.length ? `<div class="empty"><h3>${$t("A home for the details.")}</h3>${$t("Create a database with text, numbers, dates, checkboxes, links, and select properties.")}</div>` : ""}</section>`;
+    `<section class="page"><div class="eyebrow">${$t("A LITTLE STRUCTURE, A LOT OF POSSIBILITY")}</div><div class="page-heading"><div><h1>${$t("Your databases")}</h1><p class="subtitle">${$t("Turn projects, reading lists, and team knowledge into something organized.")}</p></div><button class="btn primary" id="new-database" ${!folderOptions() ? "disabled" : ""}>${icon("plus")}${$t("New database")}</button></div><div class="folder-grid">${databases.map((db) => `<button class="folder-card" data-database="${db.id}"><span class="folder-icon">${icon("grid")}</span><div><strong>${esc(db.name)}</strong><small>${$t("{record_count} records · {value}", { record_count: db.record_count, value: esc(data.folders.find((f) => f.id === db.folder_id)?.name) })}</small></div></button>`).join("")}</div>${!databases.length ? `<div class="empty"><h3>${$t("A home for the details.")}</h3>${$t("Create a database with text, numbers, dates, checkboxes, links, and select properties.")}</div>` : ""}</section>`;
   action($("#new-database"), "click", () =>
     formDialog(
       $t("Create a database"),
@@ -7632,19 +7637,19 @@ async function openDatabase(id) {
 }
 // Properties a database can have, in the property dialogs.
 const DB_KINDS = [
-  ["text", "Text"],
-  ["number", "Number"],
-  ["checkbox", "Checkbox"],
-  ["date", "Date"],
-  ["select", "Select"],
-  ["multi_select", "Multi-select"],
-  ["url", "URL"],
-  ["person", "Person"],
-  ["relation", "Relation"],
-  ["created", "Created time"],
-  ["edited", "Last edited time"],
-  ["rollup", "Rollup"],
-  ["formula", "Formula"],
+  ["text", $t("Text")],
+  ["number", $t("Number")],
+  ["checkbox", $t("Checkbox")],
+  ["date", $t("Date")],
+  ["select", $t("Select")],
+  ["multi_select", $t("Multi-select")],
+  ["url", $t("URL")],
+  ["person", $t("Person")],
+  ["relation", $t("Relation")],
+  ["created", $t("Created time")],
+  ["edited", $t("Last edited time")],
+  ["rollup", $t("Rollup")],
+  ["formula", $t("Formula")],
 ];
 // Kept or computed by the server: shown, never written.
 const COMPUTED = new Set(["created", "edited", "rollup", "formula"]);
@@ -8015,7 +8020,7 @@ function calendarHTML(db, rows, edit, state) {
         )
         .join(
           "",
-        )}${records.length > 6 ? `<small>+${records.length - 6} more</small>` : ""}${more
+        )}${records.length > 6 ? `<small>${$t("+{value} more", { value: records.length - 6 })}</small>` : ""}${more
         .map(
           (x) =>
             `<button class="cal-extra cal-${x.kind}" ${x.note_id ? `data-cal-note="${esc(x.note_id)}"` : "disabled"} title="${esc(x.label)}">${x.kind === "reminder" ? "⏰" : "📓"} ${esc(x.label)}</button>`,
@@ -8029,7 +8034,7 @@ function calendarHTML(db, rows, edit, state) {
     cols.length > 1
       ? `<label class="cal-by">${$t("By")}<select data-cal-column>${cols.map((c) => `<option value="${c.id}" ${c.id === col.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>`
       : `<span class="cal-by">By ${esc(col.name)}</span>`
-  }<label class="checkbox-label cal-extras"><input type="checkbox" data-cal-extras ${state.extras ? "checked" : ""}>${$t("Reminders &amp; journal")}</label></div><div class="cal-grid">${weekdays.map((w) => `<div class="cal-weekday">${esc(w)}</div>`).join("")}${cells.join("")}</div>${undated ? `<p class="hint">${undated} record${undated === 1 ? "" : "s"} without ${esc(col.name)}.</p>` : ""}</div>`;
+  }<label class="checkbox-label cal-extras"><input type="checkbox" data-cal-extras ${state.extras ? "checked" : ""}>${$t("Reminders &amp; journal")}</label></div><div class="cal-grid">${weekdays.map((w) => `<div class="cal-weekday">${esc(w)}</div>`).join("")}${cells.join("")}</div>${undated ? `<p class="hint">${$tn(undated, "{count} record without {name}.", "{count} records without {name}.", { name: esc(col.name) })}</p>` : ""}</div>`;
 }
 /**
  * Calendar controls inside `root`: `state` is changed in place, then `redraw`.
@@ -8199,7 +8204,7 @@ function renderDatabase() {
   if ((dbView === "calendar" && !dated) || (dbView === "board" && !group))
     dbView = "table";
   $("#content").innerHTML =
-    `<section class="page database-page"><div class="eyebrow">${$t("STRUCTURED KNOWLEDGE")}</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${esc(data.folders.find((f) => f.id === db.folder_id)?.name)} · ${rows.length} records · ${edit ? $t("Can edit") : $t("Read only")}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}${$t("Property")}</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}${$t("New record")}</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}${$t("Table")}</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}${$t("Board")}</button><button class="btn ${dbView === "calendar" ? "selected" : ""}" id="calendar-view" ${!dated ? "disabled" : ""} title="${dated ? $t("Records by date") : $t("Add a date property to see records on a calendar")}">${icon("calendar")}${$t("Calendar")}</button></div>${dbView === "board" && groupable.length > 1 ? `<label class="cal-by">${$t("Group by")}<select id="board-column">${groupable.map((c) => `<option value="${c.id}" ${c.id === group.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<input id="db-filter" aria-label="${$t("Filter records")}" placeholder="${$t("Filter records…")}" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>${$t("Archived")}</label><button class="btn" id="db-reload">${$t("Reload records")}</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>${$t("Rename")}</button><button class="btn" id="db-embed" title="${$t("Copy the code that shows this database inside a note")}">${icon("note")}${$t("Use in a note")}</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}${$t("Delete")}</button></div>${
+    `<section class="page database-page"><div class="eyebrow">${$t("STRUCTURED KNOWLEDGE")}</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${$t("{value} · {count} records · {value2}", { value: esc(data.folders.find((f) => f.id === db.folder_id)?.name), count: rows.length, value2: edit ? $t("Can edit") : $t("Read only") })}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}${$t("Property")}</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}${$t("New record")}</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}${$t("Table")}</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}${$t("Board")}</button><button class="btn ${dbView === "calendar" ? "selected" : ""}" id="calendar-view" ${!dated ? "disabled" : ""} title="${dated ? $t("Records by date") : $t("Add a date property to see records on a calendar")}">${icon("calendar")}${$t("Calendar")}</button></div>${dbView === "board" && groupable.length > 1 ? `<label class="cal-by">${$t("Group by")}<select id="board-column">${groupable.map((c) => `<option value="${c.id}" ${c.id === group.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<input id="db-filter" aria-label="${$t("Filter records")}" placeholder="${$t("Filter records…")}" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>${$t("Archived")}</label><button class="btn" id="db-reload">${$t("Reload records")}</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>${$t("Rename")}</button><button class="btn" id="db-embed" title="${$t("Copy the code that shows this database inside a note")}">${icon("note")}${$t("Use in a note")}</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}${$t("Delete")}</button></div>${
       dbView === "calendar"
         ? calendarHTML(db, rows, edit, calendar)
         : dbView === "table"
@@ -8397,7 +8402,7 @@ function renderDatabase() {
       const row = db.rows.find((r) => r.id === el.dataset.deleteRecord);
       formDialog(
         $t("Delete this record?"),
-        `“${embedRecordTitle(db, row)}” is removed permanently. Archive it instead to keep it out of the way.`,
+        $t("“{title}” is removed permanently. Archive it instead to keep it out of the way.", { title: embedRecordTitle(db, row) }),
         "",
         async () => {
           await api(`databases/${db.id}/rows/${row.id}`, "DELETE");
@@ -8429,8 +8434,8 @@ function renderDatabase() {
   });
   action($("#db-delete"), "click", () =>
     formDialog(
-      `Delete “${db.name}”?`,
-      `The database and its ${db.rows.length} record${db.rows.length === 1 ? "" : "s"} are removed permanently. Notes that show it will say it was deleted. This cannot be undone.`,
+      $t("Delete “{name}”?", { name: db.name }),
+      $tn(db.rows.length, "The database and its {count} record are removed permanently. Notes that show it will say it was deleted. This cannot be undone.", "The database and its {count} records are removed permanently. Notes that show it will say it was deleted. This cannot be undone."),
       `<label>${$t("Type the database name to confirm")}<input name="confirm" required autocomplete="off"></label>`,
       async (v) => {
         if (v.confirm !== db.name)
@@ -8499,9 +8504,9 @@ function columnMenu(anchor, db, edit) {
                 (r) => r.cells[col.id] != null && r.cells[col.id] !== "",
               ).length;
               formDialog(
-                `Delete “${col.name}”?`,
+                $t("Delete “{name}”?", { name: col.name }),
                 used
-                  ? `${used} record${used === 1 ? " has a value" : "s have values"} for this property. They are removed permanently.`
+                  ? $tn(used, "{count} record has a value for this property. They are removed permanently.", "{count} records have values for this property. They are removed permanently.")
                   : $t("No record has a value for this property yet."),
                 "",
                 () =>
@@ -8599,7 +8604,7 @@ function drawEmbed(slot, entry) {
             )}</tbody></table>${rows.length ? "" : `<p class="db-embed-empty">${$t("No records yet.")}</p>`}</div>`;
   const viewButton = (name, label, enabled, why) =>
     `<button data-embed-view="${name}" aria-pressed="${view === name}" ${enabled ? "" : `disabled title="${why}"`}>${label}</button>`;
-  slot.innerHTML = `<span class="db-embed-panel" role="group" aria-label="Database ${esc(db.name)}"><span class="db-embed-head"><span class="db-embed-title">${icon("grid")}${esc(db.name)}</span><span class="db-embed-meta">${rows.length} record${rows.length === 1 ? "" : "s"}${edit ? "" : $t(" · read only")}</span><span class="db-embed-actions"><span class="db-embed-views" role="group" aria-label="${$t("View")}">${viewButton("table", "Table", true)}${viewButton("board", "Board", group, "Board view needs a select, multi-select or person property")}${viewButton("calendar", "Calendar", dated, "Calendar view needs a date property")}</span><button data-embed-open title="${$t("Open the database")}">${icon("arrow")}${$t("Open")}</button>${edit ? `<button class="primary" data-embed-add>${icon("plus")}${$t("New")}</button>` : ""}</span></span>${body}</span>`;
+  slot.innerHTML = `<span class="db-embed-panel" role="group" aria-label="Database ${esc(db.name)}"><span class="db-embed-head"><span class="db-embed-title">${icon("grid")}${esc(db.name)}</span><span class="db-embed-meta">${$tn(rows.length, "{count} record", "{count} records")}${edit ? "" : $t(" · read only")}</span><span class="db-embed-actions"><span class="db-embed-views" role="group" aria-label="${$t("View")}">${viewButton("table", $t("Table"), true)}${viewButton("board", $t("Board"), group, $t("Board view needs a select, multi-select or person property"))}${viewButton("calendar", $t("Calendar"), dated, $t("Calendar view needs a date property"))}</span><button data-embed-open title="${$t("Open the database")}">${icon("arrow")}${$t("Open")}</button>${edit ? `<button class="primary" data-embed-add>${icon("plus")}${$t("New")}</button>` : ""}</span></span>${body}</span>`;
   if (view === "board" && edit)
     bindBoardDrag(slot, db, group, () => redrawEmbeds(db.id));
   if (view === "calendar")
@@ -8913,7 +8918,7 @@ function databaseEmbedDialog(existingId) {
   formDialog(
     $t("Insert a database"),
     $t("The note shows the database's current records. Editing them here or in the database changes both."),
-    `<label>${$t("Database")}<select name="database" id="embed-choice">${editorFolders ? `<option value="new">${$t("New task list…")}</option>` : ""}${databases.map((d) => `<option value="${d.id}">${esc(d.name)} · ${d.record_count} record${d.record_count === 1 ? "" : "s"}</option>`).join("")}</select></label><div id="embed-new"><label>${$t("Name")}<input name="name" value="Tasks" maxlength="200"></label><label>${$t("Folder")}<select name="folder_id">${editorFolders}</select></label></div><label>${$t("Show as")}<select name="view"><option value="table">${$t("Table")}</option><option value="board">${$t("Board (by status)")}</option><option value="calendar">${$t("Calendar (by date)")}</option></select></label>`,
+    `<label>${$t("Database")}<select name="database" id="embed-choice">${editorFolders ? `<option value="new">${$t("New task list…")}</option>` : ""}${databases.map((d) => `<option value="${d.id}">${$tn(d.record_count, "{name} · {count} record", "{name} · {count} records", { name: esc(d.name) })}</option>`).join("")}</select></label><div id="embed-new"><label>${$t("Name")}<input name="name" value="Tasks" maxlength="200"></label><label>${$t("Folder")}<select name="folder_id">${editorFolders}</select></label></div><label>${$t("Show as")}<select name="view"><option value="table">${$t("Table")}</option><option value="board">${$t("Board (by status)")}</option><option value="calendar">${$t("Calendar (by date)")}</option></select></label>`,
     async (v) => {
       let id = v.database;
       if (id === "new") {
@@ -8989,7 +8994,7 @@ function editRecordDialog(db, row, edit, onSaved) {
     const page = document.createElement("button");
     page.type = "button";
     page.className = "btn";
-    page.innerHTML = `${icon("note")}Open as page`;
+    page.innerHTML = `${icon("note")}${$t("Open as page")}`;
     page.onclick = () => openRecordPage(db, row).catch(error);
     $("footer", modal)?.prepend(page);
   }
@@ -9075,7 +9080,7 @@ async function renderIntegrations() {
   const personal = data.user.admin ? null : await api("api-tokens");
   $("#breadcrumb").textContent = $t("MCP connections");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || "Unavailable workspace")}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="5">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
+    `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || $t("Unavailable workspace"))}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="5">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
       personal
         ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("CREATED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}</td><td>${date(t.created_at)}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="4">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
         : ""

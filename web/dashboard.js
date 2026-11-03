@@ -3,45 +3,49 @@
 // Widgets sit in rows that always fill the page width: a widget's size is a
 // preference, and the widgets of a row grow or shrink to fill it. The layout is
 // saved per account on the server.
-import { $t } from "./i18n.js";
+import { $t, $tn } from "./i18n.js";
 import { intervalLabel, rich } from "./flashcards.js";
 
 export const WIDGETS = {
   welcome: {
-    name: "Welcome",
+    name: $t("Welcome"),
     size: "full",
-    about: "A short hello with a link to start writing.",
+    about: $t("A short hello with a link to start writing."),
   },
   folders: {
-    name: "Folders",
+    name: $t("Folders"),
     size: "full",
-    about: "The top-level folders of this workspace.",
+    about: $t("The top-level folders of this workspace."),
   },
   recent: {
-    name: "Recently updated",
+    name: $t("Recently updated"),
     size: "l",
-    about: "The notes you and others changed last.",
+    about: $t("The notes you and others changed last."),
   },
-  favorites: { name: "Favorites", size: "s", about: "Your starred notes." },
-  journal: {
-    name: "Journal",
+  favorites: {
+    name: $t("Favorites"),
     size: "s",
-    about: "This month, with the days that have an entry.",
+    about: $t("Your starred notes."),
+  },
+  journal: {
+    name: $t("Journal"),
+    size: "s",
+    about: $t("This month, with the days that have an entry."),
   },
   flashcards: {
-    name: "Flashcards",
+    name: $t("Flashcards"),
     size: "m",
-    about: "Cards due for review; answer them right here.",
+    about: $t("Cards due for review; answer them right here."),
   },
   mentions: {
-    name: "Mentions",
+    name: $t("Mentions"),
     size: "m",
-    about: "Notes where someone mentioned you with @.",
+    about: $t("Notes where someone mentioned you with @."),
   },
   chart: {
-    name: "Chart",
+    name: $t("Chart"),
     size: "m",
-    about: "A database property as bars or a pie.",
+    about: $t("A database property as bars or a pie."),
   },
 };
 const SIZES = [
@@ -449,7 +453,7 @@ export async function renderDashboard(root, app) {
       }
       const deck = decks.find((d) => d.due);
       if (!deck) {
-        body.innerHTML = `<p class="widget-empty">All caught up · ${decks.length} deck${decks.length === 1 ? "" : "s"}, nothing due.</p>`;
+        body.innerHTML = `<p class="widget-empty">${$tn(decks.length, "All caught up · {count} deck, nothing due.", "All caught up · {count} decks, nothing due.")}</p>`;
         return;
       }
       // The deck's next due card, answered right here.
@@ -457,7 +461,7 @@ export async function renderDashboard(root, app) {
       const card = full.cards
         .filter((c) => !c.suspended && c.due <= now)
         .sort((a, b) => a.due - b.due)[0];
-      body.innerHTML = `<p class="widget-due"><strong>${due}</strong> card${due === 1 ? "" : "s"} due · ${esc(deck.name)}</p><div class="widget-card"><div class="widget-card-face">${rich(card.front, esc)}</div><div class="widget-card-answer" hidden><hr><div class="widget-card-face">${rich(card.back, esc)}</div><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(card.interval, r)}</small></button>`).join("")}</div></div><button class="btn primary widget-action" data-reveal>${$t("Reveal answer")}</button></div>`;
+      body.innerHTML = `<p class="widget-due"><strong>${due}</strong> ${$tn(due, "card due · {name}", "cards due · {name}", { name: esc(deck.name) })}</p><div class="widget-card"><div class="widget-card-face">${rich(card.front, esc)}</div><div class="widget-card-answer" hidden><hr><div class="widget-card-face">${rich(card.back, esc)}</div><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(card.interval, r)}</small></button>`).join("")}</div></div><button class="btn primary widget-action" data-reveal>${$t("Reveal answer")}</button></div>`;
       body.querySelector("[data-reveal]").addEventListener("click", (e) => {
         body.querySelector(".widget-card-answer").hidden = false;
         e.target.hidden = true;
@@ -511,10 +515,13 @@ export async function renderDashboard(root, app) {
           (a, b) => column.options.indexOf(a[0]) - column.options.indexOf(b[0]),
         );
       else groups.sort((a, b) => b[1] - a[1]);
-      const caption = `${esc(db.name)} · records by ${esc(column.name)}`;
+      const caption = $t("{database} · records by {property}", {
+        database: esc(db.name),
+        property: esc(column.name),
+      });
       body.innerHTML = groups.length
         ? `${o.kind === "pie" ? pie(groups, esc) : bars(groups, esc)}<p class="chart-caption">${caption}</p>`
-        : `<p class="widget-empty">${esc(db.name)} has no records yet.</p>`;
+        : `<p class="widget-empty">${$t("{name} has no records yet.", { name: esc(db.name) })}</p>`;
     },
   };
   function chartDialog(w) {

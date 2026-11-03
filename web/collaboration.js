@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 import * as Y from "yjs";
 export function encode(bytes) {
   let s = "";
@@ -130,7 +131,7 @@ export class Collaboration {
     this.doc.on("update", (update, origin) => {
       if (origin === "server") return;
       this.pending.push(update);
-      this.onStatus("Saving…", true);
+      this.onStatus($t("Saving…"), true);
       clearTimeout(this.debounce);
       this.debounce = setTimeout(() => this.sync().catch(() => {}), 180);
     });
@@ -290,13 +291,15 @@ export class Collaboration {
           }
         }
         this.onStatus(
-          this.pending.length ? "Saving…" : "Live · all changes saved",
+          this.pending.length ? $t("Saving…") : $t("Live · all changes saved"),
           this.pending.length > 0,
         );
       } catch (e) {
         this.pending.unshift(...updates);
         this.onStatus(
-          this.pending.length ? "Offline · changes pending" : "Reconnecting…",
+          this.pending.length
+            ? $t("Offline · changes pending")
+            : $t("Reconnecting…"),
           this.pending.length > 0,
         );
         this.onFailure(e);

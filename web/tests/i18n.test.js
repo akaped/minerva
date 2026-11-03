@@ -18,6 +18,44 @@ function texts() {
     const source = fs.readFileSync(path.join(web, file), "utf8");
     for (const m of source.matchAll(/\$t\(\s*("(?:[^"\\]|\\.)*")/g))
       found.add(JSON.parse(m[1]));
+    // Text kept in tables and translated where shown.
+    for (const m of source.matchAll(/\bmsg\(\s*("(?:[^"\\]|\\.)*")/g))
+      found.add(JSON.parse(m[1]));
+    // Both forms of a plural: $tn(count, "one", "other").
+    const plural =
+      /\$tn\((?:[^"()]|\([^()]*\))*?,\s*("(?:[^"\\]|\\.)*")\s*,\s*("(?:[^"\\]|\\.)*")/g;
+    for (const m of source.matchAll(plural))
+      for (const form of [m[1], m[2]]) found.add(JSON.parse(form));
+  }
+  // The quick-capture page marks its text with data-t attributes.
+  const page = fs.readFileSync(path.join(web, "capture.html"), "utf8");
+  for (const m of page.matchAll(/data-t(?:-[a-z-]+)?="([^"]*)"/g))
+    found.add(m[1]);
+  return found;
+}
+
+/**
+ * The fixed error messages the server sends (`bad("…")`, `ApiError(…, "…")`):
+ * the app shows them in the reader's language from the same catalog.
+ */
+function serverMessages() {
+  const dir = path.join(web, "../crates/minerva-server/src");
+  const found = new Set();
+  const decode = (s) =>
+    s
+      .replace(/\\\n\s*/g, "")
+      .replace(/\\(["\\nt'])/g, (_, c) => ({ n: "\n", t: "\t" })[c] ?? c);
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".rs"))) {
+    // Messages in tests are not shown to anyone.
+    const code = fs
+      .readFileSync(path.join(dir, file), "utf8")
+      .split(/#\[cfg\(test\)\]/)[0];
+    const patterns = [
+      /\bbad\(\s*"((?:[^"\\]|\\[\s\S])*)"\s*,?\s*\)/g,
+      /ApiError\(\s*StatusCode::\w+,\s*"((?:[^"\\]|\\[\s\S])*)"\s*\.\s*(?:into|to_string)\(\)/g,
+    ];
+    for (const re of patterns)
+      for (const m of code.matchAll(re)) found.add(decode(m[1]));
   }
   return found;
 }
@@ -39,7 +77,7 @@ test("texts are translated, with their values", () => {
 });
 
 test("the Italian catalog covers the code, and only it", () => {
-  const used = texts();
+  const used = new Set([...texts(), ...serverMessages()]);
   const missing = [...used].filter((t) => !(t in it));
   assert.deepEqual(missing, [], "texts without an Italian translation");
   const stale = Object.keys(it).filter((t) => !used.has(t));

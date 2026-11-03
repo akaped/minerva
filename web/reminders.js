@@ -1,4 +1,4 @@
-import { $t } from "./i18n.js";
+import { $t, $tn, msg } from "./i18n.js";
 // The Reminders page of a workspace: its reminders, one-off or repeating
 // ("Car insurance, every year") and grouped by category, shared by everyone in
 // the workspace, together with every ⏰ time written in its notes.
@@ -19,10 +19,14 @@ const DAY = 86400e3;
 
 /** "Once", "Every month", "Every 2 years". */
 export function repeatLabel(repeat) {
-  if (!repeat) return "Once";
-  return repeat.every === 1
-    ? `Every ${repeat.unit}`
-    : `Every ${repeat.every} ${repeat.unit}s`;
+  if (!repeat) return $t("Once");
+  const units = {
+    day: [msg("Every day"), msg("Every {count} days")],
+    week: [msg("Every week"), msg("Every {count} weeks")],
+    month: [msg("Every month"), msg("Every {count} months")],
+    year: [msg("Every year"), msg("Every {count} years")],
+  }[repeat.unit];
+  return $tn(repeat.every, units[0], units[1]);
 }
 
 /** A ⏰ time as written in a note ("2026-11-02 09:00"), in local time. */
@@ -37,16 +41,20 @@ export function stampTime(stamp) {
 export function relative(at, now) {
   const start = (t) => new Date(t).setHours(0, 0, 0, 0);
   const days = Math.round((start(at) - start(now)) / DAY);
-  if (days === 0) return at < now ? "Today, now due" : "Today";
-  if (days === 1) return "Tomorrow";
-  if (days === -1) return "Yesterday";
-  if (days > 0 && days < 60) return `In ${days} days`;
-  if (days < 0 && days > -60) return `${-days} days ago`;
+  if (days === 0) return at < now ? $t("Today, now due") : $t("Today");
+  if (days === 1) return $t("Tomorrow");
+  if (days === -1) return $t("Yesterday");
+  if (days > 0 && days < 60) return $t("In {count} days", { count: days });
+  if (days < 0 && days > -60) return $t("{count} days ago", { count: -days });
   const months = Math.round(Math.abs(days) / 30.4);
   if (months < 24)
-    return days > 0 ? `In ${months} months` : `${months} months ago`;
+    return days > 0
+      ? $t("In {count} months", { count: months })
+      : $t("{count} months ago", { count: months });
   const years = Math.round(Math.abs(days) / 365.25);
-  return days > 0 ? `In ${years} years` : `${years} years ago`;
+  return days > 0
+    ? $t("In {count} years", { count: years })
+    : $t("{count} years ago", { count: years });
 }
 
 /**
@@ -144,19 +152,19 @@ function draw(ctx, root, items, mailEnabled) {
     `<button type="button" data-filter="${esc(value)}" class="${filter === value ? "active" : ""}" ${c ? `style="--cat:${c}"` : ""}>${c ? '<i class="cat-dot" aria-hidden="true"></i>' : ""}${esc(label)} <span class="count">${n}</span></button>`;
   const uncategorized = own.filter((r) => !r.category).length;
   const filters =
-    chip("all", "All", items.length) +
+    chip("all", $t("All"), items.length) +
     categories.map((c) => chip(c, c, counts.get(c), color(c))).join("") +
     (uncategorized && categories.length
-      ? chip("none", "No category", uncategorized)
+      ? chip("none", $t("No category"), uncategorized)
       : "") +
-    (notes.length ? chip("notes", "From notes", notes.length) : "");
+    (notes.length ? chip("notes", $t("From notes"), notes.length) : "");
   const row = (r) => {
     const d = new Date(r.at);
     const when = `${relative(r.at, now)} · ${d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", year: d.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric", hour: "2-digit", minute: "2-digit" })}`;
     const meta =
       r.kind === "own"
-        ? `${r.repeat ? `<span class="reminder-repeat">↻ ${esc(repeatLabel(r.repeat))}</span>` : ""}${r.category ? `<span class="reminder-cat" style="--cat:${color(r.category)}">${esc(r.category)}</span>` : ""}${r.created_by && r.created_by !== ctx.me ? `<span>Added by ${esc(r.created_by)}</span>` : ""}${r.sent ? `<span title="${$t("The email for this time was sent to everyone in the workspace")}">${$t("✉ Sent")}</span>` : ""}`
-        : `<button class="text-link" data-open-note="${esc(r.note_id)}">In ${esc(r.icon || "")} ${esc(r.note_title || "Untitled")}</button>${r.emailed ? `<span title="${$t("You get this block by email")}">${$t("✉ By email")}</span>` : ""}`;
+        ? `${r.repeat ? `<span class="reminder-repeat">↻ ${esc(repeatLabel(r.repeat))}</span>` : ""}${r.category ? `<span class="reminder-cat" style="--cat:${color(r.category)}">${esc(r.category)}</span>` : ""}${r.created_by && r.created_by !== ctx.me ? `<span>${$t("Added by {created_by}", { created_by: esc(r.created_by) })}</span>` : ""}${r.sent ? `<span title="${$t("The email for this time was sent to everyone in the workspace")}">${$t("✉ Sent")}</span>` : ""}`
+        : `<button class="text-link" data-open-note="${esc(r.note_id)}">In ${esc(r.icon || "")} ${esc(r.note_title || $t("Untitled"))}</button>${r.emailed ? `<span title="${$t("You get this block by email")}">${$t("✉ By email")}</span>` : ""}`;
     const actions =
       r.kind === "own" && r.can_edit
         ? `<button class="btn" data-done="${esc(r.id)}" title="${r.repeat ? $t("Done: move to the next time") : $t("Done: remove it")}">${$t("✓ Done")}</button><button class="btn" data-edit="${esc(r.id)}" aria-label="Edit ${esc(r.title)}">${$t("Edit")}</button><button class="btn" data-delete="${esc(r.id)}" aria-label="Delete ${esc(r.title)}">×</button>`
@@ -172,7 +180,7 @@ function draw(ctx, root, items, mailEnabled) {
     : !shown.length
       ? `<div class="empty">${$t("Nothing here.")}</div>`
       : "";
-  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">${$t("NOTHING IMPORTANT SLIPS BY")}</div><div class="page-heading"><div><h1>${$t("Reminders")}</h1><p class="subtitle">${$t("Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.")}</p></div><div class="toolbar-group"><button class="btn" id="calendar-feed" title="${$t("See your reminders in Google Calendar, Apple Calendar, Outlook or Thunderbird")}">${$t("📅 Add to your calendar")}</button>${ctx.canAdd ? `<button class="btn primary" id="new-reminder">${$t("+ New reminder")}</button>` : ""}</div></div>${mailEnabled ? "" : `<p class="reminder-notice">${$t("This server does not send email, so reminders are only shown here. Come back to this page to see what is due.")}</p>`}${items.length ? `<nav class="reminder-filters" aria-label="${$t("Categories")}">${filters}</nav>` : ""}${section("Due", groups.due, "due")}${section("Next 7 days", groups.week)}${section("Next 30 days", groups.month)}${section("Later", groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>${$t("Past times in notes")} <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
+  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">${$t("NOTHING IMPORTANT SLIPS BY")}</div><div class="page-heading"><div><h1>${$t("Reminders")}</h1><p class="subtitle">${$t("Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.")}</p></div><div class="toolbar-group"><button class="btn" id="calendar-feed" title="${$t("See your reminders in Google Calendar, Apple Calendar, Outlook or Thunderbird")}">${$t("📅 Add to your calendar")}</button>${ctx.canAdd ? `<button class="btn primary" id="new-reminder">${$t("+ New reminder")}</button>` : ""}</div></div>${mailEnabled ? "" : `<p class="reminder-notice">${$t("This server does not send email, so reminders are only shown here. Come back to this page to see what is due.")}</p>`}${items.length ? `<nav class="reminder-filters" aria-label="${$t("Categories")}">${filters}</nav>` : ""}${section($t("Due"), groups.due, "due")}${section($t("Next 7 days"), groups.week)}${section($t("Next 30 days"), groups.month)}${section($t("Later"), groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>${$t("Past times in notes")} <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
 
   const again = () => renderReminders(ctx).catch(ctx.error);
   const find = (id) => items.find((r) => r.kind === "own" && r.id === id);
@@ -208,7 +216,11 @@ function draw(ctx, root, items, mailEnabled) {
           );
           ctx.toast(
             next
-              ? `Done. Next time: ${new Date(next.at * 1000).toLocaleDateString(undefined, { dateStyle: "medium" })}`
+              ? $t("Done. Next time: {date}", {
+                  date: new Date(next.at * 1000).toLocaleDateString(undefined, {
+                    dateStyle: "medium",
+                  }),
+                })
               : $t("Done."),
           );
           await again();
@@ -222,7 +234,8 @@ function draw(ctx, root, items, mailEnabled) {
     (b) =>
       (b.onclick = async () => {
         const r = find(b.dataset.delete);
-        if (!confirm(`Delete the reminder “${r.title}”?`)) return;
+        if (!confirm($t("Delete the reminder “{title}”?", { title: r.title })))
+          return;
         try {
           await ctx.api(`reminders/${r.id}`, "DELETE");
           await again();
@@ -242,7 +255,7 @@ function dialog(ctx, r, categories, done) {
   const preset = !repeat ? "" : repeat.every === 1 ? repeat.unit : "custom";
   const option = (value, label) =>
     `<option value="${value}" ${preset === value ? "selected" : ""}>${label}</option>`;
-  modal.innerHTML = `<form class="reminder-form"><h2>${r ? $t("Edit reminder") : $t("New reminder")}</h2><label>${$t("Name")}<input name="title" required maxlength="200" placeholder="${$t("e.g. Car insurance")}" value="${esc(r?.title || "")}"></label><label>${r ? $t("Next time") : $t("When")}<input name="at" type="datetime-local" required value="${local(r ? r.at : soon.getTime())}"></label><label>${$t("Repeats")}<select name="preset">${option("", "Does not repeat")}${option("day", "Every day")}${option("week", "Every week")}${option("month", "Every month")}${option("year", "Every year")}${option("custom", "Custom…")}</select></label><div class="reminder-custom" ${preset === "custom" ? "" : "hidden"}><label>${$t("Every")}<input name="every" type="number" min="1" max="1000" value="${repeat?.every || 2}"></label><label>${$t("Unit")}<select name="unit">${UNITS.map((u) => `<option value="${u}" ${repeat?.unit === u ? "selected" : ""}>${u}s</option>`).join("")}</select></label></div><label>${$t("Category")}<input name="category" maxlength="40" list="reminder-categories" placeholder="${$t("e.g. car, health, home")}" value="${esc(r?.category || "")}" autocomplete="off"></label><datalist id="reminder-categories">${categories.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>${categories.length ? `<div class="reminder-suggest">${categories.map((c) => `<button type="button" data-category="${esc(c)}" style="--cat:${color(c)}">${esc(c)}</button>`).join("")}</div>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${r ? $t("Save") : $t("Add reminder")}</button></footer></form>`;
+  modal.innerHTML = `<form class="reminder-form"><h2>${r ? $t("Edit reminder") : $t("New reminder")}</h2><label>${$t("Name")}<input name="title" required maxlength="200" placeholder="${$t("e.g. Car insurance")}" value="${esc(r?.title || "")}"></label><label>${r ? $t("Next time") : $t("When")}<input name="at" type="datetime-local" required value="${local(r ? r.at : soon.getTime())}"></label><label>${$t("Repeats")}<select name="preset">${option("", $t("Does not repeat"))}${option("day", $t("Every day"))}${option("week", $t("Every week"))}${option("month", $t("Every month"))}${option("year", $t("Every year"))}${option("custom", $t("Custom…"))}</select></label><div class="reminder-custom" ${preset === "custom" ? "" : "hidden"}><label>${$t("Every")}<input name="every" type="number" min="1" max="1000" value="${repeat?.every || 2}"></label><label>${$t("Unit")}<select name="unit">${UNITS.map((u) => `<option value="${u}" ${repeat?.unit === u ? "selected" : ""}>${u}s</option>`).join("")}</select></label></div><label>${$t("Category")}<input name="category" maxlength="40" list="reminder-categories" placeholder="${$t("e.g. car, health, home")}" value="${esc(r?.category || "")}" autocomplete="off"></label><datalist id="reminder-categories">${categories.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>${categories.length ? `<div class="reminder-suggest">${categories.map((c) => `<button type="button" data-category="${esc(c)}" style="--cat:${color(c)}">${esc(c)}</button>`).join("")}</div>` : ""}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${r ? $t("Save") : $t("Add reminder")}</button></footer></form>`;
   modal.showModal();
   const form = modal.querySelector("form");
   form.preset.onchange = () =>
@@ -311,7 +324,7 @@ async function calendarDialog(ctx, made = null) {
   const body = made
     ? `<p>${$t("Subscribe to this address in your calendar app. It is shown only now: copy it before closing.")}</p><label>${$t("Calendar address")}<input name="url" readonly value="${esc(made.url)}"></label><div class="toolbar-group"><button type="button" class="btn primary" id="copy-feed">${$t("Copy address")}</button><a class="btn" href="${esc(webcal(made.url))}">${$t("Open in calendar app")}</a></div><p class="hint">${$t("Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription. Outlook: Add calendar → Subscribe from web. Calendars refresh it every few hours.")}</p>`
     : feed.enabled
-      ? `<p>Your calendar address is on, since ${esc(since)}. For safety it is not shown again: make a new one to see it, and the old one stops working.</p>${journal}`
+      ? `<p>${$t("Your calendar address is on, since {since}. For safety it is not shown again: make a new one to see it, and the old one stops working.", { since: esc(since) })}</p>${journal}`
       : `<p>${$t("Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.")}</p>${journal}`;
   modal.innerHTML = `<form class="calendar-feed-form"><h2>${$t("Add to your calendar")}</h2>${body}<p class="hint">${$t("Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.")}</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? `<button type="button" class="btn danger" id="feed-off">${$t("Turn off")}</button>` : ""}<button type="button" class="btn" id="cancel">${made ? $t("Done") : $t("Cancel")}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? $t("New address") : $t("Create address")}</button>`}</footer></form>`;
   if (!modal.open) modal.showModal();

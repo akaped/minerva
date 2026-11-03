@@ -284,7 +284,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     const loader = document.createElement("div");
     loader.className = "note-pane-loading";
     loader.setAttribute("role", "status");
-    loader.innerHTML = `<div class="loading-sheet" aria-hidden="true"><i class="sk-icon"></i><i class="sk-title"></i><i class="sk-meta"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line short"></i></div><p><span class="loading-mark" aria-hidden="true">✳</span>Opening ${esc(title)}…</p>`;
+    loader.innerHTML = `<div class="loading-sheet" aria-hidden="true"><i class="sk-icon"></i><i class="sk-title"></i><i class="sk-meta"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line short"></i></div><p><span class="loading-mark" aria-hidden="true">✳</span>${$t("Opening {title}…", { title: esc(title) })}</p>`;
     frame.classList.add("loading");
     const tab = {
       key,

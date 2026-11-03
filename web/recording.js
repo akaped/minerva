@@ -1,3 +1,4 @@
+import { $t } from "./i18n.js";
 /**
  * From a recording to notes: what is inserted into the note from a finished
  * transcription job (`POST /api/v1/ai/recordings`), as block Markdown.
@@ -63,21 +64,21 @@ export function recordingBlocks(job, keep) {
     blocks.push(`## ${clean(notes.title)}`);
   if (keep.summary)
     section(
-      "Key points",
+      $t("Key points"),
       (notes.summary || []).map((p) => `- ${clean(p)}`),
     );
   if (keep.decisions)
     section(
-      "Decisions",
+      $t("Decisions"),
       (notes.decisions || []).map((p) => `- ${clean(p)}`),
     );
   section(
-    "Action items",
+    $t("Action items"),
     (notes.action_items || [])
       .filter((_, i) => keep.actions?.includes(i))
       .map(actionTask),
   );
   if (keep.transcript && job.transcript?.length)
-    section("Transcript", transcriptBlocks(job.transcript));
+    section($t("Transcript"), transcriptBlocks(job.transcript));
   return blocks;
 }

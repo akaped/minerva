@@ -4,7 +4,7 @@
  * composer for a new thread on a block or a selection. `@person@example.com`
  * mentions are offered from the people who can open the note.
  */
-import { $t } from "./i18n.js";
+import { $t, $tn } from "./i18n.js";
 import { mentionQuery } from "./editor-tools.js";
 
 /** Comment text as HTML: escaped, mentions by name, line breaks kept. */
@@ -18,12 +18,12 @@ export function commentHTML(text, esc, names = new Map()) {
     .replace(/\n/g, "<br>");
 }
 
-/** "just now", "5 min ago", "3 h ago", or the date. */
+/** $t("just now"), "5 min ago", "3 h ago", or the date. */
 export function ago(at, now = Date.now() / 1000) {
   const s = Math.max(0, now - at);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 60) return $t("just now");
+  if (s < 3600) return $t("{count} min ago", { count: Math.floor(s / 60) });
+  if (s < 86400) return $t("{count} h ago", { count: Math.floor(s / 3600) });
   return new Date(at * 1000).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -108,7 +108,7 @@ export function createComments(deps) {
       const badge = document.createElement("button");
       badge.className = "block-comments";
       badge.type = "button";
-      badge.title = `${n} comment thread${n === 1 ? "" : "s"}`;
+      badge.title = $tn(n, "{count} comment thread", "{count} comment threads");
       badge.setAttribute("aria-label", badge.title);
       badge.innerHTML = `💬 ${n}`;
       badge.onclick = (e) => {
@@ -178,7 +178,7 @@ export function createComments(deps) {
       )
       .join(
         "",
-      )}${t.resolved ? `<p class="comment-resolved">Resolved${t.resolved_by_name ? ` by ${esc(t.resolved_by_name)}` : ""}</p>` : composer("reply", t.id)}</article>`;
+      )}${t.resolved ? `<p class="comment-resolved">${$t("Resolved{value}", { value: t.resolved_by_name ? $t(" by {name}", { name: esc(t.resolved_by_name) }) : "" })}</p>` : composer("reply", t.id)}</article>`;
   }
   function draw() {
     if (!open) return;
@@ -200,7 +200,7 @@ export function createComments(deps) {
           a.created_at - b.created_at,
       );
     const esc = deps.esc;
-    el.innerHTML = `<header class="comments-head"><h2>${$t("Comments")}</h2><div class="comments-tabs" role="tablist"><button role="tab" aria-selected="${!showResolved}" data-tab="open">Open ${openThreads().length || ""}</button><button role="tab" aria-selected="${showResolved}" data-tab="resolved">${$t("Resolved")}</button></div><button class="btn" data-new-note-thread title="${$t("Comment on the whole note")}">+</button><button class="btn" data-close aria-label="${$t("Close comments")}">×</button></header>${
+    el.innerHTML = `<header class="comments-head"><h2>${$t("Comments")}</h2><div class="comments-tabs" role="tablist"><button role="tab" aria-selected="${!showResolved}" data-tab="open">${$t("Open {value}", { value: openThreads().length || "" })}</button><button role="tab" aria-selected="${showResolved}" data-tab="resolved">${$t("Resolved")}</button></div><button class="btn" data-new-note-thread title="${$t("Comment on the whole note")}">+</button><button class="btn" data-close aria-label="${$t("Close comments")}">×</button></header>${
       draft
         ? `<article class="comment-thread comment-draft"><header><span class="comment-anchor">${draft.quote ? `“${esc(draft.quote)}”` : draft.blockId ? esc(blockLabel(draft.blockId)) : $t("On the note")}</span></header>${composer("new")}</article>`
         : ""
@@ -238,7 +238,9 @@ export function createComments(deps) {
             deps.api(`notes/${noteId}/comments/${b.dataset.resolve}`, "PATCH", {
               resolved: b.dataset.value === "true",
             }),
-            b.dataset.value === "true" ? "Thread resolved" : "Thread reopened",
+            b.dataset.value === "true"
+              ? $t("Thread resolved")
+              : $t("Thread reopened"),
           )),
     );
     el.querySelectorAll("[data-delete]").forEach(
@@ -247,7 +249,7 @@ export function createComments(deps) {
           const [tid, cid] = b.dataset.delete.split(":");
           act(
             deps.api(`notes/${noteId}/comments/${tid}/${cid}`, "DELETE"),
-            "Comment deleted",
+            $t("Comment deleted"),
           );
         }),
     );
@@ -282,7 +284,7 @@ export function createComments(deps) {
                 { text },
               );
         if (form.dataset.compose === "new") draft = null;
-        act(body, "Comment added");
+        act(body, $t("Comment added"));
       };
     });
   }

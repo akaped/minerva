@@ -4,7 +4,8 @@
  * Interface text is written in English in the code, wrapped in `$t("…")`; each
  * language has a catalog (`web/locales/{code}.json`) from the English text to
  * its translation, and text missing from a catalog stays in English. Values
- * go in braces: `$t("Added {count} blocks", { count })`.
+ * go in braces: `$t("Shared with {name}", { name })`, and counts choose their
+ * form with `$tn(count, "{count} block", "{count} blocks")`.
  *
  * The language is the one chosen on this device (Account → This device), or
  * else the browser's, when Minerva has it. Choosing another reloads the page,
@@ -68,6 +69,22 @@ export function $t(text, values) {
     name in values ? String(values[name]) : whole,
   );
 }
+
+/**
+ * `one` or `other` by `count` (as the language's plural rules say), then
+ * translated, with `{count}` and `values` filled in:
+ * `$tn(n, "{count} note", "{count} notes")`.
+ */
+export function $tn(count, one, other, values = {}) {
+  const rule = new Intl.PluralRules(current).select(Number(count));
+  return $t(rule === "one" ? one : other, { count, ...values });
+}
+
+/**
+ * Marks text for translation where it is kept in a table and used as a key;
+ * the places that show it translate it with `$t`.
+ */
+export const msg = (text) => text;
 
 /** For tests: use `code`'s catalog without reloading. */
 export function useLanguage(code) {

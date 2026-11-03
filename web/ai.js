@@ -1,4 +1,4 @@
-import { $t } from "./i18n.js";
+import { $t, $tn } from "./i18n.js";
 import { splitMarkdown } from "./markdown.js";
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -27,7 +27,7 @@ export async function renderAISettings({ api, esc, data, error }) {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">${$t("IN-APP INTELLIGENCE")}</div><div class="page-heading"><div><h1>${$t("AI providers")}</h1><p class="subtitle">${$t("Choose the models your server can use for contextual chat.")}</p></div>${data.user.admin ? `<button class="btn primary" id="add-provider">${$t("+ Add provider")}</button>` : ""}</div>
     <div class="panel ai-notice"><h2>${$t("Your context, your choice")}</h2><p>${$t("Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Files attached to a question are sent with that question only, and are not stored. With “No context”, no notes are sent. Provider usage may incur API charges.")}</p><p>${$t("API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.")}</p></div>
-    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>Available to server members · key stored${p.web_search ? $t(" · web search on") : ""} · answers up to ${Number(p.max_tokens || 4096).toLocaleString()} tokens</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">${$t("Edit")}</button><button class="btn danger" data-remove-provider="${p.id}">${$t("Remove provider")}</button></div>` : ""}</section>`).join("") || `<div class="empty"><h3>${$t("No providers configured")}</h3><p>${$t("A server administrator can add a model and API key to enable chat.")}</p></div>`}</div></section>`;
+    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>${$t("Available to server members · key stored{value} · answers up to {date} tokens", { value: p.web_search ? $t(" · web search on") : "", date: Number(p.max_tokens || 4096).toLocaleString() })}</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">${$t("Edit")}</button><button class="btn danger" data-remove-provider="${p.id}">${$t("Remove provider")}</button></div>` : ""}</section>`).join("") || `<div class="empty"><h3>${$t("No providers configured")}</h3><p>${$t("A server administrator can add a model and API key to enable chat.")}</p></div>`}</div></section>`;
   // Adds a provider, or edits `existing`. The stored key is never shown: an
   // empty key field keeps it, and pointing it at another server needs it again.
   const providerForm = (existing = null) => {
@@ -244,9 +244,10 @@ export async function renderAIChat({
   };
   const ago = (seconds) => {
     const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes} min ago`;
-    if (minutes < 1440) return `${Math.round(minutes / 60)} h ago`;
+    if (minutes < 1) return $t("just now");
+    if (minutes < 60) return $t("{count} min ago", { count: minutes });
+    if (minutes < 1440)
+      return $t("{count} h ago", { count: Math.round(minutes / 60) });
     return new Date(seconds * 1000).toLocaleDateString();
   };
   const drawHistory = () => {
@@ -269,7 +270,7 @@ export async function renderAIChat({
     if (history.length)
       $("#chat-history").insertAdjacentHTML(
         "beforeend",
-        `<button class="text-link chat-delete-all" id="delete-all-chats">Delete all conversations (${history.length})</button>`,
+        `<button class="text-link chat-delete-all" id="delete-all-chats">${$t("Delete all conversations ({count})", { count: history.length })}</button>`,
       );
     // Deleting asks once more on the same button, then cannot be undone.
     const confirmed = (button, label) => {
@@ -289,7 +290,7 @@ export async function renderAIChat({
     $$("[data-delete-chat]").forEach(
       (button) =>
         (button.onclick = async () => {
-          if (running || !confirmed(button, "Delete?")) return;
+          if (running || !confirmed(button, $t("Delete?"))) return;
           const id = button.dataset.deleteChat;
           try {
             await api(`ai/chats/${id}`, "DELETE");
@@ -309,7 +310,7 @@ export async function renderAIChat({
       all.onclick = async () => {
         if (
           running ||
-          !confirmed(all, "Delete every conversation? Click again")
+          !confirmed(all, $t("Delete every conversation? Click again"))
         )
           return;
         try {
@@ -347,7 +348,7 @@ export async function renderAIChat({
   }
   /** Who answers: the assistant, with the provider and model. */
   function replyMeta(provider, model) {
-    return `<div class="chat-meta"><span class="chat-avatar" aria-hidden="true">✳</span><strong>${esc(provider || "Assistant")}</strong><span>${esc(model || "")}</span></div>`;
+    return `<div class="chat-meta"><span class="chat-avatar" aria-hidden="true">✳</span><strong>${esc(provider || $t("Assistant"))}</strong><span>${esc(model || "")}</span></div>`;
   }
   function bindSources(root) {
     $$("[data-source]", root).forEach(
@@ -470,7 +471,10 @@ export async function renderAIChat({
     const input = usage?.input_tokens ?? usage?.prompt_tokens;
     const output = usage?.output_tokens ?? usage?.completion_tokens;
     return input != null || output != null
-      ? `${input ?? "?"} input / ${output ?? "?"} output tokens`
+      ? $t("{input} input / {output} output tokens", {
+          input: input ?? "?",
+          output: output ?? "?",
+        })
       : "Usage not reported";
   }
   function reset() {
@@ -634,7 +638,7 @@ export async function renderAIChat({
       });
       if (!response.ok) {
         const problem = await response.json();
-        throw new Error(problem.error || $t("Unable to start response"));
+        throw new Error(problem.error ? $t(problem.error) : $t("Unable to start response"));
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -662,7 +666,11 @@ export async function renderAIChat({
               : "Reading " + sources.length + " sources";
             const pending = $(".chat-pending-text", turn);
             if (pending)
-              pending.textContent = `Reading ${sources.length} source${sources.length === 1 ? "" : "s"}…`;
+              pending.textContent = $tn(
+                sources.length,
+                "Reading {count} source…",
+                "Reading {count} sources…",
+              );
           }
           // Thinking models reason before they answer.
           if (event.type === "thinking" && !answer) {
@@ -750,9 +758,12 @@ function fileIcon(f) {
 export function attachmentProblem(file, files) {
   if (files.length >= 6) return "Attach up to 6 files to one question.";
   if (!IMAGE_TYPES.includes(file.type) && !isPdf(file) && !isText(file))
-    return `“${file.name}” cannot be read: attach images (PNG, JPEG, GIF, WebP), PDFs, or text documents.`;
+    return $t(
+      "“{name}” cannot be read: attach images (PNG, JPEG, GIF, WebP), PDFs, or text documents.",
+      { name: file.name },
+    );
   if (file.size > 15 * 1024 * 1024)
-    return `“${file.name}” is larger than 15 MB.`;
+    return $t("“{name}” is larger than 15 MB.", { name: file.name });
   const total = files.reduce((n, f) => n + f.size, file.size);
   if (total > 20 * 1024 * 1024)
     return "Attachments can be up to 20 MB together.";

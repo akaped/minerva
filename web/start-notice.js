@@ -1,3 +1,4 @@
+import { $t, $tn } from "./i18n.js";
 /**
  * The desktop app opens this computer's page when the server open last cannot
  * be shown, and says why in the address (`?missed=…&server=…&label=…`, see
@@ -6,13 +7,23 @@
  */
 const MESSAGES = {
   timeout: (label) =>
-    `${label} did not answer, so Minerva opened this computer instead.`,
+    $t("{server} did not answer, so Minerva opened this computer instead.", {
+      server: label,
+    }),
   offline: (label) =>
-    `${label} could not be reached, so Minerva opened this computer instead.`,
+    $t(
+      "{server} could not be reached, so Minerva opened this computer instead.",
+      { server: label },
+    ),
   signed_out: (label) =>
-    `You are signed out of ${label}. Sign in again from the server list.`,
+    $t("You are signed out of {server}. Sign in again from the server list.", {
+      server: label,
+    }),
   identity: (label) =>
-    `A different server now answers at ${label}'s address. Check it in the server list.`,
+    $t(
+      "A different server now answers at {server}'s address. Check it in the server list.",
+      { server: label },
+    ),
 };
 
 export function startNotice(search) {

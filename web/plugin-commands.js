@@ -109,11 +109,11 @@ export async function pluginDialog({
     const items = job.result?.items || [];
     const segments = job.sources || [];
     q("#plugin-preview").innerHTML =
-      `<details><summary>Source${job.source?.title ? ` · ${esc(job.source.title)}` : ` · note revision ${esc(job.note_revision)}`}</summary><pre style="white-space:pre-wrap">${esc(segments.map((s) => `${s.start != null ? timestamp(s.start) : s.id} ${s.text}`).join("\n\n"))}</pre></details>${media && segments.length ? `<label class="checkbox-label"><input id="plugin-include-transcript" type="checkbox" checked>${$t("Include timestamped transcript")}</label>` : ""}` +
+      `<details><summary>${$t("Source{value}", { value: job.source?.title ? ` · ${esc(job.source.title)}` : $t(" · note revision {revision}", { revision: esc(job.note_revision) }) })}</summary><pre style="white-space:pre-wrap">${esc(segments.map((s) => `${s.start != null ? timestamp(s.start) : s.id} ${s.text}`).join("\n\n"))}</pre></details>${media && segments.length ? `<label class="checkbox-label"><input id="plugin-include-transcript" type="checkbox" checked>${$t("Include timestamped transcript")}</label>` : ""}` +
       items
         .map(
           (item, i) =>
-            `<section><label class="checkbox-label"><input type="checkbox" data-include="${i}" checked>Include ${esc(item.kind.replaceAll("_", " "))}${item.grounding === "analysis" ? $t(" (AI analysis)") : ""}</label><label>${$t("Editable Markdown")}<textarea data-section="${i}" rows="6">${esc(knowledgeMarkdown(item, context.noteId, segments, job.source))}</textarea></label></section>`,
+            `<section><label class="checkbox-label"><input type="checkbox" data-include="${i}" checked>${$t("Include {value}{value2}", { value: esc(item.kind.replaceAll("_", " ")), value2: item.grounding === "analysis" ? $t(" (AI analysis)") : "" })}</label><label>${$t("Editable Markdown")}<textarea data-section="${i}" rows="6">${esc(knowledgeMarkdown(item, context.noteId, segments, job.source))}</textarea></label></section>`,
         )
         .join("");
     q("#plugin-insert").hidden = !items.length && !(media && segments.length);
@@ -145,8 +145,12 @@ export async function pluginDialog({
     if (completed)
       status(
         items.length
-          ? "Review, edit and choose what to keep. Long sources produce section-by-section insights."
-          : "Transcript ready. You can insert it without sending it to a language model.",
+          ? $t(
+              "Review, edit and choose what to keep. Long sources produce section-by-section insights.",
+            )
+          : $t(
+              "Transcript ready. You can insert it without sending it to a language model.",
+            ),
       );
   }
   async function poll() {
@@ -160,7 +164,10 @@ export async function pluginDialog({
         retrieving_audio: "Retrieving permitted audio…",
         transcribing: "Transcribing audio…",
         transcript_ready: "Transcript ready…",
-        extracting_knowledge: `Extracting knowledge · ${job.completed_chunks || 0}/${job.total_chunks || 1} sections complete…`,
+        extracting_knowledge: $t(
+          "Extracting knowledge · {done}/{total} sections complete…",
+          { done: job.completed_chunks || 0, total: job.total_chunks || 1 },
+        ),
       };
       status(labels[job.stage] || job.status);
       if (["queued", "running"].includes(job.status)) {
@@ -177,8 +184,10 @@ export async function pluginDialog({
       if (job.status !== "completed") {
         if (job.sources?.length) preview(job, false);
         status(
-          job.error ||
-            `Processing ${job.status}. Retry to reuse completed stages.`,
+          (job.error && $t(job.error)) ||
+            $t("Processing {status}. Retry to reuse completed stages.", {
+              status: job.status,
+            }),
         );
         return;
       }
@@ -205,7 +214,7 @@ export async function pluginDialog({
     q("#plugin-preview").replaceChildren();
     q("#plugin-insert").hidden = true;
     q("#plugin-retry").hidden = true;
-    status("Starting…");
+    status($t("Starting…"));
     try {
       let attachment = q("#plugin-attachment")?.value;
       if (!retry && kind === "audio" && q("#plugin-file").files[0])

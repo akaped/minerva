@@ -158,7 +158,7 @@ export async function emojiPicker(root, { onPick, esc }) {
       const found = searchEmoji(all.emoji, query);
       grid.innerHTML = found.length
         ? `<div class="emoji-set">${found.slice(0, 400).map(button).join("")}</div>`
-        : `<p class="emoji-empty">No emoji for “${esc(query)}”.</p>`;
+        : `<p class="emoji-empty">${$t("No emoji for “{query}”.", { query: esc(query) })}</p>`;
       tabs.hidden = true;
       return;
     }
