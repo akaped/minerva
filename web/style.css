@@ -7777,3 +7777,44 @@ body.comments-open .note-pane {
     border-top: 1px solid var(--line);
   }
 }
+/* The note toolbar: common tools, then the rest in a menu. */
+.toolbar-more {
+  position: relative;
+}
+.row-menu.note-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 250px;
+}
+.row-menu.note-menu.open-left {
+  right: auto;
+  left: 0;
+}
+.row-menu.note-menu[hidden] {
+  display: none;
+}
+.row-menu kbd {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+}
+.row-menu [aria-checked="true"] svg {
+  color: var(--accent);
+}
+.row-menu [aria-checked="true"]::after {
+  content: "✓";
+  margin-left: 8px;
+  color: var(--accent);
+}
+.editor-toolbar .icon-btn {
+  min-width: 34px;
+  justify-content: center;
+}
+@media (max-width: 900px) {
+  .editor-toolbar .toolbar-label {
+    display: none;
+  }
+}

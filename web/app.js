@@ -2181,15 +2181,78 @@ function renderEditor() {
       : sharing.members
         ? `<span class="share-indicator">Shared with ${sharing.members} member${sharing.members === 1 ? "" : "s"}</span>`
         : "";
-  const tools = shareMode
-    ? `<button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="export">${icon("download")}Export</button>`
-    : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="comments-toggle" aria-pressed="false" title="Comments on this note">💬 Comments <span class="comments-count"></span></button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
+  const editor = data.roles?.[note.folder_id] === "editor";
+  const item = (id, iconName, label, extra = "", keys = "") =>
+    `<button role="menuitem" tabindex="-1" id="${id}" ${extra}>${icon(iconName)}<span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ""}</button>`;
+  const separator = '<div class="menu-separator" role="separator"></div>';
+  // The note's less frequent tools, grouped in a menu.
+  const menu = [
+    [
+      item("find-note", "search", "Find and replace", "", "Ctrl+F"),
+      `<button role="menuitemcheckbox" tabindex="-1" id="focus-toggle" aria-checked="${document.body.classList.contains("focus-mode")}">${icon("canvas")}<span>Focus mode</span><kbd>Ctrl+Shift+F</kbd></button>`,
+      can ? item("save-note", "check", "Save now", "", "Ctrl+S") : "",
+    ],
+    shareMode
+      ? []
+      : [
+          item("attachments", "upload", "Files"),
+          item(
+            "history",
+            "clock",
+            "History",
+            !data.roles[note.folder_id]
+              ? 'aria-disabled="true" title="Version history is available to folder members"'
+              : "",
+          ),
+          item(
+            "metadata",
+            "list",
+            "Document details",
+            'title="Details used by PDF templates"',
+          ),
+        ],
+    [
+      item(
+        "copy-note-link",
+        "link",
+        "Copy link",
+        'title="Copy a link to open this note in another Minerva tab"',
+      ),
+      item("export", "download", "Export…"),
+    ],
+    shareMode
+      ? []
+      : [
+          item(
+            "trash-note",
+            note.trashed ? "check" : "trash",
+            note.trashed ? "Restore" : "Move to trash",
+            `class="${note.trashed ? "" : "danger-item"}" ${!editable() && !(note.trashed && editor) ? 'aria-disabled="true"' : ""}`,
+          ),
+          note.trashed && editor
+            ? item("delete-note", "trash", "Delete forever", 'class="danger-item"')
+            : "",
+        ],
+  ]
+    .map((group) => group.filter(Boolean).join(""))
+    .filter(Boolean)
+    .join(separator);
+  const tools = `${
+    shareMode && !can
+      ? ""
+      : `<button class="btn icon-btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn icon-btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button>`
+  }${
+    shareMode
+      ? ""
+      : `<button class="btn icon-btn" id="favorite" aria-label="Favorite" aria-pressed="${!!note.favorite}" title="Favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${!editor || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="Comments" title="Comments on this note">💬<span class="toolbar-label"> Comments</span> <span class="comments-count"></span></button><button class="btn" id="ask-note" aria-label="Ask AI" title="Chat with AI about this note, side by side">${icon("brain")}<span class="toolbar-label">Ask AI</span></button>`
+  }<div class="toolbar-more"><button class="btn icon-btn" id="note-more" aria-haspopup="menu" aria-expanded="false" aria-controls="note-menu" aria-label="More note tools" title="More">${icon("more")}</button><div class="row-menu note-menu" id="note-menu" role="menu" aria-label="Note tools" hidden>${menu}</div></div>`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? '<section class="record-panel" id="record-panel" aria-label="Record properties"></section>' : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div><span id="block-edit-hint" hidden>Press Enter to edit.</span>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? '<section class="record-panel" id="record-panel" aria-label="Record properties"></section>' : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div><span id="block-edit-hint" hidden>Press Enter to edit.</span>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
   updateStats();
+  bindToolbarMenu($("#note-more"), $("#note-menu"));
   action($("#find-note"), "click", () => openFind());
   action($("#fill-template"), "click", (e) =>
     fillFromTemplate(e.currentTarget),
@@ -2217,6 +2280,7 @@ function renderEditor() {
     markDirty();
     await queueSave();
     $("#favorite").textContent = note.favorite ? "★" : "☆";
+    $("#favorite").setAttribute("aria-pressed", String(!!note.favorite));
   });
   action($("#export"), "click", exportNote);
   action($("#metadata"), "click", () => metadataDialog());
@@ -2755,9 +2819,83 @@ function closeFind() {
   CSS.highlights?.delete("find-current");
   $("#find-note")?.focus();
 }
+/**
+ * A menu of a toolbar's other tools under `button`: it opens on click (or
+ * Enter, Space, ↓), moves with ↑/↓/Home/End, and closes with Escape, Tab, a
+ * click elsewhere, or once an item is chosen.
+ */
+function bindToolbarMenu(button, menu) {
+  if (!button || !menu) return;
+  const items = () =>
+    $$("[role^=menuitem]", menu).filter((b) => !b.disabled);
+  const escape = (e) => {
+    if (e.key !== "Escape" || menu.hidden) return;
+    e.preventDefault();
+    e.stopPropagation();
+    close(true);
+  };
+  const open = (focusFirst = true) => {
+    menu.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    // Keep the menu inside the window.
+    menu.classList.toggle(
+      "open-left",
+      button.getBoundingClientRect().right < menu.offsetWidth + 8,
+    );
+    if (focusFirst) items()[0]?.focus();
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape, true);
+  };
+  const close = (refocus = false) => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    document.removeEventListener("keydown", escape, true);
+    if (refocus) button.focus();
+  };
+  const outside = (e) => {
+    if (!menu.contains(e.target) && e.target !== button && !button.contains(e.target))
+      close();
+  };
+  button.addEventListener("click", () =>
+    menu.hidden ? open(false) : close(),
+  );
+  button.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      open();
+    }
+  });
+  menu.addEventListener("keydown", (e) => {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    const move = {
+      ArrowDown: i + 1,
+      ArrowUp: i - 1,
+      Home: 0,
+      End: list.length - 1,
+    }[e.key];
+    if (move !== undefined) {
+      e.preventDefault();
+      list[(move + list.length) % list.length]?.focus();
+    } else if (e.key === "Tab") close();
+  });
+  menu.addEventListener("click", (e) => {
+    const chosen = e.target.closest("[role^=menuitem]");
+    if (!chosen) return;
+    // A disabled item says why instead of doing anything.
+    if (chosen.getAttribute("aria-disabled") === "true") {
+      e.stopImmediatePropagation();
+      if (chosen.title) toast(chosen.title);
+      return;
+    }
+    close(true);
+  }, true);
+}
 function toggleFocus(force) {
   const on = document.body.classList.toggle("focus-mode", force);
-  $("#focus-toggle")?.setAttribute("aria-pressed", String(on));
+  $("#focus-toggle")?.setAttribute("aria-checked", String(on));
   announce(on ? "Focus mode on. Press Escape to leave." : "Focus mode off");
 }
 /** Nesting level of a block: two leading spaces per level, up to six (as on the server). */

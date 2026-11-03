@@ -120,6 +120,7 @@ export function createComments(deps) {
     if (button) {
       const n = openThreads().length;
       $(".comments-count", button).textContent = n ? String(n) : "";
+      button.setAttribute("aria-label", n ? `Comments, ${n} open` : "Comments");
       button.setAttribute("aria-pressed", String(open));
     }
   }
