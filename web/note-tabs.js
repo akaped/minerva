@@ -30,6 +30,8 @@ const params = new URLSearchParams(
   typeof location === "undefined" ? "" : location.search,
 );
 export const initialNote = params.get("note");
+/** A block of that note to scroll to. */
+export const initialBlock = params.get("block");
 /** An AI chat tab's context, `kind:id` (for example `note:<uuid>`). */
 export const initialChat = params.get("chat");
 const parentOrigin = params.get("host");
@@ -221,9 +223,13 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       secondary = key;
     }
   }
-  /** Opens (or shows) a tab; `split` keeps the shown tab and adds this one beside it. */
+  /**
+   * Opens (or shows) a tab; `split` keeps the shown tab and adds this one
+   * beside it, and `block` scrolls the note to one of its blocks.
+   */
   function open({
     id = "",
+    block = "",
     origin = location.origin,
     title = "Note",
     workspace = "",
@@ -236,6 +242,11 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     const previous = split && shown ? active : null;
     const existing = tabs.find((t) => t.key === key);
     if (existing) {
+      if (block) {
+        const deliver = () => send(existing, "show-block", { block });
+        if (existing.ready) deliver();
+        else existing.queue.push(deliver);
+      }
       active = key;
       shown = true;
       pair(previous, key);
@@ -259,6 +270,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       url.searchParams.set("group", group);
       if (chat) url.searchParams.set("chat", chat);
       else if (id) url.searchParams.set("note", id);
+      if (id && block) url.searchParams.set("block", block);
     }
     frame.src = url.href;
     frame.allow =
@@ -472,6 +484,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     )
       open({
         id: message.id,
+        block: /^[\w-]{1,64}$/.test(message.block || "") ? message.block : "",
         origin: tab.origin,
         title: String(message.title || "Note"),
       });

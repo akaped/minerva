@@ -330,6 +330,18 @@ fn database_slot(body: &str, links: Links) -> String {
         }
     }
 }
+/// `![label](#note/{id}[#{block}])`: members get a slot the app fills with the
+/// note or block; everyone else a short note, since the note may be private.
+pub(crate) fn embed_slot(note: &str, block: Option<&str>, links: Links) -> String {
+    match links {
+        Links::Members => format!(
+            "<span class=\"note-embed ne-note-{note}{}\"></span>",
+            block.map_or(String::new(), |b| format!(" ne-block-{b}"))
+        ),
+        _ => "<span class=\"note-embed-note\">▤ Embedded note · shown to workspace members</span>"
+            .into(),
+    }
+}
 fn to_html(markdown: &str, links: Links) -> String {
     let markdown = &markdown
         .replace(crate::journal::UNFINISHED_TASKS, TASKS_SENTINEL)
@@ -340,15 +352,16 @@ fn to_html(markdown: &str, links: Links) -> String {
     let mut code: Option<(String, String)> = None;
     // Note links are private IDs: guests and the public see their text only.
     let mut dropped_links = 0usize;
-    // Inside an image written as an audio player: its alt text is not shown.
-    let mut in_audio = false;
+    // Inside an image shown as something else (an audio player, an embedded
+    // note): its alt text is not shown.
+    let mut skip_alt = false;
     // Inside a link, a written address stays text: it is already linked.
     let mut in_link = 0usize;
     // Joined text, so an address split around `_` or `*` is seen whole.
     let parser = Parser::new_ext(markdown, pulldown_cmark::Options::all());
     for event in pulldown_cmark::TextMergeStream::new(parser) {
-        if in_audio {
-            in_audio = !matches!(event, Event::End(TagEnd::Image));
+        if skip_alt {
+            skip_alt = !matches!(event, Event::End(TagEnd::Image));
             continue;
         }
         match event {
@@ -403,6 +416,11 @@ fn to_html(markdown: &str, links: Links) -> String {
                 title,
                 id,
             }) => {
+                if let Some((note, block)) = crate::embeds::target(&dest_url) {
+                    events.push(Event::InlineHtml(embed_slot(note, block, links).into()));
+                    skip_alt = true;
+                    continue;
+                }
                 let dest_url = links
                     .map(&dest_url, true)
                     .map(Into::into)
@@ -416,7 +434,7 @@ fn to_html(markdown: &str, links: Links) -> String {
                         )
                         .into(),
                     ));
-                    in_audio = true;
+                    skip_alt = true;
                     continue;
                 }
                 events.push(Event::Start(Tag::Image {
@@ -989,6 +1007,7 @@ fn clean(html: &str) -> String {
                     .filter(|c| {
                         c.starts_with("hl-")
                             || c.starts_with("db-")
+                            || c.starts_with("ne-")
                             || c.starts_with("language-")
                             || c.starts_with("markdown-alert-")
                             || c.starts_with("md-indent")
@@ -1003,6 +1022,8 @@ fn clean(html: &str) -> String {
                                     | "math-error"
                                     | "journal-tasks"
                                     | "note-toc"
+                                    | "note-embed"
+                                    | "note-embed-note"
                                     | "task-marker"
                             )
                     })
@@ -1165,6 +1186,29 @@ mod tests {
                 "{html}"
             );
         }
+    }
+    #[test]
+    fn block_links_and_embeds() {
+        let id = "0b8f5f9e-0000-4000-8000-000000000000";
+        let html = render(&format!("See [the decision](#note/{id}#b1)."));
+        assert!(html.contains(&format!("href=\"#note/{id}#b1\"")), "{html}");
+        let html = render(&format!("![Plan](#note/{id}#b1)"));
+        assert!(
+            html.contains(&format!(
+                "<span class=\"note-embed ne-note-{id} ne-block-b1\"></span>"
+            )),
+            "{html}"
+        );
+        assert!(!html.contains("Plan") && !html.contains("<img"), "{html}");
+        assert!(render(&format!("![Plan](#note/{id})")).contains("note-embed ne-note-"));
+        // A malformed target stays an ordinary (broken) picture.
+        assert!(render("![x](#note/123)").contains("<img"));
+        let html = render_for(&format!("![Plan](#note/{id})"), Links::Public("p"));
+        assert!(
+            html.contains("Embedded note") && !html.contains(id),
+            "{html}"
+        );
+        assert!(render(&format!("`![Plan](#note/{id})`")).contains("<code>"));
     }
     #[test]
     fn reports_json_errors_without_executing_code() {

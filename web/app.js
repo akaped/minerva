@@ -8,6 +8,7 @@ import {
   createNoteTabs,
   isPane,
   initialNote,
+  initialBlock,
   initialChat,
   paneMessage,
 } from "./note-tabs.js";
@@ -22,6 +23,14 @@ import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import { buildGraph, neighborhood, mountGraph, folderColor } from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
+import {
+  noteTarget,
+  slotTarget,
+  blockLabel,
+  blockLink,
+  embedCode,
+  embedAllowed,
+} from "./note-embeds.js";
 import {
   ROLLUP_FUNCTIONS,
   computedText,
@@ -330,6 +339,7 @@ if (isPane) {
     )
       return;
     if (e.data.type === "visibility") videos.setVisible(!!e.data.visible);
+    if (e.data.type === "show-block" && note) showBlock(String(e.data.block));
     if (e.data.type === "insert-blocks") {
       // The note may still be loading when the tab was just opened for this.
       for (let i = 0; i < 100 && !note; i++)
@@ -740,14 +750,16 @@ new MutationObserver(() => {
     renderDiagrams().catch(error);
     renderJournalTasks().catch(error);
     renderDatabaseEmbeds().catch(error);
+    renderNoteEmbeds().catch(error);
   }, 60);
 }).observe(document.body, { childList: true, subtree: true });
 // Links between notes and inline tags inside rendered blocks.
 document.addEventListener("click", (e) => {
   const link = e.target.closest?.('a[href^="#note/"]');
-  if (link && !shareMode) {
+  const target = link && noteTarget(link.getAttribute("href"));
+  if (target && !shareMode) {
     e.preventDefault();
-    openNote(link.getAttribute("href").slice(6)).catch(() =>
+    openNote(target.note, { block: target.block }).catch(() =>
       toast("That note is not available to you."),
     );
     return;
@@ -1175,7 +1187,7 @@ function login() {
       await refresh();
       shell();
       firstSignIn();
-      if (initialNote) await openNote(initialNote);
+      if (initialNote) await openNote(initialNote, { block: initialBlock });
     } catch (err) {
       $(".form-error").textContent = err.message;
     } finally {
@@ -1252,7 +1264,7 @@ function secondFactor(challenge) {
       await refresh();
       shell();
       firstSignIn();
-      if (initialNote) await openNote(initialNote);
+      if (initialNote) await openNote(initialNote, { block: initialBlock });
     } catch (err) {
       $(".form-error", form).textContent = err.message;
       // An expired or exhausted challenge needs the password again.
@@ -1830,7 +1842,8 @@ function deleteWorkspace(w, after = null) {
   );
 }
 /** Opens a note; with `split`, in a tab beside the note tab that is shown. */
-async function openNote(id, { split = false } = {}) {
+async function openNote(id, { split = false, block = null } = {}) {
+  if (block && note?.id === id && !noteTabs && !chatPane) return showBlock(block);
   if (noteTabs) {
     await flush();
     const target =
@@ -1842,6 +1855,7 @@ async function openNote(id, { split = false } = {}) {
         data.workspaces.find((w) => w.id === workspaceOfNote(target))?.name ||
         "",
       split,
+      block: block || "",
     });
     return;
   }
@@ -1849,6 +1863,7 @@ async function openNote(id, { split = false } = {}) {
     paneMessage("open-note", {
       id,
       title: data.notes.find((n) => n.id === id)?.title,
+      block,
     });
     return;
   }
@@ -1887,6 +1902,18 @@ async function openNote(id, { split = false } = {}) {
   live.presence = blockPresence;
   await live.start();
   shell();
+  if (block) showBlock(block);
+}
+/** Scrolls to a block of the open note and marks it for a moment. */
+function showBlock(id) {
+  if (!note?.blocks.some((b) => b.id === id))
+    return toast("That block is no longer in the note.");
+  revealBlock(id);
+  const el = $(`#blocks [data-block="${CSS.escape(id)}"]`);
+  el?.scrollIntoView({ block: "center" });
+  el?.classList.add("comment-flash");
+  setTimeout(() => el?.classList.remove("comment-flash"), 1500);
+  $(".block-body", el)?.focus({ preventScroll: true });
 }
 function receiveLive(snapshot, result) {
   if (!note || note.id !== result.note.id) return;
@@ -2218,6 +2245,14 @@ function renderEditor() {
         "Copy link",
         'title="Copy a link to open this note in another Minerva tab"',
       ),
+      shareMode
+        ? ""
+        : item(
+            "copy-note-embed",
+            "note",
+            "Copy as embed",
+            'title="Copy the code that shows this note inside another note"',
+          ),
       item("export", "download", "Export…"),
     ],
     shareMode
@@ -2287,6 +2322,10 @@ function renderEditor() {
   action($("#copy-note-link"), "click", async () => {
     await navigator.clipboard.writeText(`${serverOrigin()}/?note=${note.id}`);
     toast("Note link copied");
+  });
+  action($("#copy-note-embed"), "click", async () => {
+    await navigator.clipboard.writeText(embedCode(note.title, note.id));
+    toast("Embed copied. Paste it into another note to show this one there.");
   });
   action($("#history"), "click", history);
   action($("#attachments"), "click", attachmentDialog);
@@ -2821,10 +2860,15 @@ function closeFind() {
 }
 /**
  * A menu of a toolbar's other tools under `button`: it opens on click (or
- * Enter, Space, ↓), moves with ↑/↓/Home/End, and closes with Escape, Tab, a
+ * Enter, Space, and ↓ unless `arrowOpens` is false; without `clickOpens`, the
+ * caller opens it), moves with ↑/↓/Home/End, and closes with Escape, Tab, a
  * click elsewhere, or once an item is chosen.
  */
-function bindToolbarMenu(button, menu) {
+function bindToolbarMenu(
+  button,
+  menu,
+  { arrowOpens = true, clickOpens = true } = {},
+) {
   if (!button || !menu) return;
   const items = () =>
     $$("[role^=menuitem]", menu).filter((b) => !b.disabled);
@@ -2858,11 +2902,12 @@ function bindToolbarMenu(button, menu) {
     if (!menu.contains(e.target) && e.target !== button && !button.contains(e.target))
       close();
   };
-  button.addEventListener("click", () =>
-    menu.hidden ? open(false) : close(),
-  );
+  if (clickOpens)
+    button.addEventListener("click", () =>
+      menu.hidden ? open(false) : close(),
+    );
   button.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown" && arrowOpens) {
       e.preventDefault();
       open();
     }
@@ -2892,6 +2937,7 @@ function bindToolbarMenu(button, menu) {
     }
     close(true);
   }, true);
+  return { open, close };
 }
 function toggleFocus(force) {
   const on = document.body.classList.toggle("focus-mode", force);
@@ -2959,7 +3005,7 @@ function emptyBlockHTML() {
 }
 function blockHTML(b, i) {
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="Comment on this block" aria-label="Comment on this block">💬</button>`}</div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · click for options · ↑/↓ to move with the keyboard" aria-label="Block options (drag, or press the up and down arrows, to move)" aria-haspopup="menu" aria-expanded="false">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : shareMode ? "" : '<div class="block-controls"><button class="block-handle readonly" title="Block options" aria-label="Block options" aria-haspopup="menu" aria-expanded="false">⠿</button></div>'}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="Comment on this block" aria-label="Comment on this block">💬</button>`}</div>`;
 }
 /** Moves the block at `i` to index `j` and saves. */
 async function moveBlock(i, j) {
@@ -2975,8 +3021,10 @@ async function moveBlock(i, j) {
   await queueSave();
 }
 /** Drags a block by its handle; a line shows where it will land. */
+// When a block was last dropped: the click that ends a drag opens no menu.
+let droppedAt = 0;
 function dragBlock(e, el, id) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || !editable()) return;
   e.preventDefault();
   const root = $("#blocks"),
     line = document.createElement("div");
@@ -3007,6 +3055,7 @@ function dragBlock(e, el, id) {
     el.classList.remove("dragging");
     document.body.classList.remove("dragging-block");
     if (target === null) return;
+    droppedAt = performance.now();
     const i = note.blocks.findIndex((b) => b.id === id);
     let j = target
       ? note.blocks.findIndex((b) => b.id === target)
@@ -3465,7 +3514,8 @@ function linkCards() {
 }
 /** `[[toc]]` blocks list the note's headings; each scrolls to its heading. */
 function fillContents() {
-  const slots = $$("#blocks .note-toc");
+  // A contents slot inside an embedded note is not this note's.
+  const slots = $$("#blocks .note-toc").filter((s) => !s.closest(".note-embed"));
   if (!slots.length || !note) return;
   const headings = note.blocks
     .map((b) => {
@@ -3521,7 +3571,7 @@ function bindBlock(el) {
   action($(".block-body", el), "click", (e) => {
     if (
       e.target.closest(
-        "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio, .file-card",
+        "a, .tag, .journal-tasks button, .db-embed, .note-embed, .youtube-card, audio, .file-card",
       )
     )
       return;
@@ -3555,12 +3605,21 @@ function bindBlock(el) {
   const handle = $(".block-handle", el);
   action(handle, "keydown", async (e) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    if (!editable()) return;
     e.preventDefault();
     const i = note.blocks.findIndex((b) => b.id === id);
     await moveBlock(i, i + (e.key === "ArrowUp" ? -1 : 1));
     $(`[data-block="${CSS.escape(id)}"] .block-handle`)?.focus();
   });
   handle?.addEventListener("pointerdown", (e) => dragBlock(e, el, id));
+  // A click on the handle (not the end of a drag) opens the block's menu.
+  handle?.addEventListener("click", (e) => {
+    if (performance.now() - droppedAt < 400) return;
+    const menu = handleMenus.get(handle) || handleMenu(handle, id);
+    handleMenus.set(handle, menu);
+    if (menu.element.hidden) menu.open(e.detail === 0);
+    else menu.close();
+  });
   action($("[data-remove]", el), "click", async () => {
     if (blockLocked(id)) return;
     const i = note.blocks.findIndex((b) => b.id === id);
@@ -3574,6 +3633,44 @@ function bindBlock(el) {
     announce("Block deleted. Press Ctrl+Z to undo.");
     await queueSave();
   });
+}
+/**
+ * The menu of a block's handle: links to the block and embeds of it, to paste
+ * into any note. Made when first opened.
+ */
+const handleMenus = new WeakMap();
+function handleMenu(handle, id) {
+  const menu = document.createElement("div");
+  menu.className = "row-menu note-menu block-menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", "Block");
+  menu.hidden = true;
+  menu.innerHTML = `<button role="menuitem" tabindex="-1" data-block-copy="link">${icon("link")}Copy link to block</button><button role="menuitem" tabindex="-1" data-block-copy="embed">${icon("note")}Copy as embed</button>`;
+  handle.after(menu);
+  menu.addEventListener("click", async (e) => {
+    const choice = e.target.closest("[data-block-copy]")?.dataset.blockCopy;
+    const b = note?.blocks.find((x) => x.id === id);
+    if (!choice || !b) return;
+    const label = blockLabel(b.markdown) || note.title;
+    const text =
+      choice === "link"
+        ? blockLink(label, note.id, id)
+        : embedCode(label, note.id, id);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(
+        choice === "link"
+          ? "Link to the block copied. Paste it into any note."
+          : "Embed copied. Paste it into a note to show this block there.",
+      );
+    } catch {
+      toast("Copying was not allowed by the browser.");
+    }
+  });
+  return {
+    element: menu,
+    ...bindToolbarMenu(handle, menu, { arrowOpens: false, clickOpens: false }),
+  };
 }
 /**
  * After blocks were added or removed in place (rather than by redrawing them
@@ -3778,7 +3875,7 @@ function renderedText(body, node, offset) {
   const copy = range.cloneContents();
   // Text that is not part of the block's own words.
   $$(
-    "button, [aria-hidden='true'], .image-bar, .db-embed, .note-toc, .link-card, math, .mermaid-diagram, .file-card",
+    "button, [aria-hidden='true'], .image-bar, .db-embed, .note-embed, .note-toc, .link-card, math, .mermaid-diagram, .file-card",
     copy,
   ).forEach((n) => n.remove());
   return copy.textContent;
@@ -3987,7 +4084,10 @@ function showPicker(ta, query, items, label) {
   linkPicker = { ta, query, items, selected: 0, list };
   drawLinkPicker();
 }
-/** `[[` autocomplete: pick a note and insert a link that survives renames. */
+/**
+ * `[[` autocomplete: pick a note and insert a link that survives renames;
+ * after `![[`, the note is embedded instead.
+ */
 async function updateLinkPicker(ta) {
   const mention = !shareMode && mentionQuery(ta.value, ta.selectionStart);
   if (mention) return updateMentionPicker(ta, mention);
@@ -4000,6 +4100,8 @@ async function updateLinkPicker(ta) {
         .sort((a, b) => b.updated_at - a.updated_at);
   if (linkQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
   const items = results.filter((n) => n.id !== note.id).slice(0, 8);
+  query.embed = ta.value[query.start - 1] === "!";
+  if (query.embed) return showPicker(ta, query, items, "Embed a note");
   if (
     /^(u|un|unf|unc|tas|todo|jour|open)/i.test(query.query.trim()) ||
     !query.query.trim()
@@ -4032,17 +4134,24 @@ function pickLink(index) {
   if (!target) return;
   const text = target.email
     ? `@${target.email} `
-    : target.special || noteLink(target.title, target.id);
+    : query.embed
+      ? embedCode(target.title, target.id)
+      : target.special || noteLink(target.title, target.id);
+  const from = query.embed ? query.start - 1 : query.start;
   replaceRange(ta, {
-    from: query.start,
+    from,
     to: ta.selectionStart,
     text,
-    selStart: query.start + text.length,
-    selEnd: query.start + text.length,
+    selStart: from + text.length,
+    selEnd: from + text.length,
   });
   closeLinkPicker();
   announce(
-    target.email ? `Mentioned ${target.name}` : `Linked to ${target.title}`,
+    target.email
+      ? `Mentioned ${target.name}`
+      : query.embed
+        ? `Embedded ${target.title}`
+        : `Linked to ${target.title}`,
   );
 }
 function closeLinkPicker() {
@@ -4721,6 +4830,7 @@ const COMMAND_LOOK = {
   "Record audio": ["Media & links", "●", "Record from the microphone", ""],
   Link: ["Media & links", "↗", "A link to a web page", ""],
   "Link to note": ["Media & links", "⧉", "Link another note", "[["],
+  "Embedded note": ["Media & links", "▤", "Show another note here, kept current", "![["],
   Table: ["Media & links", "▦", "Rows and columns", ""],
   "Database (live)": ["Media & links", "⊞", "Embed a live database", ""],
   Code: ["Advanced", "</>", "Code with highlighting", "```"],
@@ -4852,7 +4962,7 @@ function blockMenu(existingId, capturedSelection = "") {
     markDirty();
     renderBlocks();
     editBlock(b.id);
-    if (command[1] === "[[")
+    if (command[1] === "[[" || command[1] === "![[")
       updateLinkPicker($(".block textarea")).catch(() => closeLinkPicker());
   }
   const look = (c) =>
@@ -8416,6 +8526,139 @@ async function refreshEmbeds() {
     if (JSON.stringify(entry.db ?? null) !== before) redrawEmbeds(id);
   }
 }
+// Embedded notes and blocks the server sent, by "note#block", for redraws.
+const noteEmbeds = new Map();
+// What each slot shows now, so unchanged content is not redrawn.
+const drawnEmbeds = new WeakMap();
+let noteEmbedTimer;
+const embedKey = (t) => `${t.note}#${t.block || ""}`;
+const EMBED_PROBLEMS = {
+  unavailable: "This note is not available to you, or was deleted.",
+  trashed: "This note is in the trash.",
+  "no-block": "That block is no longer in its note.",
+  loop: "Already shown here.",
+  deep: "Embeds inside embeds stop here.",
+};
+/** The embeds around a slot (innermost first), and the block it is written in. */
+function embedContext(slot) {
+  const outer = [];
+  for (
+    let p = slot.parentElement?.closest(".note-embed");
+    p;
+    p = p.parentElement?.closest(".note-embed")
+  )
+    outer.push(slotTarget(p.classList));
+  const block = slot.closest("#blocks > [data-block]")?.dataset.block;
+  return { outer, host: { note: note?.id, block } };
+}
+/** A block of the open note, and the blocks nested under it, as an embed. */
+function localEmbed(target) {
+  const i = note.blocks.findIndex((b) => b.id === target.block);
+  if (i < 0) return { state: "no-block" };
+  const level = indentLevel(note.blocks[i].markdown);
+  let end = i + 1;
+  while (
+    end < note.blocks.length &&
+    note.blocks[end].markdown.trim() &&
+    indentLevel(note.blocks[end].markdown) > level
+  )
+    end++;
+  return {
+    state: "ok",
+    title: note.title,
+    icon: note.icon,
+    blocks: note.blocks.slice(i, end).map((b, j) => ({
+      id: b.id,
+      html: note.rendered?.[i + j] ?? esc(b.markdown),
+    })),
+  };
+}
+function drawNoteEmbed(slot, target, entry) {
+  slot.dataset.state = "ready";
+  const href = `#note/${target.note}${target.block ? `#${target.block}` : ""}`;
+  const problem = EMBED_PROBLEMS[entry?.state] || (!entry?.blocks && "This note could not be loaded.");
+  const html = problem
+    ? `<span class="note-embed-note">${icon("note")}${esc(problem)}${entry?.title && entry.state !== "trashed" ? ` <a href="${esc(href)}">${esc(entry.title)}</a>` : ""}</span>`
+    : `<span class="note-embed-panel" role="group" aria-label="${target.block ? "Block" : "Note"} from ${esc(entry.title)}"><a class="note-embed-source" href="${esc(href)}" title="${target.block ? "Open the block in its note" : "Open the note"}"><span aria-hidden="true">${esc(entry.icon || "▤")}</span>${esc(entry.title)}</a><span class="note-embed-body">${entry.blocks.map((b) => `<span class="note-embed-block">${b.html}</span>`).join("")}${entry.more ? '<span class="note-embed-more">The rest is in the note.</span>' : ""}</span></span>`;
+  // Unchanged content is left alone, so a reader's selection survives.
+  if (drawnEmbeds.get(slot) === html) return;
+  drawnEmbeds.set(slot, html);
+  slot.innerHTML = html;
+}
+/** Fills the slots of embedded notes and blocks, then keeps them current. */
+async function renderNoteEmbeds() {
+  const slots = $$("#blocks .note-embed:not([data-state])");
+  if (!slots.length || !note) return;
+  const waiting = [];
+  const wanted = new Map();
+  for (const slot of slots) {
+    const target = slotTarget(slot.classList);
+    if (!target) {
+      slot.dataset.state = "ready";
+      continue;
+    }
+    slot.dataset.state = "loading";
+    const { outer, host } = embedContext(slot);
+    const allowed = embedAllowed(target, outer, host);
+    const key = embedKey(target);
+    if (allowed !== "ok") drawNoteEmbed(slot, target, { state: allowed });
+    else if (target.note === note.id) drawNoteEmbed(slot, target, localEmbed(target));
+    else if (noteEmbeds.has(key)) drawNoteEmbed(slot, target, noteEmbeds.get(key));
+    else {
+      slot.innerHTML = `<span class="note-embed-note">${icon("note")}Loading…</span>`;
+      wanted.set(key, target);
+      waiting.push([slot, target]);
+    }
+  }
+  if (wanted.size) {
+    const items = [...wanted.values()];
+    const answers = [];
+    for (let i = 0; i < items.length; i += 50)
+      answers.push(
+        ...(await api("embeds", "POST", { items: items.slice(i, i + 50) }).catch(
+          () => [],
+        )),
+      );
+    for (const a of answers) noteEmbeds.set(embedKey(a), a);
+    for (const [slot, target] of waiting)
+      if (slot.isConnected)
+        drawNoteEmbed(slot, target, noteEmbeds.get(embedKey(target)));
+  }
+  clearInterval(noteEmbedTimer);
+  noteEmbedTimer = setInterval(() => refreshNoteEmbeds().catch(error), 5000);
+}
+// Picks up edits to embedded notes, made here or by other people.
+async function refreshNoteEmbeds() {
+  const slots = $$("#blocks .note-embed[data-state=ready]");
+  if (!slots.length || !note) return clearInterval(noteEmbedTimer);
+  if (document.hidden) return;
+  const known = new Map();
+  for (const slot of slots) {
+    const target = slotTarget(slot.classList);
+    if (target && target.note !== note.id && noteEmbeds.has(embedKey(target)))
+      known.set(embedKey(target), target);
+  }
+  const items = [...known.values()].slice(0, 50).map((t) => ({
+    ...t,
+    revision: noteEmbeds.get(embedKey(t)).revision,
+  }));
+  const answers = items.length
+    ? await api("embeds", "POST", { items }).catch(() => [])
+    : [];
+  for (const a of answers)
+    if (!a.unchanged) noteEmbeds.set(embedKey(a), a);
+  for (const slot of $$("#blocks .note-embed[data-state=ready]")) {
+    const target = slotTarget(slot.classList);
+    if (!target) continue;
+    const { outer, host } = embedContext(slot);
+    if (embedAllowed(target, outer, host) !== "ok") continue;
+    const entry =
+      target.note === note.id
+        ? localEmbed(target)
+        : noteEmbeds.get(embedKey(target));
+    if (entry) drawNoteEmbed(slot, target, entry);
+  }
+}
 // Inserts a database into the note: an existing one or a new task list.
 function databaseEmbedDialog(existingId) {
   const ids = new Set(folders().map((f) => f.id));
@@ -8833,10 +9076,11 @@ function sharedUnavailable() {
     shell();
     if (localMode) showStartNotice();
     firstSignIn();
-    const requested =
-      initialNote ||
-      (location.hash.startsWith("#note/") ? location.hash.slice(6) : "");
-    if (requested) await openNote(requested);
+    const requested = initialNote
+      ? { note: initialNote, block: initialBlock }
+      : noteTarget(location.hash);
+    if (requested)
+      await openNote(requested.note, { block: requested.block });
     // The window around this tab shows it once its note is drawn.
     if (isPane) paneMessage("loaded");
   } catch (e) {

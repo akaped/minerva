@@ -124,32 +124,34 @@ fn download(bytes: Vec<u8>, media: &str, filename: &str) -> Response {
 }
 
 /// Rewrites Minerva-specific destinations in block Markdown: attachment URLs via
-/// `attachment(id, image)` and note links `[label](#note/{id})` to `[[Title]]`.
+/// `attachment(id, image)` and note links `[label](#note/{id}[#{block}])` to
+/// `[[Title]]` (an embed's `!` stays, as in `![[Title]]`).
 fn portable(d: &Data, markdown: &str, attachment: &dyn Fn(&str, bool) -> String) -> String {
     let mut out = String::with_capacity(markdown.len());
     let mut rest = markdown;
     while let Some(at) = rest.find("](") {
         let (before, after) = rest.split_at(at);
         let destination = &after[2..];
-        if let Some(id) = destination.strip_prefix("#note/").and_then(|d| d.get(..36)) {
-            if destination[42..].starts_with(')') && Uuid::parse_str(id).is_ok() {
-                // Find the label's opening bracket (labels escape inner brackets).
-                let bytes = before.as_bytes();
-                let open = (0..bytes.len())
-                    .rev()
-                    .find(|&i| bytes[i] == b'[' && (i == 0 || bytes[i - 1] != b'\\'));
-                if let Some(open) = open {
-                    let label = before[open + 1..].replace("\\[", "[").replace("\\]", "]");
-                    let title = d
-                        .notes
-                        .iter()
-                        .find(|n| n.id == id)
-                        .map_or(label, |n| n.title.clone());
-                    out.push_str(&before[..open]);
-                    out.push_str(&format!("[[{title}]]"));
-                    rest = &destination[43..];
-                    continue;
-                }
+        let note_link = destination
+            .find(')')
+            .and_then(|close| Some((embeds::target(&destination[..close])?.0, close)));
+        if let Some((id, close)) = note_link {
+            // Find the label's opening bracket (labels escape inner brackets).
+            let bytes = before.as_bytes();
+            let open = (0..bytes.len())
+                .rev()
+                .find(|&i| bytes[i] == b'[' && (i == 0 || bytes[i - 1] != b'\\'));
+            if let Some(open) = open {
+                let label = before[open + 1..].replace("\\[", "[").replace("\\]", "]");
+                let title = d
+                    .notes
+                    .iter()
+                    .find(|n| n.id == id)
+                    .map_or(label, |n| n.title.clone());
+                out.push_str(&before[..open]);
+                out.push_str(&format!("[[{title}]]"));
+                rest = &destination[close + 1..];
+                continue;
             }
         }
         if let Some(tail) = destination.strip_prefix("/api/v1/attachments/") {
@@ -184,6 +186,51 @@ fn is_list_item(line: &str) -> bool {
     }
 }
 
+/// Embedded notes and blocks become their content, when the exporting member
+/// can open them. Embeds inside that content stay as they are.
+fn with_embeds<'a>(d: &Data, u: &User, markdown: &'a str) -> std::borrow::Cow<'a, str> {
+    if !markdown.contains("](#note/") {
+        return markdown.into();
+    }
+    outside_code(markdown, |text| {
+        embeds::replace_refs(text, |r| {
+            if !r.embed {
+                return None;
+            }
+            let n = d.notes.iter().find(|n| n.id == r.note);
+            let content = match n {
+                Some(n) if !n.trashed && note_role(d, u, n).is_some() => match r.block {
+                    Some(block) => embeds::with_children(n, block).map(|blocks| {
+                        blocks
+                            .into_iter()
+                            .map(|(_, m)| m)
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    }),
+                    None => Some(
+                        n.blocks
+                            .iter()
+                            .map(|b| b.markdown.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n\n"),
+                    ),
+                },
+                Some(n) if n.trashed && note_role(d, u, n).is_some() => None,
+                Some(_) => return Some("*Embedded note (not available to you)*".into()),
+                None => None,
+            };
+            Some(match content {
+                Some(content) => format!("\n\n{content}\n\n"),
+                None => "*Embedded note (deleted)*".into(),
+            })
+        })
+        .into_owned()
+    })
+    // An embed on its own adds no blank lines around the block.
+    .trim_matches('\n')
+    .to_string()
+    .into()
+}
 /// Embedded databases become a snapshot table of their current records when the
 /// exporting member can read them.
 fn with_databases<'a>(d: &Data, u: &User, markdown: &'a str) -> std::borrow::Cow<'a, str> {
@@ -450,7 +497,11 @@ fn markdown(
     for block in &n.blocks {
         let body = portable(
             d,
-            &with_databases(d, u, &with_values(&block.markdown, &values)),
+            &with_databases(
+                d,
+                u,
+                &with_embeds(d, u, &with_values(&block.markdown, &values)),
+            ),
             attachment,
         );
         // Consecutive list items stay one tight list; other blocks are paragraphs.
@@ -583,7 +634,11 @@ fn document(
             format!(
                 "<div class=\"block\">{}</div>\n",
                 render_for(
-                    &with_databases(&s.data, u, &with_values(&b.markdown, &values)),
+                    &with_databases(
+                        &s.data,
+                        u,
+                        &with_embeds(&s.data, u, &with_values(&b.markdown, &values)),
+                    ),
                     Links::Export
                 )
             )

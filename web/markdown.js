@@ -87,6 +87,11 @@ export const blockCommands = [
   ["Table of contents", "[[toc]]", "toc outline headings contents index"],
   ["Link to note", "[[", "wiki backlink mention reference recall"],
   [
+    "Embedded note",
+    "![[",
+    "embed transclude include show note page block synced",
+  ],
+  [
     "Assign to someone",
     "@assign",
     "/assigntouser assign user person mention email notify",

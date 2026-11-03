@@ -749,15 +749,19 @@ fn cover_html(cover: &str, links: Links) -> String {
         escape(&src)
     )
 }
-/// Points links to other notes (`#note/{id}`) at their published pages, so wiki
-/// pages link to each other. Links to unpublished notes are dropped when rendering.
+/// Points links to other notes (`#note/{id}`, or one of their blocks) at their
+/// published pages, so wiki pages link to each other; an embedded published
+/// note becomes a link to its page. Links to unpublished notes are dropped when
+/// rendering, and their embeds say they are shown to members.
 fn public_links(markdown: &str, pages: &[(String, String)]) -> String {
     if !markdown.contains("](#note/") {
         return markdown.to_string();
     }
-    pages.iter().fold(markdown.to_string(), |text, (id, path)| {
-        text.replace(&format!("](#note/{id})"), &format!("](/{path})"))
+    crate::embeds::replace_refs(markdown, |r| {
+        let (_, path) = pages.iter().find(|(id, _)| id == r.note)?;
+        Some(format!("[{}](/{path})", r.label))
     })
+    .into_owned()
 }
 fn rendered(blocks: &[Block], links: Links, pages: &[(String, String)]) -> Vec<String> {
     blocks

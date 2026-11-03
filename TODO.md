@@ -4,11 +4,9 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Block references and embeds**: link to a block (`#note/<id>#<block>`), show a block or note inside another, kept live.
-
+- [ ] **Installable web app (PWA)**: manifest, service worker for offline reading, and a quick-capture page for phones.
 ## Soon
 
-- [ ] **Installable web app (PWA)**: manifest, service worker for offline reading, and a quick-capture page for phones.
 - [ ] **Calendar feed**: reminders and journal dates as an iCal URL; CalDAV later.
 - [ ] **Recording to notes**: recording → transcript → summary with action items, turned into tasks and reminders.
 - [ ] **Translations** of the interface, Italian first: move strings out of `web/*.js`.
@@ -32,9 +30,11 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
 - [ ] **Search**: index database records and attachment text (PDFs); search filters (folder, tag, date) in the Ctrl+K dialog.
 - [ ] **Databases**: saving the board grouping and calendar property chosen for an embedded view (embeds use the first that fits); formulas over lists of related records, and rollups of rollups; number formats (currency, percent); records' pages in the desktop app's offline copies; reordering cards within a board column.
-- [ ] **Graph**: keep the positions people arrange; colour by tag as well as folder; filter by folder or date; links to blocks and embeds as edges once they exist; a small graph of a note's neighbours inside the note.
+- [ ] **Graph**: keep the positions people arrange; colour by tag as well as folder; filter by folder or date; a small graph of a note's neighbours inside the note.
 - [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
 - [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
+
+- [ ] **Block references and embeds**: editing an embedded block in place (now it opens its note); choosing a block in the `[[` picker (now from the block's ⠿ menu); block anchors on published pages (a block link goes to the page's top); importing Logseq's `((uuid))` references and `{{embed …}}`; embeds refresh every 5 seconds instead of on a live signal.
 
 ## MAYBE IN FUTURE. I will tell you when
 - [ ] **AI**: semantic retrieval (embeddings stored next to the search index), per-person provider keys and usage limits, scheduled agents, AI actions on several selected blocks, streaming in the selection assistant.

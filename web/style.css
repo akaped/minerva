@@ -7767,6 +7767,13 @@ body.comments-open .note-pane {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.graph-link svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 @media (max-width: 760px) {
   .graph-wrap {
@@ -7817,4 +7824,77 @@ body.comments-open .note-pane {
   .editor-toolbar .toolbar-label {
     display: none;
   }
+}
+/* A note or block shown inside another note (`![…](#note/…)`): its content in
+   a quiet frame, with its source above. */
+.note-embed,
+.note-embed-panel,
+.note-embed-body,
+.note-embed-block {
+  display: block;
+}
+.note-embed-panel {
+  margin: 4px 0;
+  padding: 6px 14px 8px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--soft) 55%, transparent);
+  cursor: default;
+}
+.note-embed-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.note-embed-source:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.note-embed-block > :first-child {
+  margin-top: 0;
+}
+.note-embed-block > :last-child {
+  margin-bottom: 0;
+}
+.note-embed-more {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.note-embed-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.note-embed-note svg {
+  width: 15px;
+  height: 15px;
+}
+/* The menu of a block's handle. */
+.block-controls:has([aria-expanded="true"]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+.block-controls .row-menu.block-menu {
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  min-width: 210px;
+}
+.block-controls .block-menu button {
+  padding: 7px 10px;
+  color: inherit;
+  font-size: 13px;
+}
+.block-handle.readonly {
+  cursor: pointer;
 }

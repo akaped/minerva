@@ -74,7 +74,19 @@ Yjs/Yrs roots: `title` text; `order` string-ID array; `block:<id>` text; `meta` 
 
 ## Graph
 
-`GET /workspaces/{id}/graph` returns `{nodes, links}` for the graph view: `nodes` are the workspace's notes the caller can open (not trashed), each `{id, title, icon, folder_id, updated_at, tags, journal, record}` (`tags` includes inline `#tags`), and `links` are `[from, to]` pairs of note IDs, one per linking note and target, for links written as `[…](#note/{id})`. A link to a note the caller cannot open is left out. 403 when the caller can open nothing in the workspace.
+`GET /workspaces/{id}/graph` returns `{nodes, links}` for the graph view: `nodes` are the workspace's notes the caller can open (not trashed), each `{id, title, icon, folder_id, updated_at, tags, journal, record}` (`tags` includes inline `#tags`), and `links` are `[from, to]` pairs of note IDs, one per linking note and target, for links written as `[…](#note/{id})`, links to a block (`#note/{id}#{block}`) and embeds (`![…](#note/{id})`). A link to a note the caller cannot open is left out. 403 when the caller can open nothing in the workspace.
+
+## Embedded notes and blocks
+
+In Markdown, `[text](#note/{id}#{block})` links to a block, and `![text](#note/{id})` or `![text](#note/{id}#{block})` embeds a note or a block. Rendered for members, an embed is an empty `<span class="note-embed ne-note-{id} ne-block-{block}">` slot; for share-link guests and published pages, a short note.
+
+`POST /embeds` with `{items: [{note, block?, revision?}]}` (at most 50) returns, in order, `{note, block, state, title?, icon?, revision?, blocks?, more?, unchanged?}` for each:
+
+- `state` is `ok`, `trashed`, `no-block` (the note no longer has the block), or `unavailable` (the note does not exist or the caller cannot open it; nothing else is returned then).
+- `blocks` is `[{id, html}]`: the block and the blocks nested under it (their indentation counted from the block), or every block of the note, up to 300 (`more` is true when there are more).
+- When `revision` is the note's current revision, the item comes back `unchanged: true` without `blocks`, so a client can check for changes cheaply.
+
+400 for a malformed note ID or block ID, or more than 50 items.
 
 ## Structured databases
 

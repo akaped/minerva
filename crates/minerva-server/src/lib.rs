@@ -5,6 +5,7 @@ mod attachments;
 mod collaboration;
 mod comments;
 mod databases;
+mod embeds;
 mod export;
 mod flashcards;
 mod formulas;
@@ -1189,6 +1190,9 @@ fn dispatch(
     }
     if let ("GET", ["workspaces", wid, "graph"]) = (method, parts.as_slice()) {
         return Ok((graph::route(d, &u, wid)?, None));
+    }
+    if let ("POST", ["embeds"]) = (method, parts.as_slice()) {
+        return Ok((embeds::route(d, &u, &v)?, None));
     }
     if parts.first() == Some(&"api-tokens") {
         return Ok((tokens::route(d, &u, method, &parts, &v)?, None));
