@@ -6,7 +6,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Soon
 
-- [ ] **Translations, what is left**: a third language.
 - [ ] **Flashcards**: study statistics, a desired-retention setting, per-person FSRS parameters fitted from review history, and media cards.
 
 ## Later
@@ -40,3 +39,4 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **AI**: semantic retrieval (embeddings stored next to the search index), per-person provider keys and usage limits, scheduled agents, AI actions on several selected blocks, streaming in the selection assistant.
 - [ ] **Identity**: SSO (OIDC), passkeys, an audit log.
 - [ ] **Markdown folder copy** in the desktop app: keep a plain Markdown copy of local workspaces in a folder, as Logseq's Markdown Mirror does (read-only first).
+- [ ] **Translations, what is left**: a third language.
