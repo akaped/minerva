@@ -76,6 +76,17 @@ Yjs/Yrs roots: `title` text; `order` string-ID array; `block:<id>` text; `meta` 
 
 `GET /workspaces/{id}/graph` returns `{nodes, links}` for the graph view: `nodes` are the workspace's notes the caller can open (not trashed), each `{id, title, icon, folder_id, updated_at, tags, journal, record}` (`tags` includes inline `#tags`), and `links` are `[from, to]` pairs of note IDs, one per linking note and target, for links written as `[…](#note/{id})`, links to a block (`#note/{id}#{block}`) and embeds (`![…](#note/{id})`). A link to a note the caller cannot open is left out. 403 when the caller can open nothing in the workspace.
 
+## Recordings to notes
+
+| Method | Path                     | Contract                                                                                                                                                                                                                                                                                           |
+| ------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/ai/recordings`         | `{available}`: whether a transcription provider is configured (`MINERVA_ASR_PROVIDER`, `MINERVA_ASR_MODEL`)                                                                                                                                                                                     |
+| POST   | `/ai/recordings`         | `{note_id, attachment_id, provider_id?, today?}`; editor of the note; the attachment must be audio (WAV, MP3, FLAC, M4A, WebM, Ogg; at most 24 MiB). Starts a job and returns it. With `provider_id`, the transcript is then summarized; `today` (`YYYY-MM-DD`) anchors dates said as "next Friday". One job per person at a time (429) |
+| GET    | `/ai/recordings/{id}`    | The job, for the person who started it: `{id, note_id, attachment_id, state: transcribing\|summarizing\|done\|failed, error?, transcript: [{start?, end?, text}], summary?: {title, summary[], decisions[], action_items: [{task, owner, due}]}}`. `due` is empty, `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` |
+| DELETE | `/ai/recordings/{id}`    | Stops and forgets the job                                                                                                                                                                                                                                                                          |
+
+Jobs are kept in memory for an hour; nothing is stored until the app inserts the result into the note. Whisper models are asked for timestamped segments; other models return text only.
+
 ## Calendar feed
 
 | Method | Path             | Contract                                                                                                                                  |

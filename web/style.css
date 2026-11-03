@@ -8004,3 +8004,41 @@ body.comments-open .note-pane {
   flex-wrap: wrap;
   gap: 10px;
 }
+/* From a recording to notes. */
+.recording-actions {
+  display: block;
+  margin-top: 6px;
+}
+.recording-actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.recording-form #recording-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.recording-part,
+.recording-actions-list .checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.recording-part ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.recording-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.recording-actions-list legend {
+  font-weight: 600;
+}

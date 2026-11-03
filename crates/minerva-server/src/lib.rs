@@ -20,6 +20,7 @@ mod mcp;
 mod plugins;
 mod previews;
 mod record_pages;
+mod recordings;
 mod reminders;
 mod removal;
 mod render;

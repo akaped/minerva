@@ -6,7 +6,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Soon
 
-- [ ] **Recording to notes**: recording → transcript → summary with action items, turned into tasks and reminders.
 - [ ] **Translations** of the interface, Italian first: move strings out of `web/*.js`.
 - [ ] **Flashcards**: study statistics, a desired-retention setting, per-person FSRS parameters fitted from review history, and media cards.
 
@@ -32,6 +31,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
 - [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
 
+- [ ] **Recordings**: recordings longer than about 90 minutes (24 MB) need splitting before transcription; who said what (speaker labels); action items assigned to members as `@mentions` (now the owner is written as said); transcribing in the browser, so audio never leaves the device.
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders; repeating reminders in the feed follow daylight-saving changes in the reader's calendar rather than the time zone they were set in; a feed per workspace to share with others.
 - [ ] **Installable app**: editing offline (now offline notes are read-only; it needs the CRDT updates queued and merged when back), keeping a whole workspace offline rather than the notes opened, files other than pictures offline, push notifications for reminders, and sharing files (not only text and links) to the app.
 - [ ] **Block references and embeds**: editing an embedded block in place (now it opens its note); choosing a block in the `[[` picker (now from the block's ⠿ menu); block anchors on published pages (a block link goes to the page's top); importing Logseq's `((uuid))` references and `{{embed …}}`; embeds refresh every 5 seconds instead of on a live signal.

@@ -882,6 +882,14 @@ pub(super) async fn endpoint(
     if method == Method::POST && parts.as_slice() == ["transform"] {
         return transform(&store, &headers, v).await;
     }
+    if parts.first() == Some(&"recordings") {
+        if method == Method::POST && parts.len() == 1 {
+            return Ok(axum::Json(recordings::start(&store, &headers, &v)?).into_response());
+        }
+        let s = store.lock().map_err(|_| internal())?;
+        let u = authenticate(&s.data, &headers)?;
+        return Ok(axum::Json(recordings::route(&s, &u, &method, &parts)?).into_response());
+    }
     if method != Method::POST || !matches!(parts.as_slice(), ["chats", _, "messages"]) {
         let mut s = store.lock().map_err(|_| internal())?;
         let u = authenticate(&s.data, &headers)?;
@@ -1293,6 +1301,19 @@ impl Completion {
     }
 }
 
+/// Checks that a provider exists and has a usable endpoint.
+pub(super) fn provider_ready(s: &Store, provider_id: &str) -> Result<(), ApiError> {
+    if !endpoint_allowed(&provider(s, provider_id)?.0.endpoint) {
+        return Err(bad("This provider endpoint is not a valid API base URL"));
+    }
+    Ok(())
+}
+/// The largest audio sent for transcription (providers take up to 25 MB).
+pub(super) const MAX_AUDIO: usize = 24 * 1024 * 1024;
+/// The transcription model the administrator configured.
+pub(super) fn transcription_model() -> String {
+    std::env::var("MINERVA_ASR_MODEL").unwrap_or_default()
+}
 /// Uses an existing encrypted profile; transcription model is explicitly configured by the admin.
 pub(super) fn transcription_available(s: &Store) -> bool {
     let Ok(profile) = std::env::var("MINERVA_ASR_PROVIDER") else {
@@ -1308,6 +1329,16 @@ pub(super) fn transcription_available(s: &Store) -> bool {
 pub(super) fn transcription(
     s: &Store,
     bytes: Vec<u8>,
+) -> Result<reqwest::RequestBuilder, ApiError> {
+    transcription_as(s, bytes, true)
+}
+/// A transcription request; `segments` asks for timestamped segments
+/// (`verbose_json`, which Whisper models give but newer models may not),
+/// otherwise just the text.
+pub(super) fn transcription_as(
+    s: &Store,
+    bytes: Vec<u8>,
+    segments: bool,
 ) -> Result<reqwest::RequestBuilder, ApiError> {
     let profile = std::env::var("MINERVA_ASR_PROVIDER").map_err(|_| {
         bad("Configure MINERVA_ASR_PROVIDER and MINERVA_ASR_MODEL for transcription")
@@ -1334,21 +1365,33 @@ pub(super) fn transcription(
         "audio.mp3"
     } else if bytes.get(4..8) == Some(b"ftyp") {
         "audio.m4a"
+    } else if bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        // Browsers record WebM (Opus) or Ogg.
+        "audio.webm"
+    } else if bytes.starts_with(b"OggS") {
+        "audio.ogg"
     } else {
         return Err(bad(
-            "Upload WAV, MP3, FLAC or M4A audio with a recognized file header",
+            "Upload WAV, MP3, FLAC, M4A, WebM or Ogg audio with a recognized file header",
         ));
     };
-    if bytes.is_empty() || bytes.len() > 20 * 1024 * 1024 {
-        return Err(bad("Audio must be at most 20 MiB"));
+    if bytes.is_empty() || bytes.len() > MAX_AUDIO {
+        return Err(bad(
+            "Audio must be at most 24 MiB (about 90 minutes recorded in Minerva)",
+        ));
     }
     let boundary = format!("minerva-{}", id());
     let mut body = Vec::new();
-    for (name, value) in [
-        ("model", model.as_str()),
-        ("response_format", "verbose_json"),
-        ("timestamp_granularities[]", "segment"),
-    ] {
+    let fields: &[(&str, &str)] = if segments {
+        &[
+            ("model", model.as_str()),
+            ("response_format", "verbose_json"),
+            ("timestamp_granularities[]", "segment"),
+        ]
+    } else {
+        &[("model", model.as_str()), ("response_format", "json")]
+    };
+    for (name, value) in fields {
         body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes());
     }
     body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n").as_bytes());

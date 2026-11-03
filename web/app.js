@@ -23,6 +23,7 @@ import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import { buildGraph, neighborhood, mountGraph, folderColor } from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
+import { recordingBlocks, timestamp } from "./recording.js";
 import {
   startWorker,
   offlineReading,
@@ -760,6 +761,7 @@ new MutationObserver(() => {
     renderJournalTasks().catch(error);
     renderDatabaseEmbeds().catch(error);
     renderNoteEmbeds().catch(error);
+    recordingButtons().catch(error);
   }, 60);
 }).observe(document.body, { childList: true, subtree: true });
 // Links between notes and inline tags inside rendered blocks.
@@ -3625,7 +3627,7 @@ function bindBlock(el) {
   action($(".block-body", el), "click", (e) => {
     if (
       e.target.closest(
-        "a, .tag, .journal-tasks button, .db-embed, .note-embed, .youtube-card, audio, .file-card",
+        "a, .tag, .journal-tasks button, .db-embed, .note-embed, .youtube-card, audio, .recording-actions, .file-card",
       )
     )
       return;
@@ -4750,7 +4752,7 @@ async function recordDialog(afterId) {
   let stream, recorder, started, timer, blob;
   let chunks = [],
     size = 0;
-  modal.innerHTML = `<form method="dialog" id="record-form"><h2>Record audio</h2><p>The recording is saved with this note, with a player. Up to a few hours.</p><div class="recorder"><button type="button" class="btn primary" id="record-toggle">● Start recording</button><span class="record-time" aria-live="polite">0:00</span></div><audio class="audio-player" id="record-preview" controls hidden></audio><div class="form-error" role="alert"></div><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok" id="record-save" disabled>Save to note</button></footer></form>`;
+  modal.innerHTML = `<form method="dialog" id="record-form"><h2>Record audio</h2><p>The recording is saved with this note, with a player. Up to a few hours.</p><div class="recorder"><button type="button" class="btn primary" id="record-toggle">● Start recording</button><span class="record-time" aria-live="polite">0:00</span></div><audio class="audio-player" id="record-preview" controls hidden></audio>${(await transcriptionAvailable()) ? '<label class="checkbox-label"><input type="checkbox" id="record-transcribe" checked>Then transcribe it, with a summary and action items</label>' : ""}<div class="form-error" role="alert"></div><footer><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok" id="record-save" disabled>Save to note</button></footer></form>`;
   modal.showModal();
   const form = $("#record-form"),
     toggle = $("#record-toggle"),
@@ -4773,7 +4775,11 @@ async function recordDialog(afterId) {
     }
     chunks = [];
     size = 0;
-    recorder = new MediaRecorder(stream, { mimeType: type });
+    // A speech bitrate: about 15 MB an hour, so long meetings can be transcribed.
+    recorder = new MediaRecorder(stream, {
+      mimeType: type,
+      audioBitsPerSecond: 32000,
+    });
     recorder.ondataavailable = (e) => {
       chunks.push(e.data);
       size += e.data.size;
@@ -4810,13 +4816,150 @@ async function recordDialog(afterId) {
       `Recording ${stamp}.${type.includes("mp4") ? "m4a" : "webm"}`,
       { type: blob.type },
     );
+    const transcribe = $("#record-transcribe")?.checked;
     modal.close();
     if (note?.id !== targetId) return;
     await flush();
     toast("Saving the recording…");
-    await insertAttachment(await uploadFile(file, targetId), targetId, afterId);
+    const saved = await uploadFile(file, targetId);
+    await insertAttachment(saved, targetId, afterId);
     toast("Recording saved");
+    if (transcribe && note?.id === targetId) {
+      const block = note.blocks.find((b) => b.markdown.includes(saved.id));
+      await recordingDialog(saved.id, block?.id);
+    }
   };
+}
+// Whether this server can transcribe recordings (asked once).
+let canTranscribe = null;
+function transcriptionAvailable() {
+  canTranscribe ??= shareMode
+    ? Promise.resolve(false)
+    : api("ai/recordings")
+        .then((v) => !!v.available)
+        .catch(() => false);
+  return canTranscribe;
+}
+/** Recordings in a note the person can edit get a "Transcribe" button. */
+async function recordingButtons() {
+  const players = $$(
+    '#blocks .block-body audio.audio-player[src*="/api/v1/attachments/"]',
+  ).filter(
+    (a) => !a.nextElementSibling?.classList.contains("recording-actions"),
+  );
+  if (!players.length || !editable() || !(await transcriptionAvailable()))
+    return;
+  for (const audio of players) {
+    const id = /attachments\/([0-9a-f-]{36})/.exec(
+      audio.getAttribute("src"),
+    )?.[1];
+    if (
+      !id ||
+      audio.nextElementSibling?.classList.contains("recording-actions")
+    )
+      continue;
+    const bar = document.createElement("span");
+    bar.className = "recording-actions";
+    bar.innerHTML = `<button type="button" class="btn" title="Transcript, key points and action items from this recording">✳ Transcribe and summarize</button>`;
+    bar.firstChild.onclick = () =>
+      recordingDialog(id, audio.closest("[data-block]")?.dataset.block).catch(
+        error,
+      );
+    audio.after(bar);
+  }
+}
+/**
+ * From a recording to notes: the server transcribes it and, with an AI
+ * provider, writes key points, decisions and action items; the person keeps
+ * what they want, inserted after the recording.
+ */
+async function recordingDialog(attachmentId, afterId) {
+  const targetId = note.id;
+  const providers = await api("ai/providers").catch(() => []);
+  modal.innerHTML = `<form class="recording-form" id="recording-form"><h2>Transcribe and summarize</h2><p>The recording goes to this server’s transcription service. With notes chosen, the transcript then goes to that AI provider, which writes key points, decisions and action items for you to review.</p><label>Notes<select name="provider"><option value="">Transcript only</option>${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.model)}</option>`).join("")}</select></label><p class="hint" id="recording-status" role="status"></p><div id="recording-result"></div><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="recording-close">Cancel</button><button class="btn primary" id="recording-start">Start</button><button type="button" class="btn primary" id="recording-insert" hidden>Insert into the note</button></footer></form>`;
+  modal.showModal();
+  const form = $("#recording-form");
+  if (providers.length) form.provider.selectedIndex = 1;
+  const status = $("#recording-status"),
+    fail = (e) => ($(".form-error", form).textContent = e.message);
+  let job = null,
+    stopped = false;
+  const stop = () => {
+    stopped = true;
+    if (job && ["transcribing", "summarizing"].includes(job.state))
+      api(`ai/recordings/${job.id}`, "DELETE").catch(() => {});
+  };
+  modal.addEventListener("close", stop, { once: true });
+  $("#recording-close").onclick = () => modal.close();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    $(".form-error", form).textContent = "";
+    $("#recording-start").disabled = true;
+    try {
+      job = await api("ai/recordings", "POST", {
+        note_id: targetId,
+        attachment_id: attachmentId,
+        provider_id: form.provider.value || null,
+        today: new Date().toLocaleDateString("sv"),
+      });
+      const started = Date.now();
+      while (["transcribing", "summarizing"].includes(job.state) && !stopped) {
+        const seconds = Math.round((Date.now() - started) / 1000);
+        status.textContent = `${job.state === "transcribing" ? "Transcribing the recording" : "Writing the notes"}… ${timestamp(seconds)}`;
+        await new Promise((r) => setTimeout(r, 1500));
+        job = await api(`ai/recordings/${job.id}`);
+      }
+      if (stopped) return;
+      if (job.state === "failed") throw new Error(job.error);
+      status.textContent = "";
+      showResult();
+    } catch (err) {
+      status.textContent = "";
+      $("#recording-start").disabled = false;
+      fail(err);
+    }
+  };
+  function showResult() {
+    const notes = job.summary;
+    const list = (items) =>
+      `<ul>${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
+    const option = (name, label, body, checked = true) =>
+      `<label class="checkbox-label recording-part"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><span><strong>${label}</strong>${body}</span></label>`;
+    const actions = notes?.action_items.length
+      ? `<fieldset class="recording-actions-list"><legend>Action items, as tasks</legend>${notes.action_items.map((a, i) => `<label class="checkbox-label"><input type="checkbox" name="action" value="${i}" checked><span>${esc(a.task)}${a.owner ? ` — ${esc(a.owner)}` : ""}${a.due ? ` <small>⏰ ${esc(a.due)}</small>` : ""}</span></label>`).join("")}</fieldset>`
+      : "";
+    $("#recording-result").innerHTML =
+      (notes
+        ? `${notes.summary.length ? option("summary", "Key points", list(notes.summary)) : ""}${notes.decisions.length ? option("decisions", "Decisions", list(notes.decisions)) : ""}${actions}`
+        : "") +
+      option(
+        "transcript",
+        "Transcript",
+        `<small> · ${job.transcript.length} part${job.transcript.length === 1 ? "" : "s"}, folded under its heading</small>`,
+        !notes,
+      );
+    form.provider.disabled = true;
+    $("#recording-start").hidden = true;
+    $("#recording-insert").hidden = false;
+    $("#recording-close").textContent = "Close";
+    $("#recording-insert").onclick = async () => {
+      const blocks = recordingBlocks(job, {
+        summary: !!form.summary?.checked,
+        decisions: !!form.decisions?.checked,
+        transcript: !!form.transcript?.checked,
+        actions: $$("[name=action]:checked", form).map((c) => Number(c.value)),
+      });
+      if (!blocks.length) return fail(new Error("Choose something to insert."));
+      if (note?.id !== targetId)
+        return fail(new Error("Open the note with the recording to insert."));
+      try {
+        await appendBlocks(blocks, { after: afterId, source: "the recording" });
+        modal.close();
+      } catch (err) {
+        fail(err);
+      }
+    };
+  }
 }
 /** `/assigntouser`: `@person@example.com` in the block; they get an email. */
 async function assignDialog(existingId) {
