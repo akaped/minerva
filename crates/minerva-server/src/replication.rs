@@ -1258,7 +1258,10 @@ fn local(
             if unsent > 0 && v["discard"].as_bool() != Some(true) {
                 return Err(ApiError(
                     StatusCode::CONFLICT,
-                    format!("{unsent} changes have not been sent to the server yet"),
+                    i18n::fill(
+                        "{unsent} changes have not been sent to the server yet",
+                        &[("unsent", &unsent.to_string())],
+                    ),
                 ));
             }
             // Only the local copy goes; the workspace stays on the server.

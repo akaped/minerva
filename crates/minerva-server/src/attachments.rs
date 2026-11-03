@@ -126,10 +126,10 @@ pub(super) fn store(
     }
     let used: (i64, i64) = s.db.query_row("SELECT COALESCE(SUM(length(content)),0),COALESCE(SUM(CASE WHEN note_id=?1 THEN length(content) ELSE 0 END),0) FROM attachments", [note_id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| internal())?;
     if used.0 + body.len() as i64 > server_quota() || used.1 + body.len() as i64 > NOTE_QUOTA {
-        return Err(bad(&format!(
-            "Attachment storage limit reached (500 MiB per note, {} GiB per server)",
-            server_quota() / (1024 * 1024 * 1024)
-        )));
+        return Err(badv(
+            "Attachment storage limit reached (500 MiB per note, {size} GiB per server)",
+            &[("size", &(server_quota() / (1024 * 1024 * 1024)).to_string())],
+        ));
     }
     let name = filename(name);
     let media = media_type(body);

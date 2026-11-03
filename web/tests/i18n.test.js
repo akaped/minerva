@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { $t, pickLanguage, useLanguage } from "../i18n.js";
+import { $t, keys, pickLanguage, serverMessage, useLanguage } from "../i18n.js";
 import it from "../locales/it.json" with { type: "json" };
 
 const web = path.join(import.meta.dirname, "..");
@@ -10,12 +10,11 @@ const web = path.join(import.meta.dirname, "..");
 /** Every `$t("…")` text in the web app's code. */
 function texts() {
   const found = new Set();
-  // i18n.js itself only has examples in its comments.
-  const code = fs
-    .readdirSync(web)
-    .filter((f) => f.endsWith(".js") && f !== "i18n.js");
-  for (const file of code) {
-    const source = fs.readFileSync(path.join(web, file), "utf8");
+  for (const file of fs.readdirSync(web).filter((f) => f.endsWith(".js"))) {
+    let source = fs.readFileSync(path.join(web, file), "utf8");
+    // i18n.js has examples in its comments, which are not interface text.
+    if (file === "i18n.js")
+      source = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     for (const m of source.matchAll(/\$t\(\s*("(?:[^"\\]|\\.)*")/g))
       found.add(JSON.parse(m[1]));
     // Text kept in tables and translated where shown.
@@ -27,11 +26,49 @@ function texts() {
     for (const m of source.matchAll(plural))
       for (const form of [m[1], m[2]]) found.add(JSON.parse(form));
   }
+  // Bundled plugins: the names, descriptions and audiences in their headers.
+  const plugins = path.join(web, "../plugins");
+  for (const kind of ["themes", "public-notes-themes", "pdf-prints"])
+    for (const file of fs.readdirSync(path.join(plugins, kind)))
+      if (file.endsWith(".css"))
+        for (const m of fs
+          .readFileSync(path.join(plugins, kind, file), "utf8")
+          .matchAll(/^ \* (?:name|description|users): (.+)$/gm))
+          found.add(m[1].trim());
   // The quick-capture page marks its text with data-t attributes.
   const page = fs.readFileSync(path.join(web, "capture.html"), "utf8");
   for (const m of page.matchAll(/data-t(?:-[a-z-]+)?="([^"]*)"/g))
     found.add(m[1]);
   return found;
+}
+
+/** Rust code without its `#[cfg(test)] mod … { … }` modules. */
+function withoutTests(code) {
+  const start = /#\[cfg\(test\)\]\s*mod\s+\w+\s*\{/g;
+  let out = "";
+  let from = 0;
+  for (const m of code.matchAll(start)) {
+    if (m.index < from) continue;
+    out += code.slice(from, m.index);
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    for (; i < code.length; i++) {
+      const c = code[i];
+      if (c === '"') {
+        // A string: skip to its end, past escaped quotes.
+        for (i++; i < code.length && code[i] !== '"'; i++)
+          if (code[i] === "\\") i++;
+      } else if (c === "r" && /^r#+"/.test(code.slice(i, i + 4))) {
+        const hashes = /^r(#+)"/.exec(code.slice(i))[1];
+        i = code.indexOf(`"${hashes}`, i + hashes.length + 2) + hashes.length;
+      } else if (c === "'" && code[i + 2] === "'") i += 2;
+      else if (c === "'" && code[i + 1] === "\\") i = code.indexOf("'", i + 2);
+      else if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) break;
+    }
+    from = i + 1;
+  }
+  return out + code.slice(from);
 }
 
 /**
@@ -48,12 +85,10 @@ function serverMessages() {
       .replace(/\\(["\\nt'])/g, (_, c) => ({ n: "\n", t: "\t" })[c] ?? c);
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".rs"))) {
     // Messages in tests are not shown to anyone.
-    const code = fs
-      .readFileSync(path.join(dir, file), "utf8")
-      .split(/#\[cfg\(test\)\]/)[0];
+    const code = withoutTests(fs.readFileSync(path.join(dir, file), "utf8"));
     const patterns = [
       // The server's own text: tr(lang, "…"), trv(lang, "…", …), msg("…").
-      /\b(?:trv?|msg)\(\s*(?:&?\w+,\s*)?"((?:[^"\\]|\\[\s\S])*)"/g,
+      /\b(?:trv?|msg|badv|fill)\(\s*(?:&?\w+,\s*)?"((?:[^"\\]|\\[\s\S])*)"/g,
       /\bbad\(\s*"((?:[^"\\]|\\[\s\S])*)"\s*,?\s*\)/g,
       /ApiError\(\s*StatusCode::\w+,\s*"((?:[^"\\]|\\[\s\S])*)"\s*\.\s*(?:into|to_string)\(\)/g,
     ];
@@ -96,4 +131,29 @@ test("translations are safe in HTML and keep their values", () => {
     const values = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
     assert.deepEqual(values(italian), values(english), english);
   }
+});
+
+test("messages from the server are found by their templates", () => {
+  useLanguage("it");
+  assert.equal(serverMessage("Not found"), "Non trovato");
+  assert.equal(serverMessage("Missing workspace_id"), "Manca workspace_id");
+  assert.equal(
+    serverMessage(
+      "Provider returned HTTP 429. Check its key, model and quota.",
+    ),
+    "Il fornitore ha restituito HTTP 429. Controlla chiave, modello e quota.",
+  );
+  assert.equal(
+    serverMessage("Something nobody wrote"),
+    "Something nobody wrote",
+  );
+  useLanguage("en");
+  assert.equal(serverMessage("Missing workspace_id"), "Missing workspace_id");
+});
+
+test("shortcuts name their keys for the language", () => {
+  useLanguage("it");
+  assert.equal(keys("Ctrl+Shift+F"), "Ctrl+Maiusc+F");
+  useLanguage("en");
+  assert.equal(keys("Ctrl+Shift+F"), "Ctrl+Shift+F");
 });

@@ -1,4 +1,4 @@
-import { $t, $tn } from "./i18n.js";
+import { $t, $tn, serverMessage } from "./i18n.js";
 // Personal study workspace. Card contents are plain text, never executable markup.
 export async function renderFlashcards({ api, esc, data, error }) {
   const root = document.querySelector("#content");
@@ -107,7 +107,9 @@ export async function renderFlashcards({ api, esc, data, error }) {
           const result = await response.json().catch(() => ({}));
           if (!response.ok)
             throw new Error(
-              result.error ? $t(result.error) : $t("The file could not be imported."),
+              result.error
+                ? serverMessage(result.error)
+                : $t("The file could not be imported."),
             );
           if (!live()) return;
           await list();

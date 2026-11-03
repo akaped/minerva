@@ -69,10 +69,14 @@ fn save(s: &Store, user: &str, deck: &mut Deck) -> Result<(), ApiError> {
 fn field(v: &Value, key: &str, max: usize, empty: bool) -> Result<String, ApiError> {
     let value = v[key].as_str().unwrap_or("").trim();
     if (!empty && value.is_empty()) || value.len() > max {
-        return Err(bad(&format!(
-            "{key} must contain {}–{max} bytes",
-            if empty { 0 } else { 1 }
-        )));
+        return Err(badv(
+            "{key} must contain {min}–{max} bytes",
+            &[
+                ("key", key),
+                ("min", if empty { "0" } else { "1" }),
+                ("max", &max.to_string()),
+            ],
+        ));
     }
     Ok(value.into())
 }
@@ -587,11 +591,16 @@ pub(super) async fn import(
         )
         .map_err(|_| internal())?;
     if existing as usize + parts.len() > 100 {
-        return Err(bad(&format!(
-            "This file has {} decks; you have room for {} more (100 at most).",
-            parts.len(),
-            100usize.saturating_sub(existing as usize)
-        )));
+        return Err(badv(
+            "This file has {decks} decks; you have room for {room} more (100 at most).",
+            &[
+                ("decks", &parts.len().to_string()),
+                (
+                    "room",
+                    &100usize.saturating_sub(existing as usize).to_string(),
+                ),
+            ],
+        ));
     }
     let description = anki::limit(
         &format!(

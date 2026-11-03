@@ -114,7 +114,10 @@ fn special_folder(d: &mut Data, u: &User, ws: &str, kind: Special) -> Result<Str
     if !edits_workspace(d, u, ws) {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
-            format!("Someone who can edit this workspace must open {name} once to set it up"),
+            i18n::fill(
+                "Someone who can edit this workspace must open {name} once to set it up",
+                &[("name", name)],
+            ),
         ));
     }
     let folder = Folder {

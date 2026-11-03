@@ -172,9 +172,9 @@ fn read_tools() -> Vec<Value> {
 fn text_arg<'a>(args: &'a Value, key: &str, max: usize) -> Result<&'a str, ApiError> {
     let v = args[key]
         .as_str()
-        .ok_or_else(|| bad(&format!("{key} is required")))?;
+        .ok_or_else(|| badv("{key} is required", &[("key", key)]))?;
     if v.len() > max {
-        return Err(bad(&format!("{key} is too long")));
+        return Err(badv("{key} is too long", &[("key", key)]));
     }
     Ok(v)
 }
@@ -257,9 +257,9 @@ fn cells_arg(
             .iter()
             .find(|c| &c.id == key)
             .or_else(|| db.columns.iter().find(|c| c.name.eq_ignore_ascii_case(key)))
-            .ok_or_else(|| bad(&format!("No property “{key}”")))?;
+            .ok_or_else(|| badv("No property “{key}”", &[("key", key)]))?;
         if !databases::cell_valid(c, value) {
-            return Err(bad(&format!("Invalid value for {}", c.name)));
+            return Err(badv("Invalid value for {name}", &[("name", &c.name)]));
         }
         cells.insert(c.id.clone(), value.clone());
     }

@@ -1,4 +1,4 @@
-import { $t, $tn } from "./i18n.js";
+import { $t, $tn, serverMessage } from "./i18n.js";
 import { splitMarkdown } from "./markdown.js";
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -638,7 +638,11 @@ export async function renderAIChat({
       });
       if (!response.ok) {
         const problem = await response.json();
-        throw new Error(problem.error ? $t(problem.error) : $t("Unable to start response"));
+        throw new Error(
+          problem.error
+            ? serverMessage(problem.error)
+            : $t("Unable to start response"),
+        );
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -683,7 +687,8 @@ export async function renderAIChat({
             live(answer);
             $("#chat-status").textContent = $t("Writing…");
           }
-          if (event.type === "error") throw new Error(event.message);
+          if (event.type === "error")
+            throw new Error(serverMessage(event.message));
           if (event.type === "done") {
             complete = true;
             usage = event.usage;

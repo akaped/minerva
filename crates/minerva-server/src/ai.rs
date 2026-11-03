@@ -362,9 +362,10 @@ fn uploads(v: &Value) -> Result<Vec<Upload>, ApiError> {
         if let Some(text) = file["text"].as_str() {
             total += text.len();
             if text.chars().count() > 200_000 {
-                return Err(bad(&format!(
-                    "“{name}” is too long: up to 200,000 characters per document"
-                )));
+                return Err(badv(
+                    "“{name}” is too long: up to 200,000 characters per document",
+                    &[("name", &name)],
+                ));
             }
             out.push(Upload {
                 name,
@@ -377,7 +378,7 @@ fn uploads(v: &Value) -> Result<Vec<Upload>, ApiError> {
             .ok_or_else(|| bad("Invalid attachment"))?;
         let bytes = STANDARD
             .decode(data)
-            .map_err(|_| bad(&format!("“{name}” could not be read")))?;
+            .map_err(|_| badv("“{name}” could not be read", &[("name", &name)]))?;
         total += bytes.len();
         let kind = if bytes.starts_with(b"%PDF-") {
             UploadKind::Pdf(data.to_string())
@@ -391,9 +392,10 @@ fn uploads(v: &Value) -> Result<Vec<Upload>, ApiError> {
             } else if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
                 "image/webp"
             } else {
-                return Err(bad(&format!(
-                    "“{name}” is not an image (PNG, JPEG, GIF, WebP), a PDF, or a text document"
-                )));
+                return Err(badv(
+                    "“{name}” is not an image (PNG, JPEG, GIF, WebP), a PDF, or a text document",
+                    &[("name", &name)],
+                ));
             };
             UploadKind::Image(media.into(), data.to_string())
         };
@@ -954,7 +956,7 @@ pub(super) async fn endpoint(
         for turn in chat.turns.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev() {messages.push(json!({"role":"user","content":turn.question}));messages.push(json!({"role":"assistant","content":turn.answer}));}
         messages.push(json!({"role":"user","content":content}));
         let request = model_request(&client, &provider, &secret, &system, messages, true, true);
-        let response=match request.send().await {Ok(r) if r.status().is_success()=>r,Ok(r)=>{yield packet(json!({"type":"error","message":format!("Provider returned HTTP {}. Check the model, key, quota and endpoint.",r.status().as_u16())}));return},Err(_)=>{yield packet(json!({"type":"error","message":"Provider connection failed or timed out."}));return}};
+        let response=match request.send().await {Ok(r) if r.status().is_success()=>r,Ok(r)=>{yield packet(json!({"type":"error","message":i18n::fill("Provider returned HTTP {status}. Check the model, key, quota and endpoint.",&[("status",&r.status().as_u16().to_string())])}));return},Err(_)=>{yield packet(json!({"type":"error","message":i18n::msg("Provider connection failed or timed out.")}));return}};
         let mut upstream=response.bytes_stream(); let mut buffer=Vec::new(); let mut answer=String::new();let mut usage=json!({});let mut done=false;let mut failed=false;
         // The model stopped at its length limit; what it wrote is kept. Thinking
         // models first stream their reasoning, which is not part of the answer.
@@ -998,8 +1000,8 @@ pub(super) async fn endpoint(
             }
             if done || failed {break;}
         }
-        if truncated && answer.trim().is_empty() {yield packet(json!({"type":"error","message":"The model reached its length limit before answering, probably while reasoning. Give the model a larger context window, or ask for less at once."}));return;}
-        if failed || !done || answer.is_empty() {yield packet(json!({"type":"error","message":"Response was interrupted, unavailable, or access changed. Partial output was not saved; retry or start a new chat."}));return;}
+        if truncated && answer.trim().is_empty() {yield packet(json!({"type":"error","message":i18n::msg("The model reached its length limit before answering, probably while reasoning. Give the model a larger context window, or ask for less at once.")}));return;}
+        if failed || !done || answer.is_empty() {yield packet(json!({"type":"error","message":i18n::msg("Response was interrupted, unavailable, or access changed. Partial output was not saved; retry or start a new chat.")}));return;}
         if truncated {let note="\n\n> [!WARNING]\n> The answer was cut off: the model reached its length limit. Ask it to continue, or give the model a larger context window.";answer.push_str(note);yield packet(json!({"type":"delta","text":note}));}
         // Cited pages the answer does not already link, as a list of links.
         let listed:Vec<_>=web.iter().filter(|(_,url)|!answer.contains(url.as_str())).map(|(title,url)|format!("- [{}]({})",title.replace(['[',']','\n'],""),url.replace(['(',')',' '],""))).collect();
@@ -1007,7 +1009,7 @@ pub(super) async fn endpoint(
         chat.title=chat.turns.first().map(|t|t.question.chars().take(80).collect()).unwrap_or_else(||question.chars().take(80).collect());
         chat.turns.push(Turn{question,answer,sources:context.sources.clone(),usage:usage.clone(),created_at:now(),provider:provider.name.clone(),model:provider.model.clone(),files:names});chat.updated_at=now();
         let saved={let s=store.lock().map_err(|_|internal());s.and_then(|s|{authenticate(&s.data,&headers)?;load_chat(&s,&user,&chat.id)?;if context.sources.iter().any(|source|!source_allowed(&s.data,&user,&chat.scope,source)){return Err(forbidden());}save_chat(&s,&chat)})};
-        if saved.is_err() {yield packet(json!({"type":"error","message":"Response could not be saved. Your access may have changed."}));return;}
+        if saved.is_err() {yield packet(json!({"type":"error","message":i18n::msg("Response could not be saved. Your access may have changed.")}));return;}
         yield packet(json!({"type":"done","usage":usage,"revision":chat.turns.len()}));
     };
     Ok((
@@ -1208,10 +1210,10 @@ impl Completion {
             .await
             .map_err(|_| bad("Provider connection failed or timed out"))?;
         if !response.status().is_success() {
-            return Err(bad(&format!(
-                "Provider returned HTTP {}. Check its key, model and quota.",
-                response.status().as_u16()
-            )));
+            return Err(badv(
+                "Provider returned HTTP {status}. Check its key, model and quota.",
+                &[("status", &response.status().as_u16().to_string())],
+            ));
         }
         let mut stream = response.bytes_stream();
         let mut bytes = Vec::new();
@@ -1415,10 +1417,10 @@ pub(super) async fn read_transcription(
         .await
         .map_err(|_| bad("Transcription provider connection failed or timed out"))?;
     if !response.status().is_success() {
-        return Err(bad(&format!(
-            "Transcription returned HTTP {}. Check model, audio format and quota.",
-            response.status().as_u16()
-        )));
+        return Err(badv(
+            "Transcription returned HTTP {status}. Check model, audio format and quota.",
+            &[("status", &response.status().as_u16().to_string())],
+        ));
     }
     let mut stream = response.bytes_stream();
     let mut bytes = vec![];

@@ -32,16 +32,19 @@ pub(super) fn validate_columns(cols: &[Column]) -> Result<(), ApiError> {
                     .iter()
                     .any(|x| x.id == r.relation && x.kind == ColumnKind::Relation)
                 {
-                    return Err(bad(&format!(
-                        "“{}” needs a relation property of this database",
-                        c.name
-                    )));
+                    return Err(badv(
+                        "“{name}” needs a relation property of this database",
+                        &[("name", &c.name)],
+                    ));
                 }
                 if !formulas::ROLLUP_FUNCTIONS.contains(&r.function.as_str()) {
                     return Err(bad("Unknown rollup calculation"));
                 }
                 if r.function != "count" && r.property.is_empty() {
-                    return Err(bad(&format!("Choose the property “{}” combines", c.name)));
+                    return Err(badv(
+                        "Choose the property “{name}” combines",
+                        &[("name", &c.name)],
+                    ));
                 }
             }
             (ColumnKind::Rollup, None) => {
@@ -51,18 +54,22 @@ pub(super) fn validate_columns(cols: &[Column]) -> Result<(), ApiError> {
             _ => {}
         }
         if c.kind == ColumnKind::Formula {
-            let expr = formulas::parse(&c.formula)
-                .map_err(|e| bad(&format!("Formula “{}”: {e}", c.name)))?;
+            let expr = formulas::parse(&c.formula).map_err(|e| {
+                badv(
+                    "Formula “{name}”: {error}",
+                    &[("name", &c.name), ("error", &e.to_string())],
+                )
+            })?;
             let mut names = vec![];
             formulas::references(&expr, &mut names);
             for n in names {
                 if !cols.iter().any(|x| {
                     x.name.eq_ignore_ascii_case(&n) || x.name.to_lowercase() == n.to_lowercase()
                 }) {
-                    return Err(bad(&format!(
-                        "Formula “{}”: there is no property “{n}”",
-                        c.name
-                    )));
+                    return Err(badv(
+                        "Formula “{name}”: there is no property “{property}”",
+                        &[("name", &c.name), ("property", &n.to_string())],
+                    ));
                 }
             }
         } else if !c.formula.is_empty() {
@@ -177,10 +184,10 @@ fn validate_targets(
                 )
             });
         if !fits {
-            return Err(bad(&format!(
-                "“{}” combines a property of the related database (not a relation, rollup or formula)",
-                c.name
-            )));
+            return Err(badv(
+                "“{name}” combines a property of the related database (not a relation, rollup or formula)",
+                &[("name", &c.name)],
+            ));
         }
     }
     for c in cols.iter().filter(|c| c.kind == ColumnKind::Relation) {
@@ -217,7 +224,7 @@ fn validate_cells(cols: &[Column], cells: &BTreeMap<String, Value>) -> Result<()
             .find(|c| c.id == *key)
             .ok_or_else(|| bad("Unknown property"))?;
         if !cell_valid(c, value) {
-            return Err(bad(&format!("Invalid value for {}", c.name)));
+            return Err(badv("Invalid value for {name}", &[("name", &c.name)]));
         }
     }
     Ok(())

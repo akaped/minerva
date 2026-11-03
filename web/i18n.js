@@ -70,6 +70,38 @@ export function $t(text, values) {
   );
 }
 
+// The catalog's texts with values, as patterns, for messages the server sends.
+let patterns = null;
+/**
+ * A message the server sent (always in English), in the language in use: as
+ * the catalog has it, or found by its template ("Missing {key}" for
+ * "Missing workspace_id"), keeping its values.
+ */
+export function serverMessage(text) {
+  const catalog = CATALOGS[current];
+  if (!catalog || !text || catalog[text]) return $t(text);
+  patterns ??= Object.keys(catalog)
+    .filter((k) => /\{\w+\}/.test(k))
+    .map((k) => {
+      const names = [...k.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+      const source = k
+        .split(/\{\w+\}/)
+        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("(.+?)");
+      const fixed = k.replace(/\{\w+\}/g, "").trim().length;
+      return { key: k, names, fixed, re: new RegExp(`^${source}$`, "s") };
+    })
+    // Templates with more fixed words first; nearly empty ones match anything.
+    .filter((p) => p.fixed >= 6)
+    .sort((a, b) => b.fixed - a.fixed);
+  for (const { key, names, re } of patterns) {
+    const m = re.exec(text);
+    if (m)
+      return $t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+  }
+  return text;
+}
+
 /**
  * `one` or `other` by `count` (as the language's plural rules say), then
  * translated, with `{count}` and `values` filled in:
@@ -86,7 +118,18 @@ export function $tn(count, one, other, values = {}) {
  */
 export const msg = (text) => text;
 
+// Keys as the reader's keyboard names them.
+const KEYS = [msg("Shift"), msg("Enter"), msg("Delete"), msg("Space")];
+/** A shortcut such as "Ctrl+Shift+F", with its keys named for the language. */
+export function keys(shortcut) {
+  return shortcut
+    .split("+")
+    .map((key) => (KEYS.includes(key) ? $t(key) : key))
+    .join("+");
+}
+
 /** For tests: use `code`'s catalog without reloading. */
 export function useLanguage(code) {
   current = pickLanguage(code);
+  patterns = null;
 }

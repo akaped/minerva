@@ -5,6 +5,8 @@ import {
   language,
   chosenLanguage,
   setLanguage,
+  serverMessage,
+  keys as shortcutKeys,
 } from "./i18n.js";
 import "./pane-auth.js";
 import { renderServerOverview } from "./server-overview.js";
@@ -158,7 +160,7 @@ function themeOptions() {
     ...BUILTIN_THEMES,
     ...pluginThemes.map((t) => [
       t.id,
-      /theme$/i.test(t.name) ? t.name : `${t.name} theme`,
+      /theme$/i.test(t.name) ? t.name : $t("{name} theme", { name: t.name }),
     ]),
   ]
     .map(
@@ -179,9 +181,17 @@ async function loadPlugins() {
     const response = await fetch("/plugins/index.json");
     if (!response.ok) return;
     const index = await response.json();
-    pluginThemes = index.themes || [];
-    publicThemes = index.public_themes || [];
-    printTemplates = index.pdf_prints || [];
+    // Bundled plugins' names and descriptions are in the catalog.
+    const local = (list) =>
+      (list || []).map((p) => ({
+        ...p,
+        name: $t(p.name),
+        description: p.description && $t(p.description),
+        users: p.users && $t(p.users),
+      }));
+    pluginThemes = local(index.themes);
+    publicThemes = local(index.public_themes);
+    printTemplates = local(index.pdf_prints);
   } catch {
     return;
   }
@@ -841,7 +851,7 @@ async function api(path, method = "GET", body) {
   if (kept || !r.ok) showOffline(kept);
   if (!r.ok) {
     // The server writes its messages in English; the catalog has them too.
-    const e = new Error(v.error ? $t(v.error) : $t("Request failed"));
+    const e = new Error(v.error ? serverMessage(v.error) : $t("Request failed"));
     e.status = kept ? 0 : r.status;
     throw e;
   }
@@ -1188,7 +1198,7 @@ async function syncDialog() {
     c.copy_id
       ? `<button class="btn" data-resolve="${c.id}" data-choice="theirs">${$t("Keep theirs")}</button><button class="btn" data-resolve="${c.id}" data-choice="both">${$t("Keep both")}</button><button class="btn primary" data-resolve="${c.id}" data-choice="mine">${$t("Use mine")}</button>`
       : `<button class="btn" data-resolve="${c.id}" data-choice="ok">${$t("OK")}</button>`;
-  modal.innerHTML = `<form method="dialog" class="sync-dialog"><h2>${$t("Offline copies")}</h2><p>${$t("Workspaces from other servers kept on this computer. Changes made offline are sent when the server is reachable. Choose which workspaces to keep offline in Servers (")}<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>).</p><ul class="sync-list">${list.map((r) => `<li><strong>${esc(r.name)}</strong><span>${esc(syncLabel(r))}${r.status?.error && r.status.state !== "synced" ? ` — ${esc(r.status.error)}` : ""}</span></li>`).join("") || `<li>${$t("No offline copies yet.")}</li>`}</ul>${conflicts.length ? `<h3>${$t("To review")}</h3><ul class="sync-list conflicts">${conflicts.map((c) => `<li><div><strong>${esc(name(c))}</strong><span>${esc(explain(c))}</span></div><div class="share-actions">${actions(c)}</div></li>`).join("")}</ul>` : ""}<footer><button class="btn">${$t("Close")}</button></footer></form>`;
+  modal.innerHTML = `<form method="dialog" class="sync-dialog"><h2>${$t("Offline copies")}</h2><p>${$t("Workspaces from other servers kept on this computer. Changes made offline are sent when the server is reachable. Choose which workspaces to keep offline in Servers (")}<kbd>Ctrl</kbd>+<kbd>${shortcutKeys("Shift")}</kbd>+<kbd>O</kbd>).</p><ul class="sync-list">${list.map((r) => `<li><strong>${esc(r.name)}</strong><span>${esc(syncLabel(r))}${r.status?.error && r.status.state !== "synced" ? ` — ${esc(r.status.error)}` : ""}</span></li>`).join("") || `<li>${$t("No offline copies yet.")}</li>`}</ul>${conflicts.length ? `<h3>${$t("To review")}</h3><ul class="sync-list conflicts">${conflicts.map((c) => `<li><div><strong>${esc(name(c))}</strong><span>${esc(explain(c))}</span></div><div class="share-actions">${actions(c)}</div></li>`).join("")}</ul>` : ""}<footer><button class="btn">${$t("Close")}</button></footer></form>`;
   modal.showModal();
   $$("[data-resolve]", modal).forEach((b) =>
     action(b, "click", async (e) => {
@@ -2284,13 +2294,13 @@ function renderEditor() {
         : "";
   const editor = data.roles?.[note.folder_id] === "editor";
   const item = (id, iconName, label, extra = "", keys = "") =>
-    `<button role="menuitem" tabindex="-1" id="${id}" ${extra}>${icon(iconName)}<span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ""}</button>`;
+    `<button role="menuitem" tabindex="-1" id="${id}" ${extra}>${icon(iconName)}<span>${label}</span>${keys ? `<kbd>${shortcutKeys(keys)}</kbd>` : ""}</button>`;
   const separator = '<div class="menu-separator" role="separator"></div>';
   // The note's less frequent tools, grouped in a menu.
   const menu = [
     [
       item("find-note", "search", $t("Find and replace"), "", "Ctrl+F"),
-      `<button role="menuitemcheckbox" tabindex="-1" id="focus-toggle" aria-checked="${document.body.classList.contains("focus-mode")}">${icon("canvas")}<span>${$t("Focus mode")}</span><kbd>Ctrl+Shift+F</kbd></button>`,
+      `<button role="menuitemcheckbox" tabindex="-1" id="focus-toggle" aria-checked="${document.body.classList.contains("focus-mode")}">${icon("canvas")}<span>${$t("Focus mode")}</span><kbd>${shortcutKeys("Ctrl+Shift+F")}</kbd></button>`,
       can ? item("save-note", "check", $t("Save now"), "", "Ctrl+S") : "",
     ],
     shareMode
@@ -4928,7 +4938,7 @@ async function recordingDialog(attachmentId, afterId) {
         job = await api(`ai/recordings/${job.id}`);
       }
       if (stopped) return;
-      if (job.state === "failed") throw new Error($t(job.error));
+      if (job.state === "failed") throw new Error(serverMessage(job.error));
       status.textContent = "";
       showResult();
     } catch (err) {
@@ -5060,7 +5070,7 @@ const COMMAND_LOOK = {
 function blockMenu(existingId, capturedSelection = "") {
   if (!editable()) return;
   modal.innerHTML =
-    `<div class="command-menu-search"><span aria-hidden="true">/</span><input id="command-search" aria-label="${$t("Search block commands")}" placeholder="${$t("Type to search: heading, task, file…")}" autocomplete="off"></div><div id="command-results" class="command-list" role="listbox" aria-label="${$t("Block types")}"></div><footer class="command-menu-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> insert</span><span><kbd>Esc</kbd> close</span></footer>`;
+    `<div class="command-menu-search"><span aria-hidden="true">/</span><input id="command-search" aria-label="${$t("Search block commands")}" placeholder="${$t("Type to search: heading, task, file…")}" autocomplete="off"></div><div id="command-results" class="command-list" role="listbox" aria-label="${$t("Block types")}"></div><footer class="command-menu-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> insert</span><span><kbd>Esc</kbd> close</span></footer>`;
   // The menu opens by the block it inserts into, like a popover.
   modal.classList.add("command-menu");
   modal.addEventListener(
@@ -5317,7 +5327,7 @@ async function uploadFile(file, targetId) {
     },
   );
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error ? $t(result.error) : $t("Upload failed"));
+  if (!response.ok) throw new Error(result.error ? serverMessage(result.error) : $t("Upload failed"));
   return result;
 }
 async function attachmentDialog() {
@@ -5562,7 +5572,7 @@ async function exportNote() {
   const describe = () => {
     const t = printTemplates.find((x) => x.id === form.template.value);
     $(".template-help", form).textContent = t
-      ? `${t.description} For: ${t.users}.${t.orientation === "landscape" ? " Landscape pages." : ""}`
+      ? `${$t("{description} For: {users}.", { description: t.description, users: t.users })}${t.orientation === "landscape" ? $t(" Landscape pages.") : ""}`
       : $t("Minerva's own clean layout.");
   };
   form.addEventListener("change", () => {
@@ -5684,7 +5694,7 @@ function importMarkdown() {
             },
           );
           const report = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(report.error ? $t(report.error) : $t("could not be read"));
+          if (!r.ok) throw new Error(report.error ? serverMessage(report.error) : $t("could not be read"));
           for (const key of Object.keys(totals)) totals[key] += report[key];
           warnings.push(...report.warnings);
           first ??= report.first_note;
@@ -7171,9 +7181,9 @@ function workspaceMenu() {
 function search() {
   if (!data) return;
   modal.innerHTML =
-    `<h2>${$t("Find a thought")}</h2><p>${$t("Search titles, text and tags across your accessible workspaces.")}</p><input id="search-input" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes")}" placeholder="${$t("Search notes…")}" style="width:100%" autocomplete="off" autofocus><div class="search-results" id="results" role="listbox" aria-label="${$t("Notes")}"></div><footer><span class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> open</span>` +
+    `<h2>${$t("Find a thought")}</h2><p>${$t("Search titles, text and tags across your accessible workspaces.")}</p><input id="search-input" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes")}" placeholder="${$t("Search notes…")}" style="width:100%" autocomplete="off" autofocus><div class="search-results" id="results" role="listbox" aria-label="${$t("Notes")}"></div><footer><span class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> open</span>` +
     (noteTabs
-      ? `<span><kbd>Shift</kbd>+<kbd>Enter</kbd> ${$t("side by side")}</span>`
+      ? `<span><kbd>${shortcutKeys("Shift")}</kbd>+<kbd>${shortcutKeys("Enter")}</kbd> ${$t("side by side")}</span>`
       : "") +
     `</span><button class="btn" id="close-modal">${$t("Close")}</button></footer>`;
   modal.showModal();

@@ -1,4 +1,4 @@
-import { $t } from "./i18n.js";
+import { $t, serverMessage } from "./i18n.js";
 /** Generic worker UI. Commands and capability availability come from the server. */
 export function timestamp(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -184,7 +184,7 @@ export async function pluginDialog({
       if (job.status !== "completed") {
         if (job.sources?.length) preview(job, false);
         status(
-          (job.error && $t(job.error)) ||
+          (job.error && serverMessage(job.error)) ||
             $t("Processing {status}. Retry to reuse completed stages.", {
               status: job.status,
             }),

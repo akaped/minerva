@@ -515,6 +515,11 @@ impl IntoResponse for ApiError {
 fn bad(s: &str) -> ApiError {
     ApiError(StatusCode::BAD_REQUEST, s.into())
 }
+/// A message with values: English with `{name}` filled in from `values`. The
+/// app finds it by its template in the catalog and shows it translated.
+fn badv(template: &str, values: &[(&str, &str)]) -> ApiError {
+    bad(&i18n::fill(template, values))
+}
 fn forbidden() -> ApiError {
     ApiError(
         StatusCode::FORBIDDEN,
@@ -533,7 +538,7 @@ fn internal() -> ApiError {
 fn field(v: &Value, key: &str) -> Result<String, ApiError> {
     let s = v[key]
         .as_str()
-        .ok_or_else(|| bad(&format!("Missing {key}")))?
+        .ok_or_else(|| badv("Missing {key}", &[("key", key)]))?
         .trim();
     if s.is_empty() || s.len() > 200 {
         return Err(bad("Names must contain 1–200 characters"));
@@ -641,9 +646,10 @@ fn normalize_metadata(v: &Value) -> Result<std::collections::BTreeMap<String, St
     for (raw, value) in fields {
         let key = metadata_key(raw);
         if key.is_empty() || !key.starts_with(|c: char| c.is_ascii_lowercase()) {
-            return Err(bad(&format!(
-                "“{raw}” is not a valid field name; start with a letter"
-            )));
+            return Err(badv(
+                "“{raw}” is not a valid field name; start with a letter",
+                &[("raw", raw)],
+            ));
         }
         let value = match value {
             Value::String(s) => s.trim().to_string(),
@@ -653,7 +659,7 @@ fn normalize_metadata(v: &Value) -> Result<std::collections::BTreeMap<String, St
             _ => return Err(bad("Metadata values must be text")),
         };
         if value.chars().count() > 4000 {
-            return Err(bad(&format!("“{key}” is too long")));
+            return Err(badv("“{key}” is too long", &[("key", &key)]));
         }
         if !value.is_empty() {
             out.insert(key, value);

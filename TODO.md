@@ -6,7 +6,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Soon
 
-- [ ] **Translations, what is left**: server messages built with values (`format!`, such as "Missing workspace_id"); names already stored in English before this round (a "General" folder, the first server's "Team" workspace and welcome note); plugin theme and PDF template names; key names in shortcuts (Ctrl, Shift); a third language.
+- [ ] **Translations, what is left**: the details of formula errors (`formulas.rs` explains a mistake in English, inside a translated sentence); plugins installed by people, which can only bring their own names; a third language.
 - [ ] **Flashcards**: study statistics, a desired-retention setting, per-person FSRS parameters fitted from review history, and media cards.
 
 ## Later

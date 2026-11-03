@@ -46,6 +46,14 @@ pub(crate) fn tr(language: &str, text: &str) -> String {
         .cloned()
         .unwrap_or_else(|| text.to_string())
 }
+/// `template` with `{name}` replaced from `values`, in no particular language.
+pub(crate) fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    values
+        .iter()
+        .fold(template.to_string(), |out, (name, value)| {
+            out.replace(&format!("{{{name}}}"), value)
+        })
+}
 /// `text` in `language`, with `{name}` replaced from `values`.
 pub(crate) fn trv(language: &str, text: &str, values: &[(&str, &str)]) -> String {
     values

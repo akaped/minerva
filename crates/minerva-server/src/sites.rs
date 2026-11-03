@@ -56,9 +56,10 @@ fn theme(v: &Value) -> Result<Option<String>, ApiError> {
 }
 fn text(v: &Value, key: &str, max: usize) -> Result<Option<String>, ApiError> {
     match v[key].as_str().map(str::trim) {
-        Some(t) if t.chars().count() > max => {
-            Err(bad(&format!("The {key} is limited to {max} characters")))
-        }
+        Some(t) if t.chars().count() > max => Err(badv(
+            "The {key} is limited to {max} characters",
+            &[("key", key), ("max", &max.to_string())],
+        )),
         t => Ok(t.map(str::to_string)),
     }
 }
@@ -202,7 +203,10 @@ pub(super) fn route(
             if pages > 0 {
                 return Err(ApiError(
                     StatusCode::CONFLICT,
-                    format!("Move or unpublish this site's {pages} page(s) first"),
+                    i18n::fill(
+                        "Move or unpublish this site's {pages} page(s) first",
+                        &[("pages", &pages.to_string())],
+                    ),
                 ));
             }
             d.sites.retain(|s| s.id != *sid);
