@@ -172,12 +172,14 @@ function draw(ctx, root, items, mailEnabled) {
     : !shown.length
       ? '<div class="empty">Nothing here.</div>'
       : "";
-  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">NOTHING IMPORTANT SLIPS BY</div><div class="page-heading"><div><h1>Reminders</h1><p class="subtitle">Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.</p></div>${ctx.canAdd ? '<button class="btn primary" id="new-reminder">+ New reminder</button>' : ""}</div>${mailEnabled ? "" : '<p class="reminder-notice">This server does not send email, so reminders are only shown here. Come back to this page to see what is due.</p>'}${items.length ? `<nav class="reminder-filters" aria-label="Categories">${filters}</nav>` : ""}${section("Due", groups.due, "due")}${section("Next 7 days", groups.week)}${section("Next 30 days", groups.month)}${section("Later", groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>Past times in notes <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
+  root.innerHTML = `<section class="page reminders-page"><div class="eyebrow">NOTHING IMPORTANT SLIPS BY</div><div class="page-heading"><div><h1>Reminders</h1><p class="subtitle">Everything coming up in this workspace: its reminders, shared with everyone in it, and every ⏰ time written in its notes.</p></div><div class="toolbar-group"><button class="btn" id="calendar-feed" title="See your reminders in Google Calendar, Apple Calendar, Outlook or Thunderbird">📅 Add to your calendar</button>${ctx.canAdd ? '<button class="btn primary" id="new-reminder">+ New reminder</button>' : ""}</div></div>${mailEnabled ? "" : '<p class="reminder-notice">This server does not send email, so reminders are only shown here. Come back to this page to see what is due.</p>'}${items.length ? `<nav class="reminder-filters" aria-label="Categories">${filters}</nav>` : ""}${section("Due", groups.due, "due")}${section("Next 7 days", groups.week)}${section("Next 30 days", groups.month)}${section("Later", groups.later)}${groups.past.length ? `<details class="reminder-past"><summary>Past times in notes <span class="count">${groups.past.length}</span></summary><ul>${groups.past.slice(0, 100).map(row).join("")}</ul></details>` : ""}${empty}</section>`;
 
   const again = () => renderReminders(ctx).catch(ctx.error);
   const find = (id) => items.find((r) => r.kind === "own" && r.id === id);
   const add = root.querySelector("#new-reminder");
   if (add) add.onclick = () => dialog(ctx, null, categories, again);
+  root.querySelector("#calendar-feed").onclick = () =>
+    calendarDialog(ctx).catch(ctx.error);
   root.querySelectorAll("[data-filter]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -283,6 +285,83 @@ function dialog(ctx, r, categories, done) {
       form.querySelector(".form-error").textContent = err.message;
     } finally {
       submit.disabled = false;
+    }
+  };
+}
+
+/** A calendar app's subscribe link for a feed address (`webcal://`). */
+export function webcal(url) {
+  return url.replace(/^https?:/, "webcal:");
+}
+
+/**
+ * Add to your calendar: a private address with your reminders (and, if you
+ * like, your journal days) that calendar apps subscribe to. The address is
+ * shown once, when it is made; making a new one ends the old one.
+ */
+async function calendarDialog(ctx, made = null) {
+  const { esc, modal, api, toast } = ctx;
+  const feed = made || (await api("calendar-feed"));
+  const since = feed.created_at
+    ? new Date(feed.created_at * 1000).toLocaleDateString(undefined, {
+        dateStyle: "medium",
+      })
+    : "";
+  const journal = `<label class="checkbox-label"><input type="checkbox" name="journal" ${feed.journal ? "checked" : ""}>Include journal days, as all-day events</label>`;
+  const body = made
+    ? `<p>Subscribe to this address in your calendar app. It is shown only now: copy it before closing.</p><label>Calendar address<input name="url" readonly value="${esc(made.url)}"></label><div class="toolbar-group"><button type="button" class="btn primary" id="copy-feed">Copy address</button><a class="btn" href="${esc(webcal(made.url))}">Open in calendar app</a></div><p class="hint">Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription. Outlook: Add calendar → Subscribe from web. Calendars refresh it every few hours.</p>`
+    : feed.enabled
+      ? `<p>Your calendar address is on, since ${esc(since)}. For safety it is not shown again: make a new one to see it, and the old one stops working.</p>${journal}`
+      : `<p>Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.</p>${journal}`;
+  modal.innerHTML = `<form class="calendar-feed-form"><h2>Add to your calendar</h2>${body}<p class="hint">Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? '<button type="button" class="btn danger" id="feed-off">Turn off</button>' : ""}<button type="button" class="btn" id="cancel">${made ? "Done" : "Cancel"}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? "New address" : "Create address"}</button>`}</footer></form>`;
+  if (!modal.open) modal.showModal();
+  const form = modal.querySelector("form");
+  const fail = (e) =>
+    (form.querySelector(".form-error").textContent = e.message);
+  form.querySelector("#cancel").onclick = () => modal.close();
+  const copy = form.querySelector("#copy-feed");
+  if (copy)
+    copy.onclick = async () => {
+      form.url.select();
+      try {
+        await navigator.clipboard.writeText(made.url);
+        toast("Calendar address copied");
+      } catch {
+        toast("Select the address and copy it.");
+      }
+    };
+  if (form.journal && feed.enabled)
+    form.journal.onchange = () =>
+      api("calendar-feed", "PUT", { journal: form.journal.checked })
+        .then(() => toast("Calendar updated"))
+        .catch(fail);
+  const off = form.querySelector("#feed-off");
+  if (off)
+    off.onclick = async () => {
+      try {
+        await api("calendar-feed", "DELETE");
+        modal.close();
+        toast("Calendar address turned off");
+      } catch (e) {
+        fail(e);
+      }
+    };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (
+      feed.enabled &&
+      !confirm(
+        "Make a new address? Calendars subscribed to the old one stop updating.",
+      )
+    )
+      return;
+    try {
+      const created = await api("calendar-feed", "POST", {
+        journal: !!form.journal?.checked,
+      });
+      await calendarDialog(ctx, created);
+    } catch (err) {
+      fail(err);
     }
   };
 }

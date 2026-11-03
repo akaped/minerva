@@ -41,7 +41,7 @@ pub(super) fn used(headers: &HeaderMap) -> bool {
 pub(super) fn reserved(parts: &[&str]) -> bool {
     matches!(
         parts.first(),
-        Some(&("account" | "api-tokens" | "mcp-credentials" | "logout"))
+        Some(&("account" | "api-tokens" | "mcp-credentials" | "calendar-feed" | "logout"))
     )
 }
 

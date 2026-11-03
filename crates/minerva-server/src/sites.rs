@@ -32,7 +32,8 @@ pub(super) const DEFAULT_BASE: &str = "shared";
 /// First path segments the server already uses or may need, which sites cannot take.
 const RESERVED: &[&str] = &[
     "p", "api", "export", "share", "shared", "preview", "admin", "app", "assets", "static",
-    "files", "login", "logout", "settings", "account", "health", "plugins",
+    "files", "login", "logout", "settings", "account", "health", "plugins", "calendar", "capture",
+    "pane", "icons",
 ];
 
 fn valid_path(path: &str) -> bool {

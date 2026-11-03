@@ -76,6 +76,17 @@ Yjs/Yrs roots: `title` text; `order` string-ID array; `block:<id>` text; `meta` 
 
 `GET /workspaces/{id}/graph` returns `{nodes, links}` for the graph view: `nodes` are the workspace's notes the caller can open (not trashed), each `{id, title, icon, folder_id, updated_at, tags, journal, record}` (`tags` includes inline `#tags`), and `links` are `[from, to]` pairs of note IDs, one per linking note and target, for links written as `[…](#note/{id})`, links to a block (`#note/{id}#{block}`) and embeds (`![…](#note/{id})`). A link to a note the caller cannot open is left out. 403 when the caller can open nothing in the workspace.
 
+## Calendar feed
+
+| Method | Path             | Contract                                                                                                                                  |
+| ------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/calendar-feed` | `{enabled, created_at?, journal}` for the caller's feed                                                                                    |
+| POST   | `/calendar-feed` | `{journal?}`; makes a new address and returns it once as `url` (`…/calendar/mnv_cal_….ics`); any earlier address stops working            |
+| PUT    | `/calendar-feed` | `{journal}`; whether journal days are included                                                                                             |
+| DELETE | `/calendar-feed` | Turns the feed off                                                                                                                         |
+
+Personal API tokens cannot use these. `GET /calendar/{token}.ics` (outside `/api/v1`, no sign-in) returns `text/calendar` with what the feed's owner can see now: workspace reminders (UTC, with `RRULE` for repeats and a `VALARM`), `⏰` times in notes they can open (floating local times), and journal days as all-day events when chosen; at most 2000 events. Unknown or replaced addresses, and disabled accounts, get 404.
+
 ## Embedded notes and blocks
 
 In Markdown, `[text](#note/{id}#{block})` links to a block, and `![text](#note/{id})` or `![text](#note/{id}#{block})` embeds a note or a block. Rendered for members, an embed is an empty `<span class="note-embed ne-note-{id} ne-block-{block}">` slot; for share-link guests and published pages, a short note.

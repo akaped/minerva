@@ -12,6 +12,7 @@ turns that section into the next version.
 
 ### Added
 
+- **Reminders in your calendar app.** On the Reminders page, **Add to your calendar** makes a private address that Google Calendar, Apple Calendar, Outlook or Thunderbird subscribe to. It holds your workspace reminders (with their repeats and an alert), every ⏰ time in notes you can open, and, if you choose, your journal days, and it follows your changes. The address is shown once; make a new one if it leaks (the old one stops working), or turn it off.
 - **Install Minerva as an app** on phones and computers (the browser's **Install app** or **Add to Home Screen**, or **Install Minerva** in Account → This device). It opens in its own window, with a **Quick note** shortcut, and on phones other apps can **share** pages and text to it.
 - **Quick note** (`/capture`): a page made for phones to write something down, as a new note (the first line is its title) or in today's journal. Without a connection, it keeps what you wrote on the phone and sends it when you are back online.
 - **Reading offline:** with **Keep notes I open for reading offline** (Account → This device; on by default in the installed app), the notes and pictures you open stay readable, read-only, when the server cannot be reached. They are deleted when you sign out, when another account signs in on the device, or when you turn the setting off. The app itself always opens offline.

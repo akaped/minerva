@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   repeatLabel,
+  webcal,
   stampTime,
   relative,
   groupReminders,
@@ -63,4 +64,15 @@ test("block text without the time and Markdown marks", () => {
     "Renew the passport",
   );
   assert.equal(blockText("⏰2026-11-02 09:00"), "Reminder");
+});
+
+test("calendar apps subscribe with webcal links", () => {
+  assert.equal(
+    webcal("https://notes.example.com/calendar/mnv_cal_x.ics"),
+    "webcal://notes.example.com/calendar/mnv_cal_x.ics",
+  );
+  assert.equal(
+    webcal("http://127.0.0.1:3201/calendar/a.ics"),
+    "webcal://127.0.0.1:3201/calendar/a.ics",
+  );
 });

@@ -2,6 +2,7 @@ mod administration;
 mod ai;
 mod anki;
 mod attachments;
+mod calendar;
 mod collaboration;
 mod comments;
 mod databases;
@@ -117,6 +118,9 @@ struct Data {
     mcp_credentials: Vec<mcp::Credential>,
     #[serde(default)]
     api_tokens: Vec<tokens::ApiToken>,
+    /// Calendar feed addresses, by their secret's hash (see `calendar.rs`).
+    #[serde(default)]
+    calendar_feeds: Vec<calendar::Feed>,
     #[serde(default)]
     shares: Vec<sharing::Share>,
     #[serde(default)]
@@ -998,6 +1002,7 @@ pub fn app(store: Shared) -> Router {
         .route("/icons/maskable-512.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/maskable-512.png").as_slice()) }))
         .route("/apple-touch-icon.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/apple-touch-icon.png").as_slice()) }))
         .route("/plugins/{*path}", get(plugins::serve))
+        .route("/calendar/{file}", get(calendar::feed))
         .route("/public.css", get(|| async { ([("content-type","text/css; charset=utf-8")], sharing::PUBLIC_CSS) }))
         .route("/shared", get(sharing::public))
         .route("/shared/", get(sharing::public))
@@ -1219,6 +1224,9 @@ fn dispatch(
     }
     if let ("GET", ["workspaces", wid, "graph"]) = (method, parts.as_slice()) {
         return Ok((graph::route(d, &u, wid)?, None));
+    }
+    if parts.as_slice() == ["calendar-feed"] {
+        return Ok((calendar::route(d, &u, method, &v, headers)?, None));
     }
     if let ("POST", ["embeds"]) = (method, parts.as_slice()) {
         return Ok((embeds::route(d, &u, &v)?, None));
@@ -1808,6 +1816,7 @@ fn dispatch(
             d.shares.retain(|s| s.user_id.as_deref() != Some(*uid));
             mcp::forget_user(d, uid);
             tokens::forget_user(d, uid);
+            calendar::forget_user(d, uid);
             twofactor::forget(d, uid);
             json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
         }

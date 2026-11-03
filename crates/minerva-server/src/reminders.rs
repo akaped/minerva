@@ -32,6 +32,18 @@ pub(crate) struct Repeat {
     every: u32,
     unit: Unit,
 }
+impl Repeat {
+    /// The repeat as an iCalendar rule (`FREQ=MONTHLY;INTERVAL=2`).
+    pub(crate) fn rrule(self) -> String {
+        let freq = match self.unit {
+            Unit::Day => "DAILY",
+            Unit::Week => "WEEKLY",
+            Unit::Month => "MONTHLY",
+            Unit::Year => "YEARLY",
+        };
+        format!("FREQ={freq};INTERVAL={}", self.every.max(1))
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Reminder {
     pub(crate) id: String,
@@ -89,7 +101,7 @@ fn may_change(d: &Data, u: &User, r: &Reminder) -> bool {
 
 /// Days since 1970-01-01 to (year, month 1–12, day), and back (Howard Hinnant's
 /// civil calendar algorithms).
-fn civil(days: i64) -> (i64, u32, u32) {
+pub(crate) fn civil(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
@@ -144,7 +156,7 @@ pub(crate) fn next(at: u64, repeat: Repeat, offset: i32) -> u64 {
 }
 
 /// `⏰2026-10-27 09:00` times written in a block, as written.
-fn stamps(markdown: &str) -> Vec<String> {
+pub(crate) fn stamps(markdown: &str) -> Vec<String> {
     markdown
         .match_indices('⏰')
         .filter_map(|(i, c)| {
@@ -208,6 +220,18 @@ fn details(v: &Value) -> Result<(String, String, u64, Option<Repeat>, i32), ApiE
     Ok((title, category, at, repeat, offset as i32))
 }
 
+/// The reminders someone sees: their note reminders, and the reminders of every
+/// workspace they can open.
+pub(crate) fn listed<'a>(d: &'a Data, u: &'a User) -> impl Iterator<Item = &'a Reminder> {
+    d.reminders.iter().filter(move |r| {
+        if r.note_id.is_empty() {
+            sees_workspace(d, u, &r.workspace_id)
+        } else {
+            r.user_id == u.id
+        }
+    })
+}
+
 /// - `GET reminders`: your note reminders, the reminders of every workspace you
 ///   can open, and the `⏰` times in notes you can open.
 /// - `POST reminders`: `{note_id, block_id, at}` emails a block (`/remindme`);
@@ -226,18 +250,7 @@ pub(crate) fn route(
 ) -> Result<Value, ApiError> {
     match (method, parts) {
         ("GET", ["reminders"]) => {
-            let mine: Vec<Value> = d
-                .reminders
-                .iter()
-                .filter(|r| {
-                    if r.note_id.is_empty() {
-                        sees_workspace(d, u, &r.workspace_id)
-                    } else {
-                        r.user_id == u.id
-                    }
-                })
-                .map(|r| view(d, u, r))
-                .collect();
+            let mine: Vec<Value> = listed(d, u).map(|r| view(d, u, r)).collect();
             let mut from_notes = vec![];
             for n in d.notes.iter().filter(|n| !n.trashed) {
                 if !n.blocks.iter().any(|b| b.markdown.contains('⏰'))
