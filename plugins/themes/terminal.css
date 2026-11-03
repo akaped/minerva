@@ -1,17 +1,17 @@
 /*
  * name: Command line
  * base: dark
- * description: Underground terminal: charcoal, muted phosphor, amber, and plain-text chrome.
+ * description: A quiet terminal workspace with compact file rows and clear, text-first controls.
  *
  * One scoped palette over the app's dark base. No external assets, CRT overlays,
- * blinking cursors, or changes to note content and application layout.
+ * blinking cursors, or generated status text. Note content stays untouched.
  */
 [data-variant="terminal"] {
   --surface: #0d100e;
   --surface-alt: #080b09;
-  --ink: #c5d1bd;
-  --subtle: #a0ae97;
-  --muted: #8e9d86;
+  --ink: #c9ceca;
+  --subtle: #a5ada6;
+  --muted: #939d95;
   --border: #46523e;
   --line: #303a2b;
   --accent: #b4d783;
@@ -125,13 +125,13 @@
 
 [data-variant="terminal"] .brand,
 [data-variant="terminal"] .brand-mark {
-  color: var(--accent);
+  color: var(--ink);
   text-shadow: none;
   letter-spacing: -0.04em;
 }
 
 [data-variant="terminal"] .brand {
-  font-size: 21px;
+  font-size: 18px;
 }
 
 [data-variant="terminal"] .page-heading h1,
@@ -147,22 +147,11 @@
   text-shadow: none;
 }
 
-/* Punctuation is decorative; real labels remain intact and translatable. */
-[data-variant="terminal"] .page-heading h1::before {
-  content: "~/ ";
-  color: var(--accent);
-}
-
-[data-variant="terminal"] .section-title h2::before {
-  content: "## ";
-  color: var(--muted);
-}
-
 [data-variant="terminal"] .eyebrow,
 [data-variant="terminal"] .welcome-copy .eyebrow,
 [data-variant="terminal"] .section-label {
-  color: var(--terminal-amber);
-  letter-spacing: 0.09em;
+  color: var(--muted);
+  letter-spacing: 0.025em;
 }
 
 [data-variant="terminal"] .subtitle,
@@ -222,10 +211,13 @@
 
 [data-variant="terminal"] a,
 [data-variant="terminal"] .text-link,
-[data-variant="terminal"] .tabs .active,
+[data-variant="terminal"] .tabs .active {
+  color: var(--accent);
+}
+
 [data-variant="terminal"] .folder-row .tree-icon,
 [data-variant="terminal"] .section-toggle {
-  color: var(--accent);
+  color: var(--muted);
 }
 
 [data-variant="terminal"] .text-link {
@@ -240,13 +232,18 @@
 /* A plain message panel replaces the decorative welcome illustration. */
 [data-variant="terminal"] .welcome-banner {
   min-height: 0;
-  background: var(--surface-alt);
-  border: 1px dashed var(--border);
+  padding: 16px 0;
+  margin-bottom: 24px;
+  background: transparent;
+  border: 0;
+  border-block: 1px solid var(--line);
   border-radius: 0;
   box-shadow: none;
 }
 
-[data-variant="terminal"] .welcome-banner .banner-art {
+[data-variant="terminal"] .welcome-banner .banner-art,
+[data-variant="terminal"] .brand > .brand-mark,
+[data-variant="terminal"] .note-card > .note-preview[aria-hidden="true"] {
   display: none;
 }
 
@@ -259,8 +256,160 @@
   transition: none;
 }
 
+/* Compact tiles in grid view; full-width file rows in list view. The existing
+ * view switch still works, and the actual title, date, permissions, favorite,
+ * and sharing indicators remain visible. No invented filenames or commands. */
+[data-variant="terminal"] .note-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0 20px;
+}
+
+[data-variant="terminal"] .note-list {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+[data-variant="terminal"] .note-grid > .note-card,
+[data-variant="terminal"] .note-list > .note-card {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
+[data-variant="terminal"] .note-card .note-info {
+  min-width: 0;
+  width: 100%;
+  padding: 12px 10px;
+}
+
+[data-variant="terminal"] .note-card .note-info strong {
+  min-width: 0;
+  margin: 0 0 6px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-variant="terminal"] .note-card .note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 4px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-variant="terminal"] .note-card .note-meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-variant="terminal"] .note-card .note-meta .star {
+  margin-left: 0;
+  color: var(--terminal-amber);
+}
+
+[data-variant="terminal"] .note-list .note-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 24px;
+}
+
+[data-variant="terminal"] .note-list .note-info strong {
+  flex: 1 1 22ch;
+  margin: 0;
+}
+
+[data-variant="terminal"] .note-list .note-meta {
+  flex: 0 1 auto;
+}
+
+/* Scope directory rows to actual folders/databases, not integration cards. */
+[data-variant="terminal"] .folder-grid:has(> [data-open-folder]),
+[data-variant="terminal"] .folder-grid:has(> [data-database]) {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+[data-variant="terminal"] .folder-card[data-open-folder],
+[data-variant="terminal"] .folder-card[data-database] {
+  min-width: 0;
+  padding: 10px;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+[data-variant="terminal"] .folder-card[data-open-folder] > div,
+[data-variant="terminal"] .folder-card[data-database] > div {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+}
+
+[data-variant="terminal"] .folder-card strong {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+[data-variant="terminal"] .folder-card small {
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+[data-variant="terminal"] .folder-card[data-open-folder] small,
+[data-variant="terminal"] .folder-card[data-database] small {
+  margin-left: auto;
+}
+
+[data-variant="terminal"] .folder-card .folder-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 0;
+}
+
+[data-variant="terminal"] .folder-card .folder-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-variant="terminal"] .page-heading h1 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+[data-variant="terminal"] .welcome-copy h2 {
+  font-size: 17px;
+}
+
+[data-variant="terminal"] .section-title {
+  margin-bottom: 8px;
+}
+
+[data-variant="terminal"] .save-status,
+[data-variant="terminal"] .server-status {
+  background: transparent;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+
 [data-variant="terminal"] .folder-card:hover,
-[data-variant="terminal"] .note-card:hover {
+[data-variant="terminal"] .note-card:hover,
+[data-variant="terminal"] .note-grid > .note-card:hover,
+[data-variant="terminal"] .note-list > .note-card:hover {
   background: var(--row-hover);
   border-color: var(--accent);
   transform: none;
@@ -272,8 +421,8 @@
 [data-variant="terminal"] .square,
 [data-variant="terminal"] .avatar {
   background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--border);
+  color: var(--subtle);
+  border: 0;
   border-radius: 0;
   box-shadow: none;
 }
@@ -305,9 +454,9 @@
 [data-variant="terminal"] .tag,
 [data-variant="terminal"] .pill,
 [data-variant="terminal"] .peer {
-  background: var(--soft);
+  background: transparent;
   border-color: var(--border);
-  color: var(--accent);
+  color: var(--subtle);
 }
 
 [data-variant="terminal"] .view-toggle .active,
