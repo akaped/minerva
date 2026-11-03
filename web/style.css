@@ -1012,20 +1012,29 @@ p {
 [data-theme="dark"] .lp-highlight {
   background: #6b5a1a;
 }
-/* A heading block is edited at its heading's size. */
+/* A heading block is edited at its heading's size, line height and margins,
+   so it neither grows nor shrinks when it opens or closes. */
 .block-body.lp-h1 {
   font-size: 28px;
   font-weight: 700;
-  line-height: 1.4;
 }
 .block-body.lp-h2 {
   font-size: 22px;
   font-weight: 600;
-  line-height: 1.5;
+  letter-spacing: -0.4px;
 }
 .block-body.lp-h3 {
   font-size: 18px;
   font-weight: 600;
+}
+.block-body.lp-h1 > .live-preview-wrap {
+  margin: 15px 0 6px;
+}
+.block-body.lp-h2 > .live-preview-wrap {
+  margin: 16px 0 6px;
+}
+.block-body.lp-h3 > .live-preview-wrap {
+  margin: 10px 0 6px;
 }
 /* Whole blocks selected together, and what can be done with them. */
 .block.block-selected {

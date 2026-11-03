@@ -201,11 +201,14 @@ export class Collaboration {
   }
   commit(note) {
     if (!this.ready || this.closed) return;
-    for (const block of note.blocks)
-      if (!this.scoped.has(block.id)) {
-        this.scoped.add(block.id);
-        this.undoManager.addToScope(this.doc.getText("block:" + block.id));
-      }
+    // Added together: Yjs copies its whole scope on each call.
+    const unscoped = note.blocks.filter((b) => !this.scoped.has(b.id));
+    if (unscoped.length) {
+      for (const b of unscoped) this.scoped.add(b.id);
+      this.undoManager.addToScope(
+        unscoped.map((b) => this.doc.getText("block:" + b.id)),
+      );
+    }
     this.doc.transact(() => {
       replaceText(this.doc.getText("title"), note.title);
       const meta = this.doc.getMap("meta");
@@ -219,14 +222,27 @@ export class Collaboration {
         meta.set("tags", [...note.tags]);
       const order = this.doc.getArray("order"),
         desired = note.blocks.map((b) => b.id);
-      // Edit only the changed portion of the order instead of replacing the array.
-      for (let i = order.length - 1; i >= 0; i--)
-        if (!desired.includes(order.get(i))) order.delete(i, 1);
-      for (let i = 0; i < desired.length; i++) {
-        if (order.get(i) === desired[i]) continue;
-        const old = order.toArray().indexOf(desired[i]);
-        if (old >= 0) order.delete(old, 1);
-        order.insert(i, [desired[i]]);
+      // Edit only the changed portion of the order instead of replacing the
+      // array, working on a copy: reading a Yjs array by index walks it.
+      let current = order.toArray();
+      if (
+        current.length !== desired.length ||
+        current.some((id, i) => id !== desired[i])
+      ) {
+        const wanted = new Set(desired);
+        for (let i = current.length - 1; i >= 0; i--)
+          if (!wanted.has(current[i])) order.delete(i, 1);
+        current = current.filter((id) => wanted.has(id));
+        for (let i = 0; i < desired.length; i++) {
+          if (current[i] === desired[i]) continue;
+          const old = current.indexOf(desired[i]);
+          if (old >= 0) {
+            order.delete(old, 1);
+            current.splice(old, 1);
+          }
+          order.insert(i, [desired[i]]);
+          current.splice(i, 0, desired[i]);
+        }
       }
       for (const block of note.blocks)
         replaceText(this.doc.getText("block:" + block.id), block.markdown);

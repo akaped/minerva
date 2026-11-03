@@ -111,8 +111,15 @@ export function attachPreview(ta, esc) {
       shown = ta.value;
       layer.innerHTML = previewHTML(shown, esc);
       const level = headingLevel(shown);
-      for (const n of [1, 2, 3])
-        body?.classList.toggle(`lp-h${n}`, n === level);
+      const current =
+        [1, 2, 3].find((n) => body?.classList.contains(`lp-h${n}`)) || 0;
+      if (body && current !== level) {
+        for (const n of [1, 2, 3])
+          body.classList.toggle(`lp-h${n}`, n === level);
+        // The text's size changed: the field fits it again.
+        ta.style.height = "auto";
+        ta.style.height = ta.scrollHeight + "px";
+      }
     }
     requestAnimationFrame(draw);
   };

@@ -20,6 +20,7 @@ import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
+import { sourceOffset, sourceRange } from "./caret-map.js";
 import {
   ROLLUP_FUNCTIONS,
   computedText,
@@ -2176,7 +2177,7 @@ function renderEditor() {
     ? `<button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="export">${icon("download")}Export</button>`
     : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="comments-toggle" aria-pressed="false" title="Comments on this note">💬 Comments <span class="comments-count"></span></button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? '<section class="record-panel" id="record-panel" aria-label="Record properties"></section>' : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? '<section class="record-panel" id="record-panel" aria-label="Record properties"></section>' : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div><span id="block-edit-hint" hidden>Press Enter to edit.</span>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2667,9 +2668,8 @@ function emptyBlockHTML() {
     : '<span class="block-empty" aria-hidden="true"></span>';
 }
 function blockHTML(b, i) {
-  const position = `block ${i + 1} of ${note.blocks.length}`;
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? `role="button" aria-label="Edit ${position}"` : `role="group" aria-label="${position[0].toUpperCase() + position.slice(1)}"`}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="Comment on this block" aria-label="Comment on this block">💬</button>`}</div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? '<div class="block-controls"><button class="block-handle" title="Drag to move · ↑/↓ to move with the keyboard" aria-label="Move block (drag, or press the up and down arrows)">⠿</button><button data-remove title="Delete block" aria-label="Delete block">×</button></div>' : ""}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="Toggle task" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="Comment on this block" aria-label="Comment on this block">💬</button>`}</div>`;
 }
 /** Moves the block at `i` to index `j` and saves. */
 async function moveBlock(i, j) {
@@ -3073,8 +3073,12 @@ function drawFolding() {
     foldedFor = note.id;
   }
   foldHidden = hiddenBlocks(note.blocks, folded, indentLevel);
+  // One lookup for all blocks: one per block made long notes slow.
+  const elements = new Map(
+    $$("#blocks [data-block]").map((el) => [el.dataset.block, el]),
+  );
   note.blocks.forEach((b, i) => {
-    const el = $(`#blocks [data-block="${CSS.escape(b.id)}"]`);
+    const el = elements.get(b.id);
     if (!el) return;
     const parent = hasChildren(note.blocks, i, indentLevel);
     const isFolded = parent && folded.has(b.id);
@@ -3209,6 +3213,112 @@ document.addEventListener("click", (e) => {
     toggleFold(fold.dataset.fold);
   }
 });
+/** A block's own controls: editing, its task box, handle and delete button. */
+function bindBlock(el) {
+  const id = el.dataset.block;
+  action($(".task-toggle", el), "click", async () => {
+    const i = note.blocks.findIndex((b) => b.id === id),
+      b = note.blocks[i];
+    live?.boundary();
+    b.markdown = b.markdown.replace(/\[([ xX])\]/, (_, v) =>
+      v === " " ? "[x]" : "[ ]",
+    );
+    note.rendered[i] = await renderMarkdown(b.markdown);
+    markDirty();
+    renderBlocks();
+    await queueSave();
+  });
+  action($(".block-body", el), "click", (e) => {
+    if (
+      e.target.closest(
+        "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio, .file-card",
+      )
+    )
+      return;
+    // Shift+click selects whole blocks, from the one used last.
+    if (e.shiftKey) {
+      e.preventDefault();
+      return selectBlockRange(selectionAnchor || lastEditedBlock || id, id);
+    }
+    // Selecting text to copy it must not open the block for editing.
+    if (!getSelection().isCollapsed) return;
+    if (editable()) editBlock(id, clickedOffset(e.currentTarget, id, e));
+  });
+  action($(".block-body", el), "keydown", (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" && editable()) {
+      e.preventDefault();
+      editBlock(id);
+    }
+    // Arrow keys move between blocks without entering edit mode.
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const sibling =
+        e.key === "ArrowDown"
+          ? el.nextElementSibling
+          : el.previousElementSibling;
+      if (sibling) {
+        e.preventDefault();
+        $(".block-body", sibling)?.focus();
+      }
+    }
+  });
+  const handle = $(".block-handle", el);
+  action(handle, "keydown", async (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const i = note.blocks.findIndex((b) => b.id === id);
+    await moveBlock(i, i + (e.key === "ArrowUp" ? -1 : 1));
+    $(`[data-block="${CSS.escape(id)}"] .block-handle`)?.focus();
+  });
+  handle?.addEventListener("pointerdown", (e) => dragBlock(e, el, id));
+  action($("[data-remove]", el), "click", async () => {
+    if (blockLocked(id)) return;
+    const i = note.blocks.findIndex((b) => b.id === id);
+    live?.boundary();
+    note.blocks.splice(i, 1);
+    note.rendered.splice(i, 1);
+    markDirty();
+    removeBlockElement(id);
+    const neighbour = $$(".block-body")[Math.min(i, note.blocks.length - 1)];
+    (neighbour || $("#add-block"))?.focus();
+    announce("Block deleted. Press Ctrl+Z to undo.");
+    await queueSave();
+  });
+}
+/**
+ * After blocks were added or removed in place (rather than by redrawing them
+ * all, which takes long in long notes): folding, and what depends on the whole
+ * note.
+ */
+function blocksChanged() {
+  setTimeout(() => $("#find-bar") && runFind(), 0);
+  setTimeout(() => !shareMode && comments.drawBadges(), 0);
+  drawPeers();
+  drawFolding();
+  fillContents();
+  linkCards();
+}
+/** Shows `blocks`, already in `note.blocks` from index `at`, without a redraw. */
+function insertBlockElements(at, blocks) {
+  const root = $("#blocks");
+  if (mode !== "document" || !root) return renderBlocks();
+  const next = note.blocks[at + blocks.length];
+  const before =
+    (next && $(`:scope > [data-block="${CSS.escape(next.id)}"]`, root)) ||
+    $(":scope > .peer-layer", root);
+  const holder = document.createElement("template");
+  holder.innerHTML = blocks.map((b, k) => blockHTML(b, at + k)).join("");
+  const added = [...holder.content.children];
+  root.insertBefore(holder.content, before || null);
+  added.forEach(bindBlock);
+  blocksChanged();
+}
+/** Removes a block's element without a redraw. */
+function removeBlockElement(id) {
+  if (mode !== "document") return renderBlocks();
+  $(`#blocks > [data-block="${CSS.escape(id)}"]`)?.remove();
+  blocksChanged();
+}
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
   setTimeout(() => !shareMode && comments.drawBadges(), 0);
@@ -3225,77 +3335,7 @@ function renderBlocks() {
   drawFolding();
   fillContents();
   linkCards();
-  $$(".block", root).forEach((el) => {
-    const id = el.dataset.block;
-    action($(".task-toggle", el), "click", async () => {
-      const i = note.blocks.findIndex((b) => b.id === id),
-        b = note.blocks[i];
-      live?.boundary();
-      b.markdown = b.markdown.replace(/\[([ xX])\]/, (_, v) =>
-        v === " " ? "[x]" : "[ ]",
-      );
-      note.rendered[i] = await renderMarkdown(b.markdown);
-      markDirty();
-      renderBlocks();
-      await queueSave();
-    });
-    action($(".block-body", el), "click", (e) => {
-      if (
-        e.target.closest(
-          "a, .tag, .journal-tasks button, .db-embed, .youtube-card, audio, .file-card",
-        )
-      )
-        return;
-      // Shift+click selects whole blocks, from the one used last.
-      if (e.shiftKey) {
-        e.preventDefault();
-        return selectBlockRange(selectionAnchor || lastEditedBlock || id, id);
-      }
-      // Selecting text to copy it must not open the block for editing.
-      if (!getSelection().isCollapsed) return;
-      if (editable()) editBlock(id);
-    });
-    action($(".block-body", el), "keydown", (e) => {
-      if (e.target !== e.currentTarget) return;
-      if (e.key === "Enter" && editable()) {
-        e.preventDefault();
-        editBlock(id);
-      }
-      // Arrow keys move between blocks without entering edit mode.
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        const sibling =
-          e.key === "ArrowDown"
-            ? el.nextElementSibling
-            : el.previousElementSibling;
-        if (sibling) {
-          e.preventDefault();
-          $(".block-body", sibling)?.focus();
-        }
-      }
-    });
-    const handle = $(".block-handle", el);
-    action(handle, "keydown", async (e) => {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-      e.preventDefault();
-      const i = note.blocks.findIndex((b) => b.id === id);
-      await moveBlock(i, i + (e.key === "ArrowUp" ? -1 : 1));
-      $(`[data-block="${CSS.escape(id)}"] .block-handle`)?.focus();
-    });
-    handle?.addEventListener("pointerdown", (e) => dragBlock(e, el, id));
-    action($("[data-remove]", el), "click", async () => {
-      if (blockLocked(id)) return;
-      const i = note.blocks.findIndex((b) => b.id === id);
-      live?.boundary();
-      note.blocks.splice(i, 1);
-      note.rendered.splice(i, 1);
-      markDirty();
-      renderBlocks();
-      const neighbour = $$(".block-body")[Math.min(i, note.blocks.length - 1)];
-      (neighbour || $("#add-block"))?.focus();
-      announce("Block deleted. Press Ctrl+Z to undo.");
-      await queueSave();
-    });
-  });
+  $$(".block", root).forEach(bindBlock);
   if (mode === "canvas" && editable())
     $$(".canvas-card").forEach((card) => {
       const handle = $(".canvas-handle", card);
@@ -3406,23 +3446,176 @@ function updateFormatBar(ta) {
   bar.className = "format-bar";
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Format selection");
-  bar.innerHTML = `<button data-format="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-format="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-format="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button><button data-format="code" title="Inline code (Ctrl+E)"><code>&lt;/&gt;</code></button><button data-format="link" title="Link (Ctrl+K)">🔗</button><button data-format="highlight" class="format-highlight" title="Highlight (Ctrl+Shift+H)">🖍</button>${shareMode ? "" : '<button data-ai class="format-ai" title="AI: improve, translate, continue (Ctrl+J)">✦ AI</button><button data-comment-selection title="Comment on the selected text">💬</button>'}`;
+  bar.innerHTML = formatButtons();
   $$("button", bar).forEach((b) => {
     b.setAttribute("aria-label", b.title);
     // Keep the textarea focused and its selection intact.
     b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", () => formatAction(ta, b.dataset));
+  });
+  block.append(bar);
+}
+function formatButtons() {
+  return `<button data-format="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-format="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-format="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button><button data-format="code" title="Inline code (Ctrl+E)"><code>&lt;/&gt;</code></button><button data-format="link" title="Link (Ctrl+K)">🔗</button><button data-format="highlight" class="format-highlight" title="Highlight (Ctrl+Shift+H)">🖍</button>${shareMode ? "" : '<button data-ai class="format-ai" title="AI: improve, translate, continue (Ctrl+J)">✦ AI</button><button data-comment-selection title="Comment on the selected text">💬</button>'}`;
+}
+/** What a format bar button (or its shortcut) does to the selection in `ta`. */
+function formatAction(ta, { format, ai, commentSelection }) {
+  if (ai !== undefined) return openWritingAssist(ta);
+  if (commentSelection !== undefined)
+    return comments.start(
+      ta.closest("[data-block]")?.dataset.block,
+      ta.value.slice(ta.selectionStart, ta.selectionEnd),
+    );
+  applyFormat(ta, format);
+  updateFormatBar(ta);
+}
+
+// ---------------------------------------------------------------------------
+// From the rendered block to its Markdown: a click puts the cursor where it
+// was, and text selected in a rendered block can be formatted (with the bar or
+// the same shortcuts as in the field) or typed over; the block opens for
+// editing with the same text selected.
+
+/** Rendered text of `body` up to `node`/`offset`, as a reader sees it. */
+function renderedText(body, node, offset) {
+  const range = document.createRange();
+  range.setStart(body, 0);
+  try {
+    range.setEnd(node, offset);
+  } catch {
+    return null;
+  }
+  const copy = range.cloneContents();
+  // Text that is not part of the block's own words.
+  $$(
+    "button, [aria-hidden='true'], .image-bar, .db-embed, .note-toc, .link-card, .katex, .mermaid, .file-card",
+    copy,
+  ).forEach((n) => n.remove());
+  return copy.textContent;
+}
+/** The Markdown offset under a click in a rendered block, if it hit text. */
+function clickedOffset(body, id, e) {
+  const b = note.blocks.find((x) => x.id === id);
+  const hit = document.caretPositionFromPoint
+    ? document.caretPositionFromPoint(e.clientX, e.clientY)
+    : document.caretRangeFromPoint?.(e.clientX, e.clientY);
+  const node = hit?.offsetNode ?? hit?.startContainer;
+  const offset = hit?.offset ?? hit?.startOffset;
+  if (!b || !node || !body.contains(node) || node.nodeType !== 3) return null;
+  const before = renderedText(body, node, offset);
+  return before == null ? null : sourceOffset(b.markdown, before);
+}
+/** A selection inside one rendered block, as a Markdown range. */
+function renderedSelection() {
+  const sel = getSelection();
+  if (!note || !editable() || sel.isCollapsed || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  const element = (n) => (n.nodeType === 1 ? n : n.parentElement);
+  const body = element(range.startContainer)?.closest(".block-body");
+  if (!body || !body.contains(range.endContainer) || $("textarea", body))
+    return null;
+  const id = body.closest("[data-block]")?.dataset.block;
+  const b = note.blocks.find((x) => x.id === id);
+  const before = renderedText(body, range.startContainer, range.startOffset);
+  const through = renderedText(body, range.endContainer, range.endOffset);
+  if (!b || before == null || through == null || blockLocked(id)) return null;
+  return { id, ...sourceRange(b.markdown, before, through.slice(before.length)) };
+}
+/** Opens the selected block for editing with the same text selected. */
+function editSelection(selection) {
+  getSelection().removeAllRanges();
+  $(".view-format-bar")?.remove();
+  editBlock(selection.id, selection.start);
+  const ta = $(`[data-block="${CSS.escape(selection.id)}"] textarea`);
+  ta?.setSelectionRange(selection.start, selection.end);
+  return ta;
+}
+/** The format bar over text selected in a rendered block. */
+function updateViewFormatBar() {
+  const selection = renderedSelection();
+  const old = $(".view-format-bar");
+  if (!selection) return old?.remove();
+  if (old?.dataset.block === selection.id) return;
+  old?.remove();
+  const block = $(`[data-block="${CSS.escape(selection.id)}"]`);
+  const bar = document.createElement("div");
+  bar.className = "format-bar view-format-bar";
+  bar.dataset.block = selection.id;
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Format selection");
+  bar.innerHTML = formatButtons();
+  $$("button", bar).forEach((b) => {
+    b.setAttribute("aria-label", b.title);
+    b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", () => {
-      if (b.dataset.ai !== undefined) return openWritingAssist(ta);
-      if (b.dataset.commentSelection !== undefined)
-        return comments.start(
-          ta.closest("[data-block]")?.dataset.block,
-          ta.value.slice(ta.selectionStart, ta.selectionEnd),
-        );
-      applyFormat(ta, b.dataset.format);
-      updateFormatBar(ta);
+      const current = renderedSelection();
+      const ta = current && editSelection(current);
+      if (ta) formatAction(ta, b.dataset);
     });
   });
   block.append(bar);
+}
+document.addEventListener("selectionchange", () => {
+  if (note && !document.activeElement?.matches?.("textarea, input"))
+    updateViewFormatBar();
+});
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.target.closest?.("input, textarea, select, dialog")) return;
+    const selection = renderedSelection();
+    if (!selection) return;
+    const shortcut =
+      (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase();
+    const format = {
+      b: !e.shiftKey && "bold",
+      i: !e.shiftKey && "italic",
+      e: !e.shiftKey && "code",
+      k: !e.shiftKey && "link",
+      h: e.shiftKey && "highlight",
+      x: e.shiftKey && "strike",
+    }[shortcut];
+    if (format || (shortcut === "j" && !e.shiftKey && !shareMode)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const ta = editSelection(selection);
+      if (ta) formatAction(ta, format ? { format } : { ai: "" });
+      return;
+    }
+    // Typing over the selection replaces it, as in the field.
+    const typing =
+      !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1;
+    if (typing || e.key === "Backspace" || e.key === "Delete")
+      editSelection(selection);
+  },
+  true,
+);
+
+// While a pointer is pressed, a block that stops being edited keeps its height,
+// so what the pointer pressed is still under it when released: a heading's
+// field and its rendered text differ in height, and a click right below it used
+// to land elsewhere (or nowhere).
+let pointerPressed = false;
+const heldBlocks = new Set();
+document.addEventListener("pointerdown", () => (pointerPressed = true), true);
+for (const event of ["pointerup", "pointercancel"])
+  document.addEventListener(
+    event,
+    () => {
+      pointerPressed = false;
+      // After the click that follows the release.
+      setTimeout(() => {
+        for (const el of heldBlocks) el.style.minHeight = el.style.maxHeight = "";
+        heldBlocks.clear();
+      }, 0);
+    },
+    true,
+  );
+function holdHeight(el) {
+  if (!pointerPressed || !el?.isConnected) return;
+  const height = `${el.getBoundingClientRect().height}px`;
+  el.style.minHeight = el.style.maxHeight = height;
+  heldBlocks.add(el);
 }
 let linkPicker = null;
 // The people who can open each note, and names by email, for `@` mentions.
@@ -3456,9 +3649,12 @@ function nameMentions(root) {
 if (typeof MutationObserver !== "undefined")
   new MutationObserver((changes) => {
     if (!peopleNames.size) return;
+    // Each changed parent once: redrawing a note adds every block at once.
+    const roots = new Set();
     for (const change of changes)
       for (const node of change.addedNodes)
-        if (node.nodeType === 1) nameMentions(node.parentNode || node);
+        if (node.nodeType === 1) roots.add(node.parentNode || node);
+    for (const root of roots) if (root.isConnected) nameMentions(root);
   }).observe(document.documentElement, { childList: true, subtree: true });
 /** `@` autocomplete: pick someone who can open the note and mention them. */
 async function updateMentionPicker(ta, query) {
@@ -3594,6 +3790,7 @@ function editBlock(id, caret = null) {
       return;
     }
     note.rendered[i] = rendered;
+    holdHeight(el);
     body.innerHTML = rendered || emptyBlockHTML();
     // Indenting while typing may have given blocks children or taken them away,
     // and a heading may have changed.
@@ -3637,7 +3834,7 @@ function editBlock(id, caret = null) {
       note.blocks.splice(at, 0, fresh);
       note.rendered.splice(at, 0, renderedCache.get(after) ?? "");
       markDirty();
-      renderBlocks();
+      insertBlockElements(at, [fresh]);
       editBlock(fresh.id, prefix.length);
       if (rest) announce("Block split");
     });
@@ -3735,7 +3932,7 @@ function editBlock(id, caret = null) {
     note.blocks.splice(i, 1);
     note.rendered.splice(i, 1);
     markDirty();
-    renderBlocks();
+    removeBlockElement(id);
     editBlock(previous.id, join);
     announce("Merged with the previous block");
   }

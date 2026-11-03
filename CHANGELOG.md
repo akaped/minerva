@@ -33,10 +33,14 @@ turns that section into the next version.
 
 ### Changed
 
+- **Editing feels closer to the page.** Clicking into a block puts the cursor where you clicked, not at the end. Text selected in a block before editing shows the format bar, and the formatting shortcuts, AI (Ctrl+J) and typing work on it: the block opens with that text selected. Headings keep their size, line height and spacing while edited, so nothing jumps when one opens or closes. See `docs/editor.md` for how the editor works and why it stays Markdown in a text field.
+- **Long notes stay quick:** splitting, merging and moving between blocks no longer redraw the whole note. In a 2,000-block note, Enter went from about 0.9 s to 0.08 s.
+- Screen readers read the blocks of a note you can edit (headings, paragraphs, links), with "Press Enter to edit", instead of only "Edit block 3 of 8".
 - A picture from a note's files shows a slim bar above it on hover, with its name, size, upload date and **Download**, instead of a download card below it. New pictures are added without the card; in existing notes the card under a picture is hidden.
 
 ### Fixed
 
+- A click on the block right below a heading you were editing opens that block again, instead of being lost while the heading changed height.
 - The cursor is visible again while writing in a block (it had become transparent with the live preview, in the desktop app).
 - A task being edited shows its Markdown (`- [ ]`) without the checkbox beside it, and the text and the cursor line up again.
 - Releases include the desktop app and server for Linux and Windows again: 0.5.0 was published without them because its macOS build could not run. Releases no longer include macOS packages; build them on a Mac with `scripts/package-desktop.sh macos`.
