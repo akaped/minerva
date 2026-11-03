@@ -13,14 +13,14 @@ import {
 } from "./note-tabs.js";
 import { renderAIChat, renderAISettings, stopAI } from "./ai.js";
 import { createWritingAssist } from "./ai-writing.js";
-import { attachPreview } from "./live-preview.js";
+import { attachPreview, previewHTML, headingLevel } from "./live-preview.js";
 import { renderDashboard } from "./dashboard.js";
 import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
-import { sourceOffset, sourceRange } from "./caret-map.js";
+import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
 import {
   ROLLUP_FUNCTIONS,
   computedText,
@@ -2662,6 +2662,34 @@ const LIST_MARKER = /^(\s*)(- \[[ xX]\] |[-*+] |(\d+)([.)]) )/;
  * Empty blocks are plain space (people use them for spacing). Only a new note's
  * single empty block shows a hint, so there is somewhere obvious to start.
  */
+/** A block's Markdown shown styled, while the server renders it. */
+function pendingHTML(markdown) {
+  if (!markdown.trim()) return "";
+  const level = headingLevel(markdown);
+  return `<div class="render-pending${level ? ` lp-h${level}` : ""}">${previewHTML(markdown, esc)}</div>`;
+}
+/** Shows block `id`'s rendering of `markdown` when the server returns it. */
+function showRendered(id, markdown) {
+  const forNote = note;
+  renderMarkdown(markdown)
+    .then((html) => {
+      const i = forNote.blocks.findIndex((b) => b.id === id);
+      // Unless the block changed again (or is being edited) meanwhile.
+      if (i < 0 || forNote.blocks[i].markdown !== markdown) return;
+      forNote.rendered[i] = html;
+      const body = note === forNote && $(`[data-block="${CSS.escape(id)}"] > .block-body`);
+      if (!body || $("textarea", body)) return;
+      holdHeight(body.parentElement);
+      body.innerHTML = html || emptyBlockHTML();
+      drawFolding();
+      fillContents();
+      linkCards();
+    })
+    .catch(() => {
+      // Saved all the same; the styled Markdown stays until it is next opened.
+      announce("This block will show formatted once the server answers.");
+    });
+}
 function emptyBlockHTML() {
   return note?.blocks.length === 1
     ? '<span class="block-placeholder">Write something…</span>'
@@ -3488,7 +3516,7 @@ function renderedText(body, node, offset) {
   const copy = range.cloneContents();
   // Text that is not part of the block's own words.
   $$(
-    "button, [aria-hidden='true'], .image-bar, .db-embed, .note-toc, .link-card, .katex, .mermaid, .file-card",
+    "button, [aria-hidden='true'], .image-bar, .db-embed, .note-toc, .link-card, math, .mermaid-diagram, .file-card",
     copy,
   ).forEach((n) => n.remove());
   return copy.textContent;
@@ -3496,6 +3524,17 @@ function renderedText(body, node, offset) {
 /** The Markdown offset under a click in a rendered block, if it hit text. */
 function clickedOffset(body, id, e) {
   const b = note.blocks.find((x) => x.id === id);
+  // A picture, formula or diagram: the cursor goes to the start of its Markdown.
+  const object = e.target.closest?.("img, math, .mermaid-diagram");
+  if (b && object && body.contains(object)) {
+    const [kind, selector] = object.matches("img")
+      ? ["image", "img"]
+      : object.matches("math")
+        ? ["math", "math"]
+        : ["diagram", ".mermaid-diagram"];
+    const n = $$(selector, body).indexOf(object);
+    return objectOffset(b.markdown, kind, n);
+  }
   const hit = document.caretPositionFromPoint
     ? document.caretPositionFromPoint(e.clientX, e.clientY)
     : document.caretRangeFromPoint?.(e.clientX, e.clientY);
@@ -3781,17 +3820,14 @@ function editBlock(id, caret = null) {
       return;
     }
     markDirty();
-    let rendered;
-    try {
-      rendered = await renderMarkdown(b.markdown);
-    } catch (e) {
-      closed = false;
-      error(e);
-      return;
-    }
+    // Never waits for the server: what follows (the next block, a split) goes
+    // on at once, with the rendered HTML when it is known, else the Markdown
+    // styled as in the field until the server's rendering arrives.
+    const rendered = renderedCache.get(b.markdown) ?? pendingHTML(b.markdown);
     note.rendered[i] = rendered;
     holdHeight(el);
     body.innerHTML = rendered || emptyBlockHTML();
+    if (!renderedCache.has(b.markdown)) showRendered(id, b.markdown);
     // Indenting while typing may have given blocks children or taken them away,
     // and a heading may have changed.
     drawFolding();

@@ -7,9 +7,20 @@
  */
 
 // Syntax that renders as nothing, tried at each place in the Markdown.
+// Pictures, formulas and diagrams, in the order the rendered block shows them.
+const OBJECTS = {
+  image: /!\[[^\]\n]*\]\([^)\n]*\)/g,
+  // Display math, then inline math (not "$5 and $10": a closing `$` is not
+  // followed by a digit).
+  math: /\$\$[\s\S]*?\$\$|\$(?=\S)[^$\n]*?\S\$(?!\d)|\$\S\$(?!\d)/g,
+  diagram: /```mermaid[\s\S]*?(?:```|$)/g,
+};
 const HIDDEN = [
+  // Pictures and formulas: their rendered text is not counted (see app.js).
+  new RegExp("^(?:" + OBJECTS.image.source + ")"),
+  new RegExp("^(?:" + OBJECTS.math.source + ")"),
   /^\]\([^)\n]*\)/, // a link's address: `](…)`
-  /^!?\[(?=[^\]\n]*\]\()/, // a link's or image's opening
+  /^\[(?=[^\]\n]*\]\()/, // a link's opening
   /^\{\{c\d{1,3}::/, // a cloze's opening
   /^::[^}\n]*\}\}/, // a cloze's hint and closing
   /^\}\}/,
@@ -83,4 +94,13 @@ export function sourceRange(markdown, prefix, selected) {
   const start = skipHidden(markdown, sourceOffset(markdown, prefix));
   const end = sourceOffset(markdown, prefix + selected);
   return { start: Math.min(start, end), end: Math.max(start, end) };
+}
+
+/**
+ * Where the `n`th (from 0) picture, formula or diagram of a block starts in
+ * its Markdown, for a click on it; `null` when there is no such one.
+ */
+export function objectOffset(markdown, kind, n) {
+  const matches = [...markdown.matchAll(OBJECTS[kind])];
+  return matches[n]?.index ?? null;
 }

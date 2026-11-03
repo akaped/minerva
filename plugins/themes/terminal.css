@@ -126,7 +126,9 @@
   color: #90efa8;
   border-color: #1b4425;
 }
-[data-variant="terminal"] .block blockquote {
+[data-variant="terminal"] .block blockquote,
+[data-variant="terminal"] .block .lp-quote,
+[data-variant="terminal"] .block .lp-callout {
   background: #13381c;
   border-color: #5de880;
   color: #aef3c0;

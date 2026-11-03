@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { previewHTML, headingLevel } from "../live-preview.js";
+import { previewHTML, headingLevel, frameOf } from "../live-preview.js";
 
 const esc = (s) =>
   String(s).replace(
@@ -46,4 +46,16 @@ test("heading blocks are edited at their size", () => {
   assert.equal(headingLevel("### Small"), 3);
   assert.equal(headingLevel("#### Smaller"), 0);
   assert.equal(headingLevel("#tag"), 0);
+});
+
+test("quotes and callouts are edited in their frame", () => {
+  assert.equal(frameOf("> A quote\n> on two lines"), "quote");
+  assert.equal(frameOf("> [!WARNING]\n> Back up first."), "warning");
+  assert.equal(frameOf("> [!nonsense] text"), "quote");
+  assert.equal(frameOf("> quoted\nnot quoted"), "");
+  assert.equal(frameOf("Plain"), "");
+  assert.match(
+    previewHTML("> [!TIP]\n> Use **it**", esc),
+    /<span class="lp-callout-kind">\[!TIP\]<\/span>/,
+  );
 });

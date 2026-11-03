@@ -4,7 +4,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Editor** (see `docs/editor.md`): draw quotes and callouts with their border and padding in the live preview, and tables in columns, so they keep their size when opened; a faster path for rendering a closed block on slow connections; put the cursor at the right place when a click lands on an image, embed or formula.
 - [ ] **Graph view** of note links, per workspace and per note (backlinks are already computed).
 
 ## Soon

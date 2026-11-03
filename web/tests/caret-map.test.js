@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sourceOffset, sourceRange } from "../caret-map.js";
+import { sourceOffset, sourceRange, objectOffset } from "../caret-map.js";
 
 /** The Markdown before the place that rendered text `prefix` ends at. */
 const before = (markdown, prefix) =>
@@ -74,4 +74,33 @@ test("selections keep to the text, not its markers", () => {
   assert.equal(range("With ", "bold words"), "bold words");
   assert.equal(range("With bold ", "words and a"), "words** and [a");
   assert.equal(range("With bold words and ", "a link"), "a link");
+});
+
+test("pictures, formulas and diagrams", () => {
+  const md =
+    "Look ![a cat](/a.png) and ![dog](/d.png), $E = mc^2$ costs $5 and $10.";
+  assert.equal(
+    md.slice(objectOffset(md, "image", 1)),
+    "![dog](/d.png), $E = mc^2$ costs $5 and $10.",
+  );
+  assert.equal(objectOffset(md, "image", 2), null);
+  assert.equal(
+    md.slice(objectOffset(md, "math", 0), objectOffset(md, "math", 0) + 3),
+    "$E ",
+  );
+  assert.equal(
+    objectOffset(md, "math", 1),
+    null,
+    "dollar amounts are not math",
+  );
+  assert.equal(objectOffset("$$\nx^2\n$$", "math", 0), 0);
+  assert.equal(
+    objectOffset("Before\n```mermaid\ngraph TD\n```", "diagram", 0),
+    7,
+  );
+  // Text after a picture or formula still maps: their source is skipped.
+  assert.equal(
+    before(md, "Look and , costs $5 and $1"),
+    "Look ![a cat](/a.png) and ![dog](/d.png), $E = mc^2$ costs $5 and $1",
+  );
 });

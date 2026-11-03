@@ -67,9 +67,12 @@ test("moving a card between columns", () => {
     moveToGroup({ id: "s", kind: "select" }, rows[0], "Done", "To do"),
     { s: "To do" },
   );
-  assert.deepEqual(moveToGroup({ id: "p", kind: "person" }, rows[0], "u1", ""), {
-    p: null,
-  });
+  assert.deepEqual(
+    moveToGroup({ id: "p", kind: "person" }, rows[0], "u1", ""),
+    {
+      p: null,
+    },
+  );
 });
 
 test("reminders and journal entries on the calendar", () => {

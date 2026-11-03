@@ -34,6 +34,9 @@ turns that section into the next version.
 ### Changed
 
 - **Editing feels closer to the page.** Clicking into a block puts the cursor where you clicked, not at the end. Text selected in a block before editing shows the format bar, and the formatting shortcuts, AI (Ctrl+J) and typing work on it: the block opens with that text selected. Headings keep their size, line height and spacing while edited, so nothing jumps when one opens or closes. See `docs/editor.md` for how the editor works and why it stays Markdown in a text field.
+- **Quotes and callouts are edited inside their frame**, with the same colours and size as when they are shown, so they no longer jump when you click into them. A callout's `[!NOTE]`, `[!TIP]`… takes its colour.
+- **Leaving a block never waits for the server:** Enter, ↑/↓ and paste go on at once, and the block shows its formatted text as soon as the server has rendered it. On a slow connection this removed a pause of a full round trip from every Enter.
+- A click on a picture, formula or diagram puts the cursor at its Markdown, and a click after a formula lands where you clicked.
 - **Long notes stay quick:** splitting, merging and moving between blocks no longer redraw the whole note. In a 2,000-block note, Enter went from about 0.9 s to 0.08 s.
 - Screen readers read the blocks of a note you can edit (headings, paragraphs, links), with "Press Enter to edit", instead of only "Edit block 3 of 8".
 - A picture from a note's files shows a slim bar above it on hover, with its name, size, upload date and **Download**, instead of a download card below it. New pictures are added without the card; in existing notes the card under a picture is hidden.

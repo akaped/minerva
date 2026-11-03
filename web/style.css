@@ -880,7 +880,9 @@ p {
   font-size: 18px;
   margin: 10px 0;
 }
-.block blockquote {
+.block blockquote,
+.block .lp-quote,
+.block .lp-callout {
   margin: 10px 0;
   padding: 12px 17px;
   border-left: 3px solid #b3b9e9;
@@ -958,7 +960,8 @@ p {
 }
 .live-preview {
   position: absolute;
-  inset: 0;
+  /* The wrap's padding, when it is framed as a quote or callout. */
+  inset: var(--lp-inset, 0);
   padding: 2px 7px;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -2046,7 +2049,9 @@ body {
   color: #b0bbcf;
   border-color: #343e53;
 }
-[data-theme="dark"] .block blockquote {
+[data-theme="dark"] .block blockquote,
+[data-theme="dark"] .block .lp-quote,
+[data-theme="dark"] .block .lp-callout {
   background: #252e46;
   border-color: #7c88c9;
   color: #bcc7e6;
@@ -2709,7 +2714,8 @@ mark {
   margin: 4px 0 0;
   text-align: center;
 }
-blockquote[class^="markdown-alert-"] {
+blockquote[class^="markdown-alert-"],
+.block .lp-callout {
   margin: 4px 0;
   padding: 10px 14px 10px 16px;
   border: 0;
@@ -4902,7 +4908,9 @@ dialog:has(#metadata-form) {
   color: #2a493b;
   border-color: #2a493b;
 }
-:root:not([data-theme="dark"]):not([data-variant]) .block blockquote {
+:root:not([data-theme="dark"]):not([data-variant]) .block blockquote,
+:root:not([data-theme="dark"]):not([data-variant]) .block .lp-quote,
+:root:not([data-theme="dark"]):not([data-variant]) .block .lp-callout {
   background: #f0f2df;
   border-color: #a1ae69;
   color: #3e503c;
@@ -7604,4 +7612,48 @@ body.comments-open .note-pane {
   .record-fields {
     grid-template-columns: 1fr;
   }
+}
+/* A quote or callout is edited inside its frame, its text where the rendered
+   text is (the field and the preview layer already have 2px 7px of padding). */
+.block .live-preview-wrap.lp-quote {
+  margin: 10px 0;
+  /* The bottom also holds the rendered paragraph's margin. */
+  padding: 10px 10px 15px;
+  --lp-inset: 10px 10px 15px;
+}
+.block .live-preview-wrap.lp-callout {
+  margin: 4px 0;
+  padding: 8px 7px 8px 9px;
+  --lp-inset: 8px 7px 8px 9px;
+}
+/* The callout's own marker line stands in for its rendered title. */
+.block .live-preview-wrap.lp-callout::before {
+  content: none;
+}
+/* The frame shows the block is being edited; no mark at the field's edge. */
+#blocks .block .live-preview-wrap.lp-quote > textarea:focus,
+#blocks .block .live-preview-wrap.lp-callout > textarea:focus {
+  box-shadow: none;
+}
+.lp-callout-kind {
+  color: var(--alert, var(--accent));
+}
+/* A closed block waiting for the server's rendering: its Markdown, styled as
+   in the field. */
+.render-pending {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: 0 0 5px;
+}
+.render-pending.lp-h1 {
+  font-size: 28px;
+  font-weight: 700;
+}
+.render-pending.lp-h2 {
+  font-size: 22px;
+  font-weight: 600;
+}
+.render-pending.lp-h3 {
+  font-size: 18px;
+  font-weight: 600;
 }

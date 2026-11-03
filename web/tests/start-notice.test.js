@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { startNotice, serverPage, withoutNotice } from "../start-notice.js";
 
 test("says why the last server is not shown", () => {
-  const silent = startNotice("?missed=timeout&server=0123abcd&label=Work+%26+home");
-  assert.equal(silent.text, "Work & home did not answer, so Minerva opened this computer instead.");
+  const silent = startNotice(
+    "?missed=timeout&server=0123abcd&label=Work+%26+home",
+  );
+  assert.equal(
+    silent.text,
+    "Work & home did not answer, so Minerva opened this computer instead.",
+  );
   assert.equal(silent.retry, true);
   assert.equal(silent.server, "0123abcd");
   const out = startNotice("?missed=signed_out&server=ab12");
@@ -30,8 +35,13 @@ test("server pages and clean addresses", () => {
     "https://minerva.sab12.localhost/",
   );
   assert.equal(
-    withoutNotice("minerva://local.localhost/?missed=timeout&server=a&label=b&workspace=w#note/1"),
+    withoutNotice(
+      "minerva://local.localhost/?missed=timeout&server=a&label=b&workspace=w#note/1",
+    ),
     "/?workspace=w#note/1",
   );
-  assert.equal(withoutNotice("minerva://local.localhost/?missed=x&server=a"), "/");
+  assert.equal(
+    withoutNotice("minerva://local.localhost/?missed=x&server=a"),
+    "/",
+  );
 });

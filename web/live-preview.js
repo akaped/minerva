@@ -67,7 +67,12 @@ export function previewHTML(markdown, esc) {
       /^(\s*)(#{1,6} |> ?|- \[[ xX]\] |[-*+] |\d+[.)] )?/,
     );
     const [all, space, marker = ""] = lead;
-    const body = inline(line.slice(all.length), esc);
+    // A callout's kind, in its colour as in its rendered title.
+    const kind =
+      /^>/.test(marker) && line.slice(all.length).match(/^\[![a-z]+\]/i);
+    const body = kind
+      ? `<span class="lp-callout-kind">${esc(kind[0])}</span>${inline(line.slice(all.length + kind[0].length), esc)}`
+      : inline(line.slice(all.length), esc);
     return (
       esc(space) +
       (marker ? mark(marker, esc) : "") +
@@ -76,6 +81,19 @@ export function previewHTML(markdown, esc) {
   });
   // A trailing newline still takes a line, as in the field.
   return lines.join("\n") + "​";
+}
+
+const CALLOUTS = ["note", "tip", "important", "warning", "caution"];
+/**
+ * The frame a block is edited in, as it is rendered: `quote` when every line is
+ * quoted, a callout's kind (`note`, `tip`…) when it starts with `> [!KIND]`,
+ * else `""`.
+ */
+export function frameOf(markdown) {
+  const lines = markdown.split("\n").filter((l) => l.trim());
+  if (!lines.length || !lines.every((l) => /^\s*>/.test(l))) return "";
+  const kind = lines[0].match(/^\s*>\s*\[!(\w+)\]/)?.[1]?.toLowerCase();
+  return kind && CALLOUTS.includes(kind) ? kind : "quote";
 }
 
 /** The heading level (1–3) of a block whose first line is a heading, else 0. */
@@ -101,7 +119,13 @@ export function attachPreview(ta, esc) {
   // the cursor takes the block's own text colour.
   ta.style.caretColor = getComputedStyle(wrap).color;
   let shown = null;
+  let frame = "";
   const body = wrap.closest(".block-body");
+  // The text's size or width changed: the field fits it again.
+  const refit = () => {
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  };
   const draw = () => {
     if (!ta.isConnected) {
       body?.classList.remove("lp-h1", "lp-h2", "lp-h3");
@@ -116,9 +140,20 @@ export function attachPreview(ta, esc) {
       if (body && current !== level) {
         for (const n of [1, 2, 3])
           body.classList.toggle(`lp-h${n}`, n === level);
-        // The text's size changed: the field fits it again.
-        ta.style.height = "auto";
-        ta.style.height = ta.scrollHeight + "px";
+        refit();
+      }
+      // Quotes and callouts are edited inside their frame (style.css).
+      const now = frameOf(shown);
+      if (now !== frame) {
+        frame = now;
+        wrap.className = `live-preview-wrap${
+          frame === "quote"
+            ? " lp-quote"
+            : frame
+              ? ` lp-callout markdown-alert-${frame}`
+              : ""
+        }`;
+        refit();
       }
     }
     requestAnimationFrame(draw);

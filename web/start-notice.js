@@ -20,7 +20,8 @@ export function startNotice(search) {
   const message = MESSAGES[params.get("missed")];
   const server = params.get("server") || "";
   if (!message || !/^[a-z0-9]+$/i.test(server)) return null;
-  const label = (params.get("label") || "").trim().slice(0, 80) || "Your server";
+  const label =
+    (params.get("label") || "").trim().slice(0, 80) || "Your server";
   const missed = params.get("missed");
   return {
     text: message(label),

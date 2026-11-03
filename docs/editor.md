@@ -66,8 +66,29 @@ In a 500-block note, Enter went from 177 to 29 ms. The heading and paragraph siz
 
 Revisit this if the editor needs things a text field cannot do: editing inside a table's cells, or an image or embed edited in place. Even then, a structured editor for those block kinds (the textarea stays for text) is likely cheaper than replacing the editor.
 
+## Second round: sizes, slow connections, objects
+
+**Quotes and callouts are edited inside their frame.** The preview layer recognises a quoted block (`frameOf` in `web/live-preview.js`) and gives the field the quote's or callout's frame. The frame uses the same theme rules as the rendered block (`.lp-quote` and `.lp-callout` sit next to `.block blockquote` in every theme), and a callout's `[!KIND]` takes its colour. Heights, rendered against edited, in pixels:
+
+| Block | Before | Now |
+| --- | --- | --- |
+| Paragraph | 40 / 39 | 40 / 39 |
+| Headings 1–3 | 85 / 39 (h1) | equal |
+| Quote | 84 / 39 | 84 / 84 |
+| Callout | 89 / 64 | 89 / 88 |
+| Lists, nested items | +4 | +4 |
+| Code block | 118 / 115 | 118 / 115 |
+| Table | 138 / 115 | 138 / 115 |
+| Formula (`$$` on three lines) | 43 / 90 | 43 / 90 |
+| `[[toc]]` | 150 / 39 | 150 / 39 |
+
+The last rows are inherent to editing the source: a formula's Markdown has three lines, and `[[toc]]` is one line standing for a list. Drawing a table's columns in the preview would change letter positions, which the preview must never do, because the field's transparent text lies on top of it.
+
+**Leaving a block never waits for the server.** Enter, ↑/↓ at the edges, paste and merging used to wait for the server to render the block being left. Now the block shows its cached rendering, or else its Markdown styled as in the field, and the server's rendering replaces that when it arrives (`showRendered`). With 400 ms of network latency, Enter after typing went from 423 to 14 ms, and ↓ from 418 to 9 ms.
+
+**A click on a picture, formula or diagram** puts the cursor at the start of its Markdown: the second picture in a block is the second `![…](…)` (`objectOffset` in `web/caret-map.js`). Their source is skipped when the text around them is matched, so a click after a formula lands where it should. Dollar amounts ("$5 and $10") are not taken for formulas.
+
 ## Still worth improving
 
-- **Block kinds whose rendered form differs a lot from their Markdown** still change height when they open and close: quotes and callouts (a quote grows by 45 px when rendered), tables, code blocks, images, math. The height lock keeps clicks reliable, but the preview layer could draw quotes and callouts with their border and padding, and tables in columns.
-- **Rendering goes to the server** each time a changed block closes. That is instant on a local network or the desktop app, but on a slow connection the Markdown stays visible until the answer arrives. A client-side renderer would be a second implementation again; rendering the preview layer's styling as a stopgap may be enough.
-- **Mapping clicks** is an approximation. Text the Markdown does not contain (a person's name shown for an email address, a task box) is skipped, and a click on an image, embed or formula opens the block with the cursor at the end.
+- **Mapping clicks** remains an approximation for text the Markdown does not contain, such as a person's name shown for an email address, or a task box. Those characters are skipped.
+- **Tables and lists** could be measured from the rendered block when they open, keeping their height for the whole edit rather than only while a pointer is pressed.
