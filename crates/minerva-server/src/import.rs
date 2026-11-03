@@ -859,6 +859,7 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
             journal: None,
             metadata: p.metadata.clone(),
             print_template: String::new(),
+            record: None,
         }));
         first.get_or_insert(id.clone());
         notes += 1;
@@ -955,6 +956,8 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
             kind,
             options,
             target: None,
+            rollup: None,
+            formula: String::new(),
         });
     }
     let records = rows

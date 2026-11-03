@@ -88,6 +88,16 @@ pub struct Note {
     /// The PDF template (`plugins/pdf-prints`) last chosen for this note.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub print_template: String,
+    /// Set when the note is the page of a database record: it lives in the
+    /// database's folder, is not listed with the folder's notes, and takes its
+    /// title from the record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<RecordPage>,
+}
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct RecordPage {
+    pub database_id: String,
+    pub record_id: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SaveNote {
@@ -122,6 +132,20 @@ pub enum ColumnKind {
     Edited,
     /// Records of the database named by the column's `target`, by ID.
     Relation,
+    /// Combines a property of the records a relation links to (`rollup`).
+    Rollup,
+    /// An expression over the record's other properties (`formula`).
+    Formula,
+}
+/// What a rollup property shows: `function` (`count`, `sum`, `average`, `min`,
+/// `max`, `earliest`, `latest`, `count_values`, `list`) of the `property` of the
+/// records linked by the `relation` column.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct Rollup {
+    pub relation: String,
+    #[serde(default)]
+    pub property: String,
+    pub function: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Column {
@@ -133,6 +157,11 @@ pub struct Column {
     /// For a relation, the database whose records it links to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollup: Option<Rollup>,
+    /// A formula's expression; properties are written `prop("Name")`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub formula: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Record {

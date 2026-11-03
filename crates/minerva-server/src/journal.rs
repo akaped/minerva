@@ -224,6 +224,7 @@ pub(super) fn route(
                 journal: None,
                 metadata: Default::default(),
                 print_template: String::new(),
+                record: None,
             };
             d.notes.push(Arc::new(note.clone()));
             view(d, u, &note)
@@ -392,6 +393,7 @@ fn open_day(d: &mut Data, u: &User, v: &Value) -> Result<Value, ApiError> {
             .as_ref()
             .map(|t| t.print_template.clone())
             .unwrap_or_default(),
+        record: None,
         journal: Some(date),
     };
     d.notes.push(Arc::new(note.clone()));

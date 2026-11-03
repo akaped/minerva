@@ -257,7 +257,8 @@ const TASKS_SENTINEL: &str = "\u{E000}journal-tasks\u{E000}";
 pub(crate) const CONTENTS: &str = "[[toc]]";
 const CONTENTS_SENTINEL: &str = "\u{E000}toc\u{E000}";
 pub(crate) const CONTENTS_SLOT: &str = "<span class=\"note-toc\"></span>";
-/// `[[database:{id}]]` or `[[database:{id}:board]]` embeds a live database view.
+/// `[[database:{id}]]`, `[[database:{id}:board]]` or `[[database:{id}:calendar]]`
+/// embeds a live database view.
 /// While parsing it becomes `\u{E001}{id}[:view]\u{E001}`.
 pub(crate) const DATABASE_EMBED: &str = "[[database:";
 const DB_MARK: char = '\u{E001}';
@@ -266,7 +267,7 @@ pub(crate) fn database_embed(body: &str) -> Option<(&str, &str)> {
     let (id, view) = body.split_once(':').unwrap_or((body, "table"));
     let valid_id =
         (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-');
-    (valid_id && matches!(view, "table" | "board")).then_some((id, view))
+    (valid_id && matches!(view, "table" | "board" | "calendar")).then_some((id, view))
 }
 /// Calls `replace` with each well-formed database embed body and splices in what
 /// it returns.

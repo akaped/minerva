@@ -26,6 +26,48 @@ pub(super) fn validate_columns(cols: &[Column]) -> Result<(), ApiError> {
         if (c.kind == ColumnKind::Relation) != c.target.is_some() {
             return Err(bad("A relation needs the database it links to"));
         }
+        match (&c.kind, &c.rollup) {
+            (ColumnKind::Rollup, Some(r)) => {
+                if !cols
+                    .iter()
+                    .any(|x| x.id == r.relation && x.kind == ColumnKind::Relation)
+                {
+                    return Err(bad(&format!(
+                        "“{}” needs a relation property of this database",
+                        c.name
+                    )));
+                }
+                if !formulas::ROLLUP_FUNCTIONS.contains(&r.function.as_str()) {
+                    return Err(bad("Unknown rollup calculation"));
+                }
+                if r.function != "count" && r.property.is_empty() {
+                    return Err(bad(&format!("Choose the property “{}” combines", c.name)));
+                }
+            }
+            (ColumnKind::Rollup, None) => {
+                return Err(bad("A rollup needs a relation and a calculation"))
+            }
+            (_, Some(_)) => return Err(bad("Invalid property schema")),
+            _ => {}
+        }
+        if c.kind == ColumnKind::Formula {
+            let expr = formulas::parse(&c.formula)
+                .map_err(|e| bad(&format!("Formula “{}”: {e}", c.name)))?;
+            let mut names = vec![];
+            formulas::references(&expr, &mut names);
+            for n in names {
+                if !cols.iter().any(|x| {
+                    x.name.eq_ignore_ascii_case(&n) || x.name.to_lowercase() == n.to_lowercase()
+                }) {
+                    return Err(bad(&format!(
+                        "Formula “{}”: there is no property “{n}”",
+                        c.name
+                    )));
+                }
+            }
+        } else if !c.formula.is_empty() {
+            return Err(bad("Invalid property schema"));
+        }
     }
     Ok(())
 }
@@ -90,21 +132,57 @@ pub(super) fn cell_valid(c: &Column, value: &Value) -> bool {
                     .iter()
                     .all(|v| v.as_str().is_some_and(|s| id_like(s) && seen.insert(s)))
         }),
-        // Kept by the server from the record itself.
-        ColumnKind::Created | ColumnKind::Edited => false,
+        // Kept or computed by the server, never written.
+        ColumnKind::Created | ColumnKind::Edited | ColumnKind::Rollup | ColumnKind::Formula => {
+            false
+        }
     }
 }
 fn id_like(s: &str) -> bool {
     !s.is_empty() && s.len() <= 80 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
-/// Relations must link to a database in the same workspace that the person can read.
-fn validate_targets(d: &Data, u: &User, folder: &str, cols: &[Column]) -> Result<(), ApiError> {
+/// Relations must link to a database in the same workspace that the person can
+/// read. `cols` are the columns to check; `all` the database's columns after the
+/// change (rollups find their relation there).
+fn validate_targets(
+    d: &Data,
+    u: &User,
+    folder: &str,
+    cols: &[Column],
+    all: &[Column],
+) -> Result<(), ApiError> {
     let workspace = |f: &str| {
         d.folders
             .iter()
             .find(|x| x.id == f)
             .map(|x| &x.workspace_id)
     };
+    // A rollup combines a plain property of the related database.
+    for c in cols.iter().filter(|c| c.kind == ColumnKind::Rollup) {
+        let Some(spec) = &c.rollup else { continue };
+        if spec.function == "count" && spec.property.is_empty() {
+            continue;
+        }
+        let target = all
+            .iter()
+            .find(|x| x.id == spec.relation)
+            .and_then(|x| x.target.as_ref())
+            .and_then(|t| d.databases.iter().find(|db| &db.id == t));
+        let fits = target
+            .and_then(|t| t.columns.iter().find(|x| x.id == spec.property))
+            .is_some_and(|p| {
+                !matches!(
+                    p.kind,
+                    ColumnKind::Rollup | ColumnKind::Formula | ColumnKind::Relation
+                )
+            });
+        if !fits {
+            return Err(bad(&format!(
+                "“{}” combines a property of the related database (not a relation, rollup or formula)",
+                c.name
+            )));
+        }
+    }
     for c in cols.iter().filter(|c| c.kind == ColumnKind::Relation) {
         let target = c.target.as_deref().unwrap_or("");
         let db = d
@@ -161,8 +239,17 @@ pub(super) fn markdown_table(d: &Data, u: &User, db: &Database) -> String {
         let year = yoe + era * 400 + i64::from(month <= 2);
         format!("{year:04}-{month:02}-{day:02}")
     };
+    let computed = formulas::computed(d, u, db);
     let row_cell = |c: &Column, r: &Record| -> String {
         match c.kind {
+            ColumnKind::Rollup | ColumnKind::Formula => computed
+                .get(&r.id)
+                .and_then(|values| values.get(&c.id))
+                .map(|v| match v {
+                    Value::Bool(b) => (if *b { "☑" } else { "☐" }).into(),
+                    v => formulas::text(v),
+                })
+                .unwrap_or_default(),
             ColumnKind::Created => date(if r.created_at > 0 {
                 r.created_at
             } else {
@@ -237,6 +324,35 @@ pub(super) fn markdown_table(d: &Data, u: &User, db: &Database) -> String {
     }
     out
 }
+/// A database as `u` reads it: each record with its `computed` rollup and
+/// formula values.
+pub(super) fn view(d: &Data, u: &User, db: &Database) -> Value {
+    let mut computed = formulas::computed(d, u, db);
+    let mut v = json!(db);
+    if let Some(rows) = v["rows"].as_array_mut() {
+        for row in rows {
+            let id = row["id"].as_str().unwrap_or_default().to_string();
+            row["computed"] = json!(computed.remove(&id).unwrap_or_default());
+            if let Some(page) = record_pages::page_of(d, &db.id, &id).filter(|p| !p.trashed) {
+                row["page"] = json!(page.id);
+            }
+        }
+    }
+    v
+}
+/// One record of `did` as `u` reads it, with its computed values.
+fn record_view(d: &Data, u: &User, did: &str, rid: &str) -> Value {
+    let Some(db) = d.databases.iter().find(|db| db.id == did) else {
+        return Value::Null;
+    };
+    let mut computed = formulas::computed(d, u, db);
+    let mut v = json!(db.rows.iter().find(|r| r.id == rid));
+    v["computed"] = json!(computed.remove(rid).unwrap_or_default());
+    if let Some(page) = record_pages::page_of(d, did, rid).filter(|p| !p.trashed) {
+        v["page"] = json!(page.id);
+    }
+    v
+}
 pub(super) fn route(
     d: &mut Data,
     u: &User,
@@ -257,6 +373,8 @@ pub(super) fn route(
                     kind: ColumnKind::Text,
                     options: vec![],
                     target: None,
+                    rollup: None,
+                    formula: String::new(),
                 },
                 Column {
                     id: id(),
@@ -264,11 +382,13 @@ pub(super) fn route(
                     kind: ColumnKind::Select,
                     options: vec!["To do".into(), "In progress".into(), "Done".into()],
                     target: None,
+                    rollup: None,
+                    formula: String::new(),
                 },
             ]
         };
         validate_columns(&cols)?;
-        validate_targets(d, u, &folder_id, &cols)?;
+        validate_targets(d, u, &folder_id, &cols, &cols)?;
         let db = Database {
             id: id(),
             folder_id,
@@ -301,13 +421,22 @@ pub(super) fn route(
         return Ok(json!(people));
     }
     if method == "DELETE" && parts.len() == 2 {
-        // Notes that embed the database show that it was deleted.
+        // Notes that embed the database show that it was deleted; its records'
+        // pages go with it.
         d.databases.retain(|db| db.id != *did);
+        let pages = record_pages::orphans(d, did);
+        removal::remove_notes(d, &pages);
         return Ok(json!({"ok":true}));
+    }
+    if method == "POST" && parts.len() == 5 && parts[2] == "rows" && parts[4] == "page" {
+        return record_pages::open(d, u, did, parts[3]);
     }
     let db = d.databases.iter_mut().find(|db| db.id == *did).unwrap();
     match (method, parts.len()) {
-        ("GET", 2) => Ok(json!(db)),
+        ("GET", 2) => {
+            let db = db.clone();
+            Ok(view(d, u, &db))
+        }
         ("DELETE", 4) if parts[2] == "rows" => {
             let before = db.rows.len();
             db.rows.retain(|r| r.id != parts[3]);
@@ -315,6 +444,8 @@ pub(super) fn route(
                 return Err(missing());
             }
             db.updated_at = now();
+            let pages = record_pages::orphans(d, did);
+            removal::remove_notes(d, &pages);
             Ok(json!({"ok":true}))
         }
         ("PATCH", 2) => {
@@ -324,12 +455,27 @@ pub(super) fn route(
                     "Database schema changed. Reload before editing.".into(),
                 ));
             }
-            let columns: Vec<Column> = if v["columns"].is_array() {
+            let mut columns: Vec<Column> = if v["columns"].is_array() {
                 serde_json::from_value(v["columns"].clone())
                     .map_err(|_| bad("Invalid properties"))?
             } else {
                 db.columns.clone()
             };
+            // Formulas follow renamed properties.
+            for old in &db.columns {
+                let Some(new) = columns
+                    .iter()
+                    .find(|c| c.id == old.id)
+                    .map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                if new != old.name {
+                    for c in columns.iter_mut().filter(|c| c.kind == ColumnKind::Formula) {
+                        c.formula = formulas::rename(&c.formula, &old.name, &new);
+                    }
+                }
+            }
             validate_columns(&columns)?;
             // Relations that are new or changed must link to a database the person
             // can open; one they cannot open does not block other edits.
@@ -339,11 +485,11 @@ pub(super) fn route(
                 .filter(|c| {
                     !db.columns
                         .iter()
-                        .any(|o| o.id == c.id && o.target == c.target)
+                        .any(|o| o.id == c.id && o.target == c.target && o.rollup == c.rollup)
                 })
                 .cloned()
                 .collect();
-            validate_targets(d, u, &folder, &changed)?;
+            validate_targets(d, u, &folder, &changed, &columns)?;
             let db = d.databases.iter_mut().find(|db| db.id == *did).unwrap();
             if v.get("name").is_some() {
                 db.name = field(&v, "name")?;
@@ -379,7 +525,12 @@ pub(super) fn route(
             db.columns = columns;
             db.revision += 1;
             db.updated_at = now();
-            Ok(json!(db))
+            let db = db.clone();
+            // Pages follow their records' names (the first property may have changed).
+            for r in &db.rows {
+                record_pages::retitle(d, did, &r.id)?;
+            }
+            Ok(view(d, u, &db))
         }
         ("POST", 3) if parts[2] == "rows" => {
             if db.rows.len() >= 10000 {
@@ -399,7 +550,7 @@ pub(super) fn route(
             };
             db.rows.push(row.clone());
             db.updated_at = now();
-            Ok(json!(row))
+            Ok(record_view(d, u, did, &row.id))
         }
         ("PATCH", 4) if parts[2] == "rows" => {
             let row = db
@@ -428,7 +579,8 @@ pub(super) fn route(
             row.revision += 1;
             row.updated_at = now();
             db.updated_at = now();
-            Ok(json!(row))
+            record_pages::retitle(d, did, parts[3])?;
+            Ok(record_view(d, u, did, parts[3]))
         }
         _ => Err(missing()),
     }

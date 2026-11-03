@@ -21,6 +21,14 @@ import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import {
+  ROLLUP_FUNCTIONS,
+  computedText,
+  GROUPABLE,
+  boardGroups,
+  moveToGroup,
+  calendarExtras,
+} from "./database-views.js";
+import {
   subtreeEnd,
   hasChildren,
   hiddenBlocks,
@@ -843,6 +851,9 @@ function editsWorkspace() {
 }
 async function refresh() {
   data = await api("bootstrap");
+  // Records' pages are listed with their records, not with the folder's notes.
+  data.record_notes = data.notes.filter((n) => n.record);
+  data.notes = data.notes.filter((n) => !n.record);
   // The account's default workspace first, then any other.
   if (!data.workspaces.some((w) => w.id === workspaceId)) {
     // The workspace open last time on this device, else the account's default.
@@ -856,7 +867,7 @@ async function refresh() {
     // Tabs of deleted or trashed notes close.
     noteTabs.prune(
       new Set(
-        [...data.notes, ...(data.shared_notes || [])]
+        [...data.notes, ...data.record_notes, ...(data.shared_notes || [])]
           .filter((n) => !n.trashed)
           .map((n) => n.id),
       ),
@@ -2165,7 +2176,7 @@ function renderEditor() {
     ? `<button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="export">${icon("download")}Export</button>`
     : `<button class="btn" id="favorite" aria-label="Toggle favorite" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${data.roles[note.folder_id] !== "editor" || note.trashed ? 'disabled title="Folder editors can share this note"' : ""}>Share${sharing.published || sharing.links ? '<span class="share-badge public">Public</span>' : ""}</button>`}<button class="btn" id="ask-note" title="Chat with AI about this note, side by side">${icon("brain")}Ask AI</button><button class="btn" id="comments-toggle" aria-pressed="false" title="Comments on this note">💬 Comments <span class="comments-count"></span></button><button class="btn" id="attachments">Files</button><button class="btn" id="history" ${!data.roles[note.folder_id] ? 'disabled title="Version history is available to folder members"' : ""}>${icon("clock")}History</button><button class="btn" id="copy-note-link" title="Copy a link to open this note in another Minerva tab">Copy link</button><button class="btn" id="metadata" title="Document details used by PDF templates">${icon("list")}Metadata</button><button class="btn" id="export">${icon("download")}Export</button><button class="btn" aria-label="${note.trashed ? "Restore note" : "Move note to trash"}" id="trash-note" ${!editable() && !(note.trashed && data.roles[note.folder_id] === "editor") ? "disabled" : ""}>${icon(note.trashed ? "check" : "trash")}${note.trashed ? "Restore" : ""}</button>${note.trashed && data.roles[note.folder_id] === "editor" ? '<button class="btn danger" id="delete-note">Delete forever</button>' : ""}`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can ? "readonly" : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div><div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="Note tools"><span class="save-status" id="save-state" role="status">${can ? "All changes saved" : "Read only"}</span><span id="presence" class="presence"></span><span class="spacer"></span><button class="btn" id="find-note" title="Find and replace (Ctrl+F)" aria-label="Find and replace">⌕</button><button class="btn" id="focus-toggle" title="Focus mode (Ctrl+Shift+F)" aria-pressed="${document.body.classList.contains("focus-mode")}">Focus</button>${shareMode && !can ? "" : `<button class="btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)" ${!can ? "disabled" : ""}>↶</button><button class="btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" ${!can ? "disabled" : ""}>↷</button><button class="btn" id="save-note" ${!can ? "disabled" : ""}>Save</button>`}${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : '<button class="text-link" id="add-icon">☺ Add icon</button>'}${note.cover ? "" : '<button class="text-link" id="add-cover">▧ Add cover</button>'}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="Change icon" title="Change icon">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="Journal days"><button class="btn" data-journal-shift="-1" aria-label="Previous day">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="Next day">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? '<span class="template-badge">Template · used by “Fill from template”</span>' : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="Note title" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || "Shared with you")}</span>`}<span>Updated ${date(note.updated_at)}</span><span>Revision ${note.revision}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? '<section class="record-panel" id="record-panel" aria-label="Record properties"></section>' : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}Fill from template</button><span>or just start writing</span></div>` : ""}<div id="blocks" role="list" aria-label="Note blocks"></div>${can ? '<button class="add-block" id="add-block">+ Add a block</button><p class="editor-help" id="editor-help">Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text</p>' : ""}<section class="backlinks" id="backlinks" aria-label="Linked from"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2183,6 +2194,7 @@ function renderEditor() {
     ),
   );
   action($("#focus-toggle"), "click", () => toggleFocus());
+  renderRecordPanel().catch(error);
   action($("#doc-icon"), "click", (e) => iconPicker(e.currentTarget));
   action($("#add-icon"), "click", (e) => iconPicker(e.currentTarget));
   action($("#add-cover"), "click", (e) => coverPicker(e.currentTarget));
@@ -6688,6 +6700,7 @@ let activeDatabase = null,
   dbSort = null,
   dbDescending = false,
   dbView = "table",
+  dbGroupColumn = null,
   showArchived = false,
   dbTimer = null;
 function canEditDatabase() {
@@ -6731,6 +6744,7 @@ async function openDatabase(id) {
   dbSort = null;
   showArchived = false;
   dbView = "table";
+  dbGroupColumn = null;
   renderDatabase();
   clearInterval(dbTimer);
   dbTimer = setInterval(async () => {
@@ -6778,9 +6792,11 @@ const DB_KINDS = [
   ["relation", "Relation"],
   ["created", "Created time"],
   ["edited", "Last edited time"],
+  ["rollup", "Rollup"],
+  ["formula", "Formula"],
 ];
-// Kept by the server from the record itself: shown, never written.
-const COMPUTED = new Set(["created", "edited"]);
+// Kept or computed by the server: shown, never written.
+const COMPUTED = new Set(["created", "edited", "rollup", "formula"]);
 // The people and related databases a database's cells refer to, by its ID.
 const dbContext = new Map();
 async function loadDatabaseContext(db) {
@@ -6832,6 +6848,9 @@ function cellText(col, row, db) {
       return v ? ctx.people.find((p) => p.id === v)?.name || "Someone" : "";
     case "relation":
       return relatedTitles(col, v, db).join(", ");
+    case "rollup":
+    case "formula":
+      return computedText(row.computed?.[col.id]);
     default:
       return v == null ? "" : String(v);
   }
@@ -6978,15 +6997,45 @@ function propertyFields(db, col = {}) {
   const related = (data.databases || []).filter(
     (d) => data.folders.find((f) => f.id === d.folder_id)?.workspace_id === ws,
   );
-  return `<label>Name<input name="name" required maxlength="100" value="${esc(col.name || "")}" placeholder="e.g. Due date"></label><label>Type<select name="kind" id="property-kind">${DB_KINDS.map(([k, l]) => `<option value="${k}" ${k === (col.kind || "text") ? "selected" : ""}>${l}</option>`).join("")}</select></label><label data-for="select multi_select">Options (one per line)<textarea name="options" placeholder="Low&#10;Medium&#10;High">${esc((col.options || []).join("\n"))}</textarea></label><label data-for="relation">Links to records of<select name="target">${related.map((d) => `<option value="${d.id}" ${d.id === col.target ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>`;
+  return `<label>Name<input name="name" required maxlength="100" value="${esc(col.name || "")}" placeholder="e.g. Due date"></label><label>Type<select name="kind" id="property-kind">${DB_KINDS.map(([k, l]) => `<option value="${k}" ${k === (col.kind || "text") ? "selected" : ""}>${l}</option>`).join("")}</select></label><label data-for="select multi_select">Options (one per line)<textarea name="options" placeholder="Low&#10;Medium&#10;High">${esc((col.options || []).join("\n"))}</textarea></label><label data-for="relation">Links to records of<select name="target">${related.map((d) => `<option value="${d.id}" ${d.id === col.target ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>${rollupFields(db, col)}<label data-for="formula">Formula<textarea name="formula" rows="3" spellcheck="false" placeholder='prop("Price") * prop("Quantity")'>${esc(col.formula || "")}</textarea><small class="hint">Use properties as <code>prop("Name")</code>, with + − * / %, comparisons, <code>and</code>, <code>or</code>, <code>not</code>. Functions: if, concat, join, length, contains, lower, upper, empty, round, floor, ceil, abs, min, max, today, days(from, to), add_days(date, n), year, month.</small></label>`;
+}
+/** A rollup's settings: the relation it follows, what it computes, of which property. */
+function rollupFields(db, col) {
+  const relations = db.columns.filter(
+    (c) => c.kind === "relation" && c.id !== col.id,
+  );
+  if (!relations.length)
+    return '<p class="hint" data-for="rollup">A rollup combines the records a relation links to. Add a relation property first.</p>';
+  const spec = col.rollup || {};
+  const properties = relations.flatMap((r) =>
+    (contextOf(db).targets.get(r.target)?.columns || [])
+      .filter((p) => !["relation", "rollup", "formula"].includes(p.kind))
+      .map(
+        (p) =>
+          `<option value="${esc(p.id)}" data-relation="${esc(r.id)}" ${spec.relation === r.id && spec.property === p.id ? "selected" : ""}>${esc(p.name)}</option>`,
+      ),
+  );
+  return `<label data-for="rollup">Through<select name="rollup_relation" id="rollup-relation">${relations.map((r) => `<option value="${esc(r.id)}" ${spec.relation === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select></label><label data-for="rollup">Calculate<select name="rollup_function" id="rollup-function">${ROLLUP_FUNCTIONS.map(([f, label]) => `<option value="${f}" ${(spec.function || "count") === f ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-for="rollup" id="rollup-property-label">Of<select name="rollup_property" id="rollup-property"><option value="">—</option>${properties.join("")}</select></label>`;
 }
 function bindPropertyFields() {
   const kind = $("#property-kind", modal);
-  const show = () =>
+  const relation = $("#rollup-relation", modal),
+    fn = $("#rollup-function", modal),
+    property = $("#rollup-property", modal);
+  const show = () => {
     $$("[data-for]", modal).forEach(
       (el) => (el.hidden = !el.dataset.for.split(" ").includes(kind.value)),
     );
-  kind.addEventListener("change", show);
+    if (!relation) return;
+    // Only the related database's properties, and none for a plain count.
+    $$("option[data-relation]", property).forEach(
+      (o) => (o.hidden = o.dataset.relation !== relation.value),
+    );
+    if (property.selectedOptions[0]?.hidden) property.value = "";
+    $("#rollup-property-label", modal).hidden =
+      kind.value !== "rollup" || fn.value === "count";
+  };
+  for (const el of [kind, relation, fn]) el?.addEventListener("change", show);
   show();
 }
 /** The column a property dialog describes. */
@@ -7008,23 +7057,75 @@ function propertyColumn(v, base = {}) {
     options,
   };
   if (v.kind === "relation") col.target = v.target;
+  if (v.kind === "rollup") {
+    if (!v.rollup_relation)
+      throw new Error("Add a relation property first: a rollup combines the records it links to.");
+    if (v.rollup_function !== "count" && !v.rollup_property)
+      throw new Error("Choose the property to combine.");
+    col.rollup = {
+      relation: v.rollup_relation,
+      property: v.rollup_function === "count" ? "" : v.rollup_property,
+      function: v.rollup_function,
+    };
+  }
+  if (v.kind === "formula") {
+    if (!v.formula?.trim()) throw new Error("Write the formula.");
+    col.formula = v.formula.trim();
+  }
   return col;
 }
-// Calendar view: the month shown, and the date property it places records by.
+// Calendar view on the database page: the month shown, the date property it
+// places records by, and whether reminders and journal entries show too.
+// Embedded calendars keep the same on their slot (`calendarState`).
 let dbMonth = null,
-  dbCalendarColumn = null;
+  dbCalendarColumn = null,
+  dbCalendarExtras = false;
 function isoDay(at) {
   const d = new Date(at * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function calendarHTML(db, rows, edit) {
-  const cols = db.columns.filter((c) =>
-    ["date", "created", "edited"].includes(c.kind),
-  );
-  const col = cols.find((c) => c.id === dbCalendarColumn) || cols[0];
+const DATED = ["date", "created", "edited"];
+// Reminders and journal entries of the workspace, kept for a minute.
+let extrasCache = null;
+async function loadCalendarExtras() {
+  if (extrasCache && Date.now() - extrasCache.at < 60000) return;
+  const all = await api("reminders").catch(() => ({
+    reminders: [],
+    from_notes: [],
+  }));
+  const local = (at) => {
+    const d = new Date(at * 1000);
+    return `${isoDay(at)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  extrasCache = {
+    at: Date.now(),
+    reminders: [
+      ...(all.reminders || []).map((r) => ({
+        stamp: local(r.at),
+        text: r.title,
+        note_id: r.note_id || null,
+        workspace_id: r.workspace_id,
+      })),
+      ...(all.from_notes || []),
+    ],
+  };
+}
+function calendarItems(db, month) {
+  const ws = data.folders.find((f) => f.id === db.folder_id)?.workspace_id;
+  return calendarExtras(month, {
+    reminders: (extrasCache?.reminders || []).filter(
+      (r) => !r.workspace_id || r.workspace_id === ws,
+    ),
+    journal: journalNotes(ws),
+  });
+}
+/** `state`: `{month, column, extras}`. */
+function calendarHTML(db, rows, edit, state) {
+  const cols = db.columns.filter((c) => DATED.includes(c.kind));
+  const col = cols.find((c) => c.id === state.column) || cols[0];
   const today = isoDay(Date.now() / 1000);
-  dbMonth ||= today.slice(0, 7);
-  const [y, m] = dbMonth.split("-").map(Number);
+  const month = state.month || today.slice(0, 7);
+  const [y, m] = month.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
   const offset = (first.getDay() + 6) % 7;
   const days = new Date(y, m, 0).getDate();
@@ -7041,6 +7142,7 @@ function calendarHTML(db, rows, edit) {
     if (!day) undated++;
     else byDay.set(day, [...(byDay.get(day) || []), r]);
   }
+  const extras = state.extras ? calendarItems(db, month) : new Map();
   const weekdays = Array.from({ length: 7 }, (_, i) =>
     new Date(2024, 0, 1 + i).toLocaleDateString(undefined, {
       weekday: "short",
@@ -7050,8 +7152,9 @@ function calendarHTML(db, rows, edit) {
   for (let i = 0; i < offset; i++)
     cells.push('<div class="cal-day blank"></div>');
   for (let d = 1; d <= days; d++) {
-    const iso = `${dbMonth}-${String(d).padStart(2, "0")}`;
+    const iso = `${month}-${String(d).padStart(2, "0")}`;
     const records = byDay.get(iso) || [];
+    const more = extras.get(iso) || [];
     cells.push(
       `<div class="cal-day ${iso === today ? "today" : ""}" data-day="${iso}"><span class="cal-num">${d}</span>${records
         .slice(0, 6)
@@ -7061,14 +7164,139 @@ function calendarHTML(db, rows, edit) {
         )
         .join(
           "",
-        )}${records.length > 6 ? `<small>+${records.length - 6} more</small>` : ""}${edit && col.kind === "date" ? `<button class="cal-add" data-cal-add="${iso}" aria-label="Add a record on ${iso}">+</button>` : ""}</div>`,
+        )}${records.length > 6 ? `<small>+${records.length - 6} more</small>` : ""}${more
+        .map(
+          (x) =>
+            `<button class="cal-extra cal-${x.kind}" ${x.note_id ? `data-cal-note="${esc(x.note_id)}"` : "disabled"} title="${esc(x.label)}">${x.kind === "reminder" ? "⏰" : "📓"} ${esc(x.label)}</button>`,
+        )
+        .join(
+          "",
+        )}${edit && col.kind === "date" ? `<button class="cal-add" data-cal-add="${iso}" aria-label="Add a record on ${iso}">+</button>` : ""}</div>`,
     );
   }
   return `<div class="panel calendar"><div class="cal-head"><div class="toolbar-group"><button class="btn" data-cal-month="-1" aria-label="Previous month">‹</button><button class="btn" data-cal-month="0">Today</button><button class="btn" data-cal-month="1" aria-label="Next month">›</button></div><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2>${
     cols.length > 1
-      ? `<label class="cal-by">By<select id="cal-column">${cols.map((c) => `<option value="${c.id}" ${c.id === col.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>`
+      ? `<label class="cal-by">By<select data-cal-column>${cols.map((c) => `<option value="${c.id}" ${c.id === col.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>`
       : `<span class="cal-by">By ${esc(col.name)}</span>`
-  }</div><div class="cal-grid">${weekdays.map((w) => `<div class="cal-weekday">${esc(w)}</div>`).join("")}${cells.join("")}</div>${undated ? `<p class="hint">${undated} record${undated === 1 ? "" : "s"} without ${esc(col.name)}.</p>` : ""}</div>`;
+  }<label class="checkbox-label cal-extras"><input type="checkbox" data-cal-extras ${state.extras ? "checked" : ""}>Reminders &amp; journal</label></div><div class="cal-grid">${weekdays.map((w) => `<div class="cal-weekday">${esc(w)}</div>`).join("")}${cells.join("")}</div>${undated ? `<p class="hint">${undated} record${undated === 1 ? "" : "s"} without ${esc(col.name)}.</p>` : ""}</div>`;
+}
+/**
+ * Calendar controls inside `root`: `state` is changed in place, then `redraw`.
+ * `onAdded(row)` follows a record added on a day.
+ */
+function bindCalendar(root, db, state, redraw, onAdded) {
+  $$("[data-cal-month]", root).forEach((el) =>
+    action(el, "click", () => {
+      const step = Number(el.dataset.calMonth);
+      const [y, m] = (state.month || isoDay(Date.now() / 1000).slice(0, 7))
+        .split("-")
+        .map(Number);
+      const d = step ? new Date(y, m - 1 + step, 1) : new Date();
+      state.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      redraw();
+    }),
+  );
+  const column = $("[data-cal-column]", root);
+  if (column)
+    action(column, "change", () => {
+      state.column = column.value;
+      redraw();
+    });
+  action($("[data-cal-extras]", root), "change", async (e) => {
+    state.extras = e.target.checked;
+    if (state.extras) await loadCalendarExtras();
+    redraw();
+  });
+  $$("[data-cal-note]", root).forEach((el) =>
+    action(el, "click", () => openNote(el.dataset.calNote)),
+  );
+  $$("[data-cal-add]", root).forEach((el) =>
+    action(el, "click", async () => {
+      const col =
+        db.columns.find((c) => c.id === state.column && c.kind === "date") ||
+        db.columns.find((c) => c.kind === "date");
+      const cells = { [col.id]: el.dataset.calAdd };
+      for (const c of db.columns)
+        if (c.kind === "checkbox") cells[c.id] = false;
+      if (db.columns[0].kind === "text") cells[db.columns[0].id] = "Untitled";
+      const row = await api(`databases/${db.id}/rows`, "POST", { cells });
+      db.rows.push(row);
+      redraw();
+      onAdded(row);
+    }),
+  );
+}
+/** The property a board groups by: the chosen one, else the first that can. */
+function boardColumn(db, wanted) {
+  const cols = db.columns.filter((c) => GROUPABLE.includes(c.kind));
+  return cols.find((c) => c.id === wanted) || cols[0] || null;
+}
+/** Board columns of `rows` by `col`; cards can be dragged between columns. */
+function boardHTML(db, rows, col, { edit, embed = false }) {
+  const groups = boardGroups(col, rows, contextOf(db).people);
+  const [wrap, column, heading, card, open] = embed
+    ? ["db-embed-board", "db-embed-column", "h4", "db-embed-card", "data-embed-record"]
+    : ["board", "board-column", "h3", "record-card", "data-edit-record"];
+  return `<div class="${wrap}">${groups
+    .map(
+      (g) =>
+        `<section class="${column}" data-drop-group="${esc(g.key)}"><${heading}>${esc(g.label || "No " + col.name.toLowerCase())}<span>${g.rows.length}</span></${heading}>${g.rows
+          .map(
+            (r) =>
+              `<button class="${card}" ${open}="${r.id}" ${edit ? `draggable="true" data-drag-record="${r.id}" data-from="${esc(g.key)}"` : ""}><strong>${esc(embedRecordTitle(db, r))}</strong>${db.columns
+                .slice(1)
+                .filter((c) => c.id !== col.id && cellText(c, r, db) !== "")
+                .map(
+                  (c) =>
+                    `<small>${esc(c.name)}: ${esc(cellText(c, r, db))}</small>`,
+                )
+                .join("")}</button>`,
+          )
+          .join("")}</section>`,
+    )
+    .join("")}</div>`;
+}
+/** Dragging cards between board columns changes the grouped property. */
+function bindBoardDrag(root, db, col, redraw) {
+  let dragged = null;
+  $$("[data-drag-record]", root).forEach((el) =>
+    el.addEventListener("dragstart", (e) => {
+      dragged = { id: el.dataset.dragRecord, from: el.dataset.from };
+      e.dataTransfer.setData("text/plain", el.dataset.dragRecord);
+      e.dataTransfer.effectAllowed = "move";
+    }),
+  );
+  $$("[data-drop-group]", root).forEach((zone) => {
+    zone.addEventListener("dragover", (e) => {
+      if (!dragged) return;
+      e.preventDefault();
+      zone.classList.add("drop-target");
+    });
+    zone.addEventListener("dragleave", () =>
+      zone.classList.remove("drop-target"),
+    );
+    zone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      zone.classList.remove("drop-target");
+      const move = dragged;
+      dragged = null;
+      if (!move || move.from === zone.dataset.dropGroup) return;
+      const row = db.rows.find((r) => r.id === move.id);
+      try {
+        Object.assign(
+          row,
+          await api(`databases/${db.id}/rows/${row.id}`, "PATCH", {
+            revision: row.revision,
+            cells: moveToGroup(col, row, move.from, zone.dataset.dropGroup),
+          }),
+        );
+        embedCache.set(db.id, { at: Date.now(), db });
+      } catch (err) {
+        error(err);
+      }
+      redraw();
+    });
+  });
 }
 function renderDatabase() {
   const db = activeDatabase;
@@ -7094,7 +7322,9 @@ function renderDatabase() {
         ? r.updated_at
         : ["person", "relation", "multi_select"].includes(sortColumn.kind)
           ? cellText(sortColumn, r, db)
-          : (r.cells[dbSort] ?? "");
+          : ["rollup", "formula"].includes(sortColumn.kind)
+            ? (r.computed?.[dbSort] ?? "")
+            : (r.cells[dbSort] ?? "");
   if (sortColumn)
     rows.sort((a, b) => {
       const av = sortValue(a),
@@ -7107,37 +7337,23 @@ function renderDatabase() {
             })) * (dbDescending ? -1 : 1)
       );
     });
-  const group = db.columns.find((c) => c.kind === "select");
-  const dated = db.columns.some((c) =>
-    ["date", "created", "edited"].includes(c.kind),
-  );
+  const group = boardColumn(db, dbGroupColumn);
+  const groupable = db.columns.filter((c) => GROUPABLE.includes(c.kind));
+  const dated = db.columns.some((c) => DATED.includes(c.kind));
+  const calendar = {
+    month: dbMonth,
+    column: dbCalendarColumn,
+    extras: dbCalendarExtras,
+  };
   if ((dbView === "calendar" && !dated) || (dbView === "board" && !group))
     dbView = "table";
   $("#content").innerHTML =
-    `<section class="page database-page"><div class="eyebrow">STRUCTURED KNOWLEDGE</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${esc(data.folders.find((f) => f.id === db.folder_id)?.name)} · ${rows.length} records · ${edit ? "Can edit" : "Read only"}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}Property</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}New record</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}Table</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}Board</button><button class="btn ${dbView === "calendar" ? "selected" : ""}" id="calendar-view" ${!dated ? "disabled" : ""} title="${dated ? "Records by date" : "Add a date property to see records on a calendar"}">${icon("calendar")}Calendar</button></div><input id="db-filter" aria-label="Filter records" placeholder="Filter records…" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>Archived</label><button class="btn" id="db-reload">Reload records</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>Rename</button><button class="btn" id="db-embed" title="Copy the code that shows this database inside a note">${icon("note")}Use in a note</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}Delete</button></div>${
+    `<section class="page database-page"><div class="eyebrow">STRUCTURED KNOWLEDGE</div><div class="page-heading"><div><h1>${esc(db.name)}</h1><p class="subtitle">${esc(data.folders.find((f) => f.id === db.folder_id)?.name)} · ${rows.length} records · ${edit ? "Can edit" : "Read only"}</p></div><div class="toolbar-group"><button class="btn" id="add-property" ${!edit ? "disabled" : ""}>${icon("plus")}Property</button><button class="btn primary" id="add-record" ${!edit ? "disabled" : ""}>${icon("plus")}New record</button></div></div><div class="db-toolbar"><div class="toolbar-group"><button class="btn ${dbView === "table" ? "selected" : ""}" id="table-view">${icon("list")}Table</button><button class="btn ${dbView === "board" ? "selected" : ""}" id="board-view" ${!group ? "disabled" : ""}>${icon("grid")}Board</button><button class="btn ${dbView === "calendar" ? "selected" : ""}" id="calendar-view" ${!dated ? "disabled" : ""} title="${dated ? "Records by date" : "Add a date property to see records on a calendar"}">${icon("calendar")}Calendar</button></div>${dbView === "board" && groupable.length > 1 ? `<label class="cal-by">Group by<select id="board-column">${groupable.map((c) => `<option value="${c.id}" ${c.id === group.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<input id="db-filter" aria-label="Filter records" placeholder="Filter records…" value="${esc(dbFilter)}"><label class="checkbox-label"><input id="show-archived" type="checkbox" ${showArchived ? "checked" : ""}>Archived</label><button class="btn" id="db-reload">Reload records</button><button class="btn" id="db-rename" ${!edit ? "disabled" : ""}>Rename</button><button class="btn" id="db-embed" title="Copy the code that shows this database inside a note">${icon("note")}Use in a note</button><button class="btn danger" id="db-delete" ${!edit ? "disabled" : ""}>${icon("trash")}Delete</button></div>${
       dbView === "calendar"
-        ? calendarHTML(db, rows, edit)
+        ? calendarHTML(db, rows, edit, calendar)
         : dbView === "table"
-          ? `<div class="panel table-wrap"><table class="records-table"><thead><tr>${db.columns.map((c) => `<th><span class="th-inner"><button data-sort="${c.id}">${esc(c.name)} <small>${esc((DB_KINDS.find((k) => k[0] === c.kind)?.[1] || c.kind).toLowerCase())}</small>${dbSort === c.id ? (dbDescending ? " ↓" : " ↑") : ""}</button><button class="th-menu" data-col-menu="${c.id}" aria-label="Options for ${esc(c.name)}" aria-haspopup="menu">${icon("more")}</button></span></th>`).join("")}<th>Actions</th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${r.id}">${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}<td class="record-actions"><button class="btn" data-archive="${r.id}" ${!edit ? "disabled" : ""}>${showArchived ? "Restore" : "Archive"}</button><button class="btn danger" data-delete-record="${r.id}" ${!edit ? "disabled" : ""} aria-label="Delete record">${icon("trash")}</button></td></tr>`).join("")}</tbody></table>${!rows.length ? '<div class="empty">No matching records. Add a record or change your filter.</div>' : ""}</div>`
-          : `<div class="board">${["", ...group.options]
-              .map(
-                (option) =>
-                  `<section class="board-column"><h3>${esc(option || "No status")}<span>${rows.filter((r) => (r.cells[group.id] || "") === option).length}</span></h3>${rows
-                    .filter((r) => (r.cells[group.id] || "") === option)
-                    .map(
-                      (r) =>
-                        `<button class="record-card" data-edit-record="${r.id}"><strong>${esc(r.cells[db.columns[0].id] || "Untitled")}</strong>${db.columns
-                          .slice(1)
-                          .filter((c) => c.id !== group.id)
-                          .map(
-                            (c) =>
-                              `<small>${esc(c.name)}: ${esc(cellText(c, r, db) || "—")}</small>`,
-                          )
-                          .join("")}</button>`,
-                    )
-                    .join("")}</section>`,
-              )
-              .join("")}</div>`
+          ? `<div class="panel table-wrap"><table class="records-table"><thead><tr>${db.columns.map((c) => `<th><span class="th-inner"><button data-sort="${c.id}">${esc(c.name)} <small>${esc((DB_KINDS.find((k) => k[0] === c.kind)?.[1] || c.kind).toLowerCase())}</small>${dbSort === c.id ? (dbDescending ? " ↓" : " ↑") : ""}</button><button class="th-menu" data-col-menu="${c.id}" aria-label="Options for ${esc(c.name)}" aria-haspopup="menu">${icon("more")}</button></span></th>`).join("")}<th>Actions</th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${r.id}">${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}<td class="record-actions"><button class="btn" data-record-page="${r.id}" ${!edit && !r.page ? "disabled" : ""} title="${r.page ? "Open the record's page" : "Open as a page, with room for notes"}" aria-label="Open as page">${icon("note")}</button><button class="btn" data-archive="${r.id}" ${!edit ? "disabled" : ""}>${showArchived ? "Restore" : "Archive"}</button><button class="btn danger" data-delete-record="${r.id}" ${!edit ? "disabled" : ""} aria-label="Delete record">${icon("trash")}</button></td></tr>`).join("")}</tbody></table>${!rows.length ? '<div class="empty">No matching records. Add a record or change your filter.</div>' : ""}</div>`
+          : boardHTML(db, rows, group, { edit })
     }<p class="editor-help">Changes save when you leave a cell. Other records refresh automatically. Concurrent edits to the same record are checked before saving.</p></section>`;
   action($("#db-filter"), "input", (e) => {
     const pos = e.target.selectionStart;
@@ -7172,35 +7388,24 @@ function renderDatabase() {
     dbView = "calendar";
     renderDatabase();
   });
-  $$("[data-cal-month]").forEach((el) =>
-    action(el, "click", () => {
-      const step = Number(el.dataset.calMonth);
-      const [y, m] = dbMonth.split("-").map(Number);
-      const d = step ? new Date(y, m - 1 + step, 1) : new Date();
-      dbMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      renderDatabase();
-    }),
-  );
-  action($("#cal-column"), "change", (e) => {
-    dbCalendarColumn = e.target.value;
+  if (dbView === "calendar")
+    bindCalendar(
+      $("#content"),
+      db,
+      calendar,
+      () => {
+        ({ month: dbMonth, column: dbCalendarColumn, extras: dbCalendarExtras } =
+          calendar);
+        renderDatabase();
+      },
+      (row) => editRecordDialog(db, row, true, renderDatabase),
+    );
+  if (dbView === "board" && edit)
+    bindBoardDrag($("#content"), db, group, renderDatabase);
+  action($("#board-column"), "change", (e) => {
+    dbGroupColumn = e.target.value;
     renderDatabase();
   });
-  $$("[data-cal-add]").forEach((el) =>
-    action(el, "click", async () => {
-      const col =
-        db.columns.find(
-          (c) => c.id === dbCalendarColumn && c.kind === "date",
-        ) || db.columns.find((c) => c.kind === "date");
-      const cells = { [col.id]: el.dataset.calAdd };
-      for (const c of db.columns)
-        if (c.kind === "checkbox") cells[c.id] = false;
-      if (db.columns[0].kind === "text") cells[db.columns[0].id] = "Untitled";
-      const row = await api(`databases/${db.id}/rows`, "POST", { cells });
-      db.rows.push(row);
-      renderDatabase();
-      editRecordDialog(db, row, true, renderDatabase);
-    }),
-  );
   action($("#db-reload"), "click", () =>
     formDialog(
       "Reload records?",
@@ -7274,6 +7479,14 @@ function renderDatabase() {
     renderDatabase();
     $(`[data-cell="${row.id}:${db.columns[0].id}"]`)?.focus();
   });
+  $$("[data-record-page]").forEach((el) =>
+    action(el, "click", () =>
+      openRecordPage(
+        db,
+        db.rows.find((r) => r.id === el.dataset.recordPage),
+      ),
+    ),
+  );
   $$("[data-archive]").forEach((el) =>
     action(el, "click", async () => {
       const row = db.rows.find((r) => r.id === el.dataset.archive);
@@ -7514,44 +7727,38 @@ function drawEmbed(slot, entry) {
   const db = entry.db;
   const edit = data.roles[db.folder_id] === "editor";
   const rows = db.rows.filter((r) => !r.archived);
-  const view = slot.dataset.view;
-  const group = db.columns.find((c) => c.kind === "select");
+  const group = boardColumn(db);
+  const dated = db.columns.some((c) => DATED.includes(c.kind));
+  let view = slot.dataset.view;
+  if ((view === "board" && !group) || (view === "calendar" && !dated))
+    view = "table";
+  slot.calendar ||= { month: null, column: null, extras: false };
   const body =
-    view === "board" && group
-      ? `<div class="db-embed-board">${["", ...group.options]
-          .map((option) => {
-            const cards = rows.filter(
-              (r) => (r.cells[group.id] || "") === option,
-            );
-            return `<section class="db-embed-column"><h4>${esc(option || "No " + group.name.toLowerCase())}<span>${cards.length}</span></h4>${cards
-              .map(
-                (r) =>
-                  `<button class="db-embed-card" data-embed-record="${r.id}"><strong>${esc(embedRecordTitle(db, r))}</strong>${db.columns
-                    .slice(1)
-                    .filter(
-                      (c) =>
-                        c.id !== group.id &&
-                        r.cells[c.id] != null &&
-                        r.cells[c.id] !== "",
-                    )
-                    .map(
-                      (c) =>
-                        `<small>${esc(c.name)}: ${esc(cellText(c, r, db))}</small>`,
-                    )
-                    .join("")}</button>`,
-              )
-              .join("")}</section>`;
-          })
-          .join("")}</div>`
-      : `<div class="db-embed-scroll"><table class="db-embed-table"><thead><tr>${db.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>${rows
-          .map(
-            (r) =>
-              `<tr>${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}</tr>`,
-          )
-          .join(
-            "",
-          )}</tbody></table>${rows.length ? "" : '<p class="db-embed-empty">No records yet.</p>'}</div>`;
-  slot.innerHTML = `<span class="db-embed-panel" role="group" aria-label="Database ${esc(db.name)}"><span class="db-embed-head"><span class="db-embed-title">${icon("grid")}${esc(db.name)}</span><span class="db-embed-meta">${rows.length} record${rows.length === 1 ? "" : "s"}${edit ? "" : " · read only"}</span><span class="db-embed-actions"><span class="db-embed-views" role="group" aria-label="View"><button data-embed-view="table" aria-pressed="${view !== "board"}">Table</button><button data-embed-view="board" aria-pressed="${view === "board"}" ${group ? "" : 'disabled title="Board view needs a select property"'}>Board</button></span><button data-embed-open title="Open the database">${icon("arrow")}Open</button>${edit ? `<button class="primary" data-embed-add>${icon("plus")}New</button>` : ""}</span></span>${body}</span>`;
+    view === "board"
+      ? boardHTML(db, rows, group, { edit, embed: true })
+      : view === "calendar"
+        ? calendarHTML(db, rows, edit, slot.calendar)
+        : `<div class="db-embed-scroll"><table class="db-embed-table"><thead><tr>${db.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>${rows
+            .map(
+              (r) =>
+                `<tr>${db.columns.map((c) => `<td>${cellInput(c, r.cells[c.id], r.id + ":" + c.id, !edit, { db, row: r })}</td>`).join("")}</tr>`,
+            )
+            .join(
+              "",
+            )}</tbody></table>${rows.length ? "" : '<p class="db-embed-empty">No records yet.</p>'}</div>`;
+  const viewButton = (name, label, enabled, why) =>
+    `<button data-embed-view="${name}" aria-pressed="${view === name}" ${enabled ? "" : `disabled title="${why}"`}>${label}</button>`;
+  slot.innerHTML = `<span class="db-embed-panel" role="group" aria-label="Database ${esc(db.name)}"><span class="db-embed-head"><span class="db-embed-title">${icon("grid")}${esc(db.name)}</span><span class="db-embed-meta">${rows.length} record${rows.length === 1 ? "" : "s"}${edit ? "" : " · read only"}</span><span class="db-embed-actions"><span class="db-embed-views" role="group" aria-label="View">${viewButton("table", "Table", true)}${viewButton("board", "Board", group, "Board view needs a select, multi-select or person property")}${viewButton("calendar", "Calendar", dated, "Calendar view needs a date property")}</span><button data-embed-open title="Open the database">${icon("arrow")}Open</button>${edit ? `<button class="primary" data-embed-add>${icon("plus")}New</button>` : ""}</span></span>${body}</span>`;
+  if (view === "board" && edit)
+    bindBoardDrag(slot, db, group, () => redrawEmbeds(db.id));
+  if (view === "calendar")
+    bindCalendar(
+      slot,
+      db,
+      slot.calendar,
+      () => drawEmbed(slot, embedCache.get(db.id) || { db }),
+      (row) => editRecordDialog(db, row, true, () => redrawEmbeds(db.id)),
+    );
   bindEmbed(slot, db, edit);
 }
 function bindEmbed(slot, db, edit) {
@@ -7582,9 +7789,11 @@ function bindEmbed(slot, db, edit) {
       error(e);
     }
   });
-  $$("[data-embed-record]", slot).forEach((b) =>
+  $$("[data-embed-record], [data-edit-record]", slot).forEach((b) =>
     b.addEventListener("click", () => {
-      const row = db.rows.find((r) => r.id === b.dataset.embedRecord);
+      const row = db.rows.find(
+        (r) => r.id === (b.dataset.embedRecord || b.dataset.editRecord),
+      );
       editRecordDialog(db, row, edit, () => redrawEmbeds(db.id));
     }),
   );
@@ -7652,8 +7861,8 @@ async function setEmbedView(slot, view) {
   const b = note.blocks[i];
   const id = slot.dataset.database;
   const updated = b.markdown.replace(
-    new RegExp(`\\[\\[database:${id}(:(table|board))?\\]\\]`),
-    view === "board" ? `[[database:${id}:board]]` : `[[database:${id}]]`,
+    new RegExp(`\\[\\[database:${id}(:(table|board|calendar))?\\]\\]`),
+    view === "table" ? `[[database:${id}]]` : `[[database:${id}:${view}]]`,
   );
   if (updated === b.markdown) return;
   live?.boundary();
@@ -7670,7 +7879,11 @@ async function renderDatabaseEmbeds() {
     const classes = [...slot.classList];
     slot.dataset.database =
       classes.find((c) => c.startsWith("db-id-"))?.slice(6) || "";
-    slot.dataset.view = classes.includes("db-view-board") ? "board" : "table";
+    slot.dataset.view = classes.includes("db-view-board")
+      ? "board"
+      : classes.includes("db-view-calendar")
+        ? "calendar"
+        : "table";
     slot.dataset.state = "loading";
     slot.innerHTML = `<span class="db-embed-note">${icon("grid")}Loading database…</span>`;
   }
@@ -7716,7 +7929,7 @@ function databaseEmbedDialog(existingId) {
   formDialog(
     "Insert a database",
     "The note shows the database's current records. Editing them here or in the database changes both.",
-    `<label>Database<select name="database" id="embed-choice">${editorFolders ? '<option value="new">New task list…</option>' : ""}${databases.map((d) => `<option value="${d.id}">${esc(d.name)} · ${d.record_count} record${d.record_count === 1 ? "" : "s"}</option>`).join("")}</select></label><div id="embed-new"><label>Name<input name="name" value="Tasks" maxlength="200"></label><label>Folder<select name="folder_id">${editorFolders}</select></label></div><label>Show as<select name="view"><option value="table">Table</option><option value="board">Board (by status)</option></select></label>`,
+    `<label>Database<select name="database" id="embed-choice">${editorFolders ? '<option value="new">New task list…</option>' : ""}${databases.map((d) => `<option value="${d.id}">${esc(d.name)} · ${d.record_count} record${d.record_count === 1 ? "" : "s"}</option>`).join("")}</select></label><div id="embed-new"><label>Name<input name="name" value="Tasks" maxlength="200"></label><label>Folder<select name="folder_id">${editorFolders}</select></label></div><label>Show as<select name="view"><option value="table">Table</option><option value="board">Board (by status)</option><option value="calendar">Calendar (by date)</option></select></label>`,
     async (v) => {
       let id = v.database;
       if (id === "new") {
@@ -7730,7 +7943,7 @@ function databaseEmbedDialog(existingId) {
       }
       if (!id) throw new Error("Choose a database.");
       const markdown =
-        v.view === "board" ? `[[database:${id}:board]]` : `[[database:${id}]]`;
+        v.view === "table" ? `[[database:${id}]]` : `[[database:${id}:${v.view}]]`;
       let b = note.blocks.find((x) => x.id === existingId);
       if (b && !b.markdown.trim()) b.markdown = markdown;
       else {
@@ -7788,6 +8001,86 @@ function editRecordDialog(db, row, edit, onSaved) {
     edit ? "Save record" : "Read only",
   );
   if (!edit) $("[type=submit]", modal).disabled = true;
+  if (edit || row.page) {
+    const page = document.createElement("button");
+    page.type = "button";
+    page.className = "btn";
+    page.innerHTML = `${icon("note")}Open as page`;
+    page.onclick = () => openRecordPage(db, row).catch(error);
+    $("footer", modal)?.prepend(page);
+  }
+}
+/** Opens a record's page, making it the first time (editors only). */
+async function openRecordPage(db, row) {
+  const id = row.page || (await api(`databases/${db.id}/rows/${row.id}/page`, "POST")).id;
+  row.page = id;
+  if (modal.open) modal.close();
+  await refresh();
+  await openNote(id);
+}
+/** On a record's page: the record's properties, which editors change here. */
+async function renderRecordPanel() {
+  const panel = $("#record-panel");
+  if (!panel || !note?.record) return;
+  const { database_id: did, record_id: rid } = note.record;
+  let db;
+  try {
+    db = await api("databases/" + did);
+    await loadDatabaseContext(db);
+  } catch {
+    panel.innerHTML = '<p class="hint">The database of this record cannot be opened.</p>';
+    return;
+  }
+  const row = db.rows.find((r) => r.id === rid);
+  if ($("#record-panel") !== panel) return;
+  if (!row) {
+    panel.innerHTML = '<p class="hint">This record was deleted.</p>';
+    return;
+  }
+  // The cell pickers find the database among those on screen.
+  embedCache.set(db.id, { at: Date.now(), db });
+  const edit = data.roles[db.folder_id] === "editor";
+  panel.innerHTML = `<header><button class="text-link" id="record-db">${icon("grid")}${esc(db.name)}</button><span>Record properties</span></header><div class="record-fields">${db.columns
+    .map(
+      (c) =>
+        `<label data-col="${esc(c.id)}"><span>${esc(c.name)}</span>${cellInput(c, row.cells[c.id], "page:" + c.id, !edit, { db, row })}</label>`,
+    )
+    .join("")}</div>`;
+  action($("#record-db", panel), "click", () => openDatabase(db.id));
+  $$("[data-cell]", panel).forEach((el) => {
+    const cid = el.dataset.cell.slice(5);
+    const col = db.columns.find((c) => c.id === cid);
+    el.addEventListener(cellEvent(col), async () => {
+      const value = parseCell(col, el);
+      if (JSON.stringify(value) === JSON.stringify(row.cells[cid] ?? null)) return;
+      el.classList.add("saving");
+      try {
+        Object.assign(
+          row,
+          await api(`databases/${db.id}/rows/${rid}`, "PATCH", {
+            revision: row.revision,
+            cells: { [cid]: value },
+          }),
+        );
+        el.classList.remove("cell-error");
+        // Computed properties follow; the title follows the record's name.
+        for (const c of db.columns.filter((c) => COMPUTED.has(c.kind))) {
+          const span = $(`[data-col="${c.id}"] .cell-computed`, panel);
+          if (span) span.textContent = cellText(c, row, db) || "—";
+        }
+        if (cid === db.columns[0].id) {
+          note.title = embedRecordTitle(db, row);
+          $("#note-title").value = note.title;
+          $("#breadcrumb").textContent = note.title;
+        }
+      } catch (e) {
+        el.classList.add("cell-error");
+        toast(e.message);
+      } finally {
+        el.classList.remove("saving");
+      }
+    });
+  });
 }
 
 async function renderIntegrations() {

@@ -12,6 +12,10 @@ turns that section into the next version.
 
 ### Added
 
+- **Rollups and formulas** in databases. A rollup counts, sums, averages or lists a property of the records a relation links to, or finds the earliest or latest date. A formula computes a value from the record's other properties, such as `prop("Price") * prop("Quantity")` or `days(today(), prop("Due"))`, with `if`, text and date functions. Both are computed for each reader (a rollup shows nothing from a database you cannot open) and appear in exports and MCP results. A formula follows renamed properties, and one with a mistake is refused with the reason.
+- **Records that open as pages:** open a record (the page button in the table, or **Open as page** in its dialog) to write about it in a full note, with its properties at the top. The page is named after the record, stays out of the folder's note list, and is deleted with its record.
+- **Boards grouped by multi-select or person**, not only by a select property (choose **Group by** when there are several). Drag a card to another column to change its value; with a multi-select, it moves from one option to the other.
+- **Calendar in notes:** embedded databases (`[[database:…:calendar]]`, or **Calendar** in the embed's view switch) show the calendar too. Calendars can also show the workspace's **reminders and journal entries** (**Reminders & journal**); click one to open its note.
 - **Desktop:** when the server you had open last cannot be shown at startup (it does not answer, cannot be reached, signed you out, or another server answers at its address), the app still opens this computer, and now says why, with **Try again** and **Servers**.
 
 - **MCP write access:** a credential can now be created with **Read and write** access (read only stays the default). Its AI tool can then create notes from Markdown, add blocks to a note, and add or update database records, always within your edit permissions. Nothing is deleted: notes keep their previous version in history, and open editors show the change at once.

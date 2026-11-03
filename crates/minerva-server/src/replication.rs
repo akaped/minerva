@@ -806,6 +806,7 @@ fn apply_note(
             journal: string(fields, "journal").filter(|j| databases::valid_date(j)),
             metadata: normalize_metadata(fields.get("metadata").unwrap_or(&Value::Null))?,
             print_template: template(fields, upstream)?,
+            record: None,
         }));
         d.collaboration.insert(id.into(), Arc::new(crdt.into()));
         if let Err(error) = sync_text(d, "") {

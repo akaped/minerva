@@ -303,6 +303,7 @@ fn write_call(
                 journal: None,
                 metadata: Default::default(),
                 print_template: String::new(),
+                record: None,
             };
             let result = json!({"document_id":n.id,"title":n.title,"blocks":n.blocks.len()});
             d.notes.push(Arc::new(n));
@@ -374,6 +375,7 @@ fn write_call(
             row.updated_at = now();
             let row = row.clone();
             db.updated_at = now();
+            record_pages::retitle(d, did, rid)?;
             Ok(json!({"database_id":did,"record":row}))
         }
         _ => Err(bad("Unknown tool")),
@@ -497,8 +499,20 @@ fn call(
             } else {
                 None
             };
+            // Rollup and formula values, computed for this user.
+            let mut computed = formulas::computed(d, u, db);
+            let records: Vec<Value> = rows
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .map(|r| {
+                    let mut v = json!(r);
+                    v["computed"] = json!(computed.remove(&r.id).unwrap_or_default());
+                    v
+                })
+                .collect();
             Ok(
-                json!({"database_id":db.id,"name":db.name,"columns":db.columns,"records":rows.into_iter().skip(offset).take(limit).collect::<Vec<_>>(),"next_offset":next}),
+                json!({"database_id":db.id,"name":db.name,"columns":db.columns,"records":records,"next_offset":next}),
             )
         }
         _ => Err(bad("Unknown tool")),

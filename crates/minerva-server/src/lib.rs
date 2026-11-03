@@ -7,6 +7,7 @@ mod comments;
 mod databases;
 mod export;
 mod flashcards;
+mod formulas;
 mod fsrs;
 mod import;
 mod journal;
@@ -15,6 +16,7 @@ mod mail;
 mod mcp;
 mod plugins;
 mod previews;
+mod record_pages;
 mod reminders;
 mod removal;
 mod render;
@@ -359,6 +361,7 @@ fn getting_started(folder_id: &str) -> Note {
         journal: None,
         metadata: Default::default(),
         print_template: String::new(),
+        record: None,
     }
 }
 /// Every account has one personal workspace. Older data adopts an unshared
@@ -466,6 +469,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         journal: None,
         metadata: Default::default(),
         print_template: String::new(),
+        record: None,
     };
     Ok(Data {
         server_id: id(),
@@ -735,6 +739,9 @@ fn note_summary(n: &Note) -> Value {
     }
     if !n.print_template.is_empty() {
         v["print_template"] = json!(n.print_template);
+    }
+    if let Some(record) = &n.record {
+        v["record"] = json!(record);
     }
     v
 }
@@ -1434,6 +1441,9 @@ fn dispatch(
             // only, on both ends; a share recipient cannot move a note away.
             let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
             access(d, &u, &n.folder_id, true)?;
+            if n.record.is_some() {
+                return Err(bad("A record's page stays with its database"));
+            }
             let target = field(&v, "folder_id")?;
             access(d, &u, &target, true)?;
             let workspace = |id: &str| {
@@ -1481,6 +1491,7 @@ fn dispatch(
                 journal: None,
                 metadata: Default::default(),
                 print_template: String::new(),
+                record: None,
             };
             d.notes.push(Arc::new(n.clone()));
             note_view(&n)
@@ -1514,7 +1525,11 @@ fn dispatch(
         ("PUT", ["notes", nid]) => {
             let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
             note_access(d, &u, n, true)?;
-            let save: SaveNote = serde_json::from_value(v).map_err(|_| bad("Invalid note"))?;
+            let mut save: SaveNote = serde_json::from_value(v).map_err(|_| bad("Invalid note"))?;
+            // A record's page keeps its record's name.
+            if let Some(name) = record_pages::saved_title(d, n) {
+                save.title = name;
+            }
             if save.revision != n.revision {
                 return Err(ApiError(
                     StatusCode::CONFLICT,

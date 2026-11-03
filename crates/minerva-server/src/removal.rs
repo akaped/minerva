@@ -11,7 +11,7 @@
 //! credentials. Attachment blobs are removed when the change is persisted.
 use super::*;
 
-fn remove_notes(d: &mut Data, ids: &HashSet<String>) {
+pub(super) fn remove_notes(d: &mut Data, ids: &HashSet<String>) {
     if ids.is_empty() {
         return;
     }
