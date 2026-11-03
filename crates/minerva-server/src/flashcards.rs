@@ -848,7 +848,7 @@ async fn generate(store: Shared, headers: HeaderMap, v: Value) -> Result<Respons
 mod tests {
     use super::*;
     fn note(blocks: &[&str]) -> Note {
-        let mut n = getting_started("f");
+        let mut n = getting_started("f", "en");
         n.id = "n".into();
         n.blocks = blocks
             .iter()

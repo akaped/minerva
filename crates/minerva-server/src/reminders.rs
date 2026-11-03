@@ -12,8 +12,8 @@
 //! The Reminders page also lists every `⏰` time written in the notes the person
 //! can open, whoever wrote it.
 use crate::{
-    bad, edits_workspace, field, forbidden, id, mail, missing, note_access, note_role, now, role,
-    ApiError, Data, Role,
+    bad, edits_workspace, field, forbidden, i18n, id, mail, missing, note_access, note_role, now,
+    role, ApiError, Data, Role,
 };
 use minerva_core::User;
 use serde::{Deserialize, Serialize};
@@ -417,42 +417,63 @@ pub(crate) fn fire(d: &mut Data) -> bool {
     d.reminders = rest;
     for mut r in due {
         if r.note_id.is_empty() {
-            let subject = if r.category.is_empty() {
-                format!("Reminder: {}", r.title)
-            } else {
-                format!("Reminder: {} · {}", r.title, r.category)
-            };
             let members: Vec<User> = d
                 .users
                 .iter()
                 .filter(|a| !a.user.disabled && sees_workspace(d, &a.user, &r.workspace_id))
                 .map(|a| a.user.clone())
                 .collect();
-            let place = d
+            let workspace = d
                 .workspaces
                 .iter()
                 .find(|w| w.id == r.workspace_id)
-                .map_or(String::new(), |w| w.name.clone());
+                .cloned();
             for user in members {
+                let lang = i18n::of_user(d, &user.id);
+                // A personal workspace's name is shown in the reader's language.
+                let place = workspace.as_ref().map_or(String::new(), |w| {
+                    if w.personal {
+                        i18n::tr(&lang, "My Workspace")
+                    } else {
+                        w.name.clone()
+                    }
+                });
+                let subject = if r.category.is_empty() {
+                    i18n::trv(&lang, "Reminder: {title}", &[("title", &r.title)])
+                } else {
+                    i18n::trv(
+                        &lang,
+                        "Reminder: {title} · {category}",
+                        &[("title", &r.title), ("category", &r.category)],
+                    )
+                };
                 let mut lines = vec![
-                    format!("Hi {},", user.name),
-                    format!("It is time for “{}”, in {place}.", r.title),
+                    i18n::trv(&lang, "Hi {name},", &[("name", &user.name)]),
+                    i18n::trv(
+                        &lang,
+                        "It is time for “{title}”, in {place}.",
+                        &[("title", &r.title), ("place", &place)],
+                    ),
                 ];
                 if let Some(repeat) = r.repeat {
-                    lines.push(format!(
-                        "It repeats {}. Mark it done on the Reminders page to move it to {}.",
-                        every(repeat),
-                        date(next(r.at, repeat, r.offset), r.offset)
+                    lines.push(i18n::trv(
+                        &lang,
+                        "It repeats {every}. Mark it done on the Reminders page to move it to {date}.",
+                        &[
+                            ("every", &every(&lang, repeat)),
+                            ("date", &date(next(r.at, repeat, r.offset), r.offset)),
+                        ],
                     ));
                 }
                 let link = format!("/?view=reminders&workspace={}", r.workspace_id);
                 mail::send(
                     d,
+                    &lang,
                     &user.email,
                     &subject,
                     &lines,
                     None,
-                    ("Open Reminders", &link),
+                    (&i18n::tr(&lang, "Open Reminders"), &link),
                 );
             }
             // Kept until it is marked done, also when it could not be sent.
@@ -487,16 +508,25 @@ pub(crate) fn fire(d: &mut Data) -> bool {
             continue;
         }
         let text = block.markdown.clone();
+        let lang = i18n::of_user(d, &user.id);
         mail::send(
             d,
+            &lang,
             &user.email,
-            &format!("Reminder: {}", note.title),
+            &i18n::trv(&lang, "Reminder: {title}", &[("title", &note.title)]),
             &[
-                format!("Hi {},", user.name),
-                format!("You asked to be reminded of this, in “{}”:", note.title),
+                i18n::trv(&lang, "Hi {name},", &[("name", &user.name)]),
+                i18n::trv(
+                    &lang,
+                    "You asked to be reminded of this, in “{title}”:",
+                    &[("title", &note.title)],
+                ),
             ],
             Some(&text),
-            ("Open the note", &format!("/?note={}", note.id)),
+            (
+                &i18n::tr(&lang, "Open the note"),
+                &format!("/?note={}", note.id),
+            ),
         );
     }
     true
@@ -508,18 +538,24 @@ fn date(at: u64, offset: i32) -> String {
     format!("{y}-{m:02}-{d:02}")
 }
 /// "every month", "every 2 years".
-fn every(r: Repeat) -> String {
-    let unit = match r.unit {
-        Unit::Day => "day",
-        Unit::Week => "week",
-        Unit::Month => "month",
-        Unit::Year => "year",
+/// "every year", "every 2 weeks", in `lang` (the app's labels, in lower case).
+fn every(lang: &str, r: Repeat) -> String {
+    let (one, other) = match r.unit {
+        Unit::Day => (i18n::msg("Every day"), i18n::msg("Every {count} days")),
+        Unit::Week => (i18n::msg("Every week"), i18n::msg("Every {count} weeks")),
+        Unit::Month => (i18n::msg("Every month"), i18n::msg("Every {count} months")),
+        Unit::Year => (i18n::msg("Every year"), i18n::msg("Every {count} years")),
     };
-    if r.every == 1 {
-        format!("every {unit}")
+    let label = if r.every == 1 {
+        i18n::tr(lang, one)
     } else {
-        format!("every {} {unit}s", r.every)
-    }
+        i18n::trv(lang, other, &[("count", &r.every.to_string())])
+    };
+    let mut chars = label.chars();
+    chars
+        .next()
+        .map(|c| c.to_lowercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

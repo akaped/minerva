@@ -134,6 +134,9 @@ async function start() {
   let data;
   try {
     data = await api("bootstrap");
+    // A personal workspace keeps its English name; it shows in the reader's.
+    for (const w of data.workspaces)
+      if (w.personal) w.name = $t("My Workspace");
   } catch (e) {
     if (e.status === 401) {
       $("#capture-signin").hidden = false;

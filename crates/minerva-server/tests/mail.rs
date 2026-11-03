@@ -183,6 +183,27 @@ async fn the_server_emails_people() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "a link works once");
     let ada_token = login(&r, "ada@test.local", "ada-chosen-pass-1234").await;
     assert!(!ada_token.is_empty());
+    // Ada reads the app in Italian: her emails follow.
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "account/language",
+        &ada_token,
+        json!({"language":"it"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &r,
+        "PUT",
+        "account/language",
+        &ada_token,
+        json!({"language":"xx"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, ada_boot) = call(&r, "GET", "bootstrap", &ada_token, json!({})).await;
+    assert_eq!(ada_boot["language"], "it");
 
     // Forgotten passwords: the same answer for unknown addresses, and no mail.
     let (status, _) = call(
@@ -227,6 +248,8 @@ async fn the_server_emails_people() {
     .await;
     let mail = wait_for(&inbox, 3).await;
     assert_eq!(mail[2].0, "ada@test.local");
+    assert!(mail[2].1.contains("ti ha dato accesso a"), "{}", mail[2].1);
+    assert!(mail[2].1.contains("Inviato da Minerva"), "{}", mail[2].1);
     // Sharing it again with the same role does not.
     call(
         &r,
@@ -315,6 +338,7 @@ async fn the_server_emails_people() {
     assert_eq!(mail.len(), 6);
     assert_eq!(mail[5].0, "ada@test.local");
     assert!(mail[5].1.contains("Can you check these"), "{}", mail[5].1);
+    assert!(mail[5].1.contains("ha commentato"), "{}", mail[5].1);
     let tid = thread["id"].as_str().unwrap();
     call(
         &r,
@@ -328,4 +352,8 @@ async fn the_server_emails_people() {
     assert_eq!(mail.len(), 7);
     assert_eq!(mail[6].0, "owner@test.local");
     assert!(mail[6].1.contains("Done, all paid."));
+    assert!(
+        mail[6].1.contains("commented on"),
+        "the owner reads English"
+    );
 }

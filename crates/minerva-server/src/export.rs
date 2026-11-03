@@ -343,10 +343,9 @@ fn values(n: &Note) -> HashMap<String, String> {
 }
 fn label(key: &str) -> String {
     match key {
-        "client" => "Prepared for".into(),
-        "prepared_for" => "Prepared for".into(),
-        "document_id" => "Document ID".into(),
-        "approval_status" => "Approval status".into(),
+        "client" | "prepared_for" => i18n::msg("Prepared for").into(),
+        "document_id" => i18n::msg("Document ID").into(),
+        "approval_status" => i18n::msg("Approval status").into(),
         "url" => "URL".into(),
         _ => {
             let words = key.replace('_', " ");
@@ -511,7 +510,47 @@ fn markdown(
         previous = Some(&block.markdown);
     }
     text.push('\n');
-    text
+    localize(&i18n::of_user(d, &u.id), text)
+}
+/// The phrases exports write themselves, in `lang` (the note's own text stays
+/// as written).
+fn localize(lang: &str, out: String) -> String {
+    if lang == "en" {
+        return out;
+    }
+    let mut out = i18n::rendered(lang, out);
+    for text in [
+        i18n::msg("Embedded note (not available to you)"),
+        i18n::msg("Embedded note (deleted)"),
+        i18n::msg("Embedded database (not available to you)"),
+        i18n::msg("Embedded database (deleted)"),
+    ] {
+        out = out.replace(&format!("*{text}*"), &format!("*{}*", i18n::tr(lang, text)));
+    }
+    let contents = i18n::tr(lang, "Contents");
+    out = out
+        .replace("<h2>Contents</h2>", &format!("<h2>{contents}</h2>"))
+        .replace(
+            "<p class=\"note-toc-title\">Contents</p>",
+            &format!("<p class=\"note-toc-title\">{contents}</p>"),
+        );
+    // `<time …>Updated 2026-11-03</time>` under the title.
+    let mut rest = out.as_str();
+    let mut done = String::with_capacity(out.len());
+    const MARK: &str = "\">Updated ";
+    while let Some(at) = rest.find(MARK) {
+        let after = &rest[at + MARK.len()..];
+        let end = after.find("</time>").unwrap_or(0);
+        done.push_str(&rest[..at + 2]);
+        done.push_str(&i18n::trv(
+            lang,
+            "Updated {date}",
+            &[("date", &after[..end])],
+        ));
+        rest = &after[end..];
+    }
+    done.push_str(rest);
+    done
 }
 
 /// An attachment included in an export.
@@ -623,6 +662,7 @@ fn document(
     site: &str,
 ) -> String {
     let values = values(n);
+    let lang = i18n::of_user(&s.data, &u.id);
     let template = options
         .template
         .as_deref()
@@ -720,7 +760,7 @@ fn document(
                 .map(|k| {
                     format!(
                         "<div><dt>{}</dt><dd>{}</dd></div>",
-                        escape(&label(k)),
+                        escape(&i18n::tr(&lang, &label(k))),
                         fact_value(&values, k)
                     )
                 })
@@ -731,7 +771,7 @@ fn document(
                 .map(|k| {
                     format!(
                         "<tr><th>{}</th><td>{}</td></tr>",
-                        escape(&label(k)),
+                        escape(&i18n::tr(&lang, &label(k))),
                         fact_value(&values, k)
                     )
                 })
@@ -808,8 +848,11 @@ fn document(
             "<script src=\"/export.js\" defer></script>"
         }
     );
-    format!(
-        r#"<!doctype html>
+    // The exporter's own words, in the language they read the app in.
+    localize(
+        &i18n::of_user(&s.data, &u.id),
+        format!(
+            r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -824,7 +867,8 @@ fn document(
 </main>
 </body>
 </html>"#,
-        size = if options.letter { "letter" } else { "A4" },
+            size = if options.letter { "letter" } else { "A4" },
+        ),
     )
 }
 fn escape(text: &str) -> String {

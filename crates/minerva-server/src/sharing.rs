@@ -670,6 +670,7 @@ fn page(
     body: &str,
     feed: Option<(&str, &str)>,
     theme: &str,
+    lang: &str,
 ) -> Response {
     // A missing or removed theme falls back to the default look.
     let (theme_link, scheme) = if plugins::get(plugins::Kind::PublicThemes, theme).is_some() {
@@ -698,7 +699,7 @@ fn page(
         .unwrap_or_default();
     let html = format!(
         r#"<!doctype html>
-<html lang="en"{scheme}>
+<html lang="{lang}"{scheme}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -717,15 +718,21 @@ fn page(
         title = escape(title),
         description = escape(description),
     );
-    axum::response::Html(html).into_response()
+    axum::response::Html(i18n::rendered(lang, html)).into_response()
 }
-fn not_found() -> Response {
+fn not_found(lang: &str) -> Response {
+    let title = i18n::tr(lang, "Page not found");
     let mut response = page(
-        "Page not found",
+        &title,
         "",
-        r#"<main class="post"><h1>Page not found</h1><p>This page is not published.</p></main>"#,
+        &format!(
+            r#"<main class="post"><h1>{}</h1><p>{}</p></main>"#,
+            escape(&title),
+            escape(&i18n::tr(lang, "This page is not published."))
+        ),
         None,
         "",
+        lang,
     );
     *response.status_mut() = StatusCode::NOT_FOUND;
     response
@@ -775,6 +782,7 @@ fn article(
     banner: &str,
     section: &Section,
     pages: &[(String, String)],
+    lang: &str,
 ) -> String {
     let content: String = rendered(&c.blocks, links, pages)
         .iter()
@@ -789,33 +797,51 @@ fn article(
 <h1>{title}</h1>
 <p class="post-date">{label}<time datetime="{iso}">{date}</time></p>
 {content}</article>
-<nav class="post-nav"><a href="/{base}/">← All {kind}</a></nav>
+<nav class="post-nav"><a href="/{base}/">← {all}</a></nav>
 </main>"#,
         base = escape(&section.base),
         site = escape(&section.title),
         cover = cover_html(&c.cover, links),
         icon = escape(&c.icon),
         title = escape(&c.title),
-        label = if section.wiki { "Last updated " } else { "" },
+        label = if section.wiki {
+            format!("{} ", escape(&i18n::tr(lang, "Last updated")))
+        } else {
+            String::new()
+        },
         iso = rfc3339(c.updated),
         date = date(c.updated),
-        kind = if section.wiki { "pages" } else { "posts" },
+        all = escape(&i18n::tr(
+            lang,
+            if section.wiki {
+                i18n::msg("All pages")
+            } else {
+                i18n::msg("All posts")
+            }
+        )),
     )
 }
 
 /// `/{base}`, `/{base}/{slug}`, `/{base}/{slug}/files/{id}[/preview]`, and
 /// `/{base}/feed.xml`, where `base` is `shared` or a site's path.
 pub(super) async fn public(State(store): State<Shared>, uri: Uri, headers: HeaderMap) -> Response {
+    // Published pages speak the visitor's language.
+    let lang = i18n::for_request(&headers);
+    let outer = lang.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<Response, ApiError> {
         let s = store.lock().map_err(|_| internal())?;
         let d = &s.data;
         let segments: Vec<&str> = uri.path().split('/').filter(|p| !p.is_empty()).collect();
         let Some((base, path)) = segments.split_first() else {
-            return Ok(not_found());
+            return Ok(not_found(&lang));
         };
-        let Some(section) = Section::find(d, base) else {
-            return Ok(not_found());
+        let Some(mut section) = Section::find(d, base) else {
+            return Ok(not_found(&lang));
         };
+        // The default name of the public pages, in the visitor's language.
+        if std::env::var("MINERVA_SITE_NAME").is_err() && section.title == site_name() {
+            section.title = i18n::tr(&lang, "Published notes");
+        }
         let live: Vec<(&Publication, Content)> = d
             .publications
             .iter()
@@ -857,9 +883,9 @@ pub(super) async fn public(State(store): State<Shared>, uri: Uri, headers: Heade
                     if section.wiki { " wiki" } else { "" },
                     escape(&section.title),
                     if section.description.is_empty() { String::new() } else { format!("<p class=\"site-description\">{}</p>", escape(&section.description)) },
-                    if items.is_empty() { "<p>Nothing has been published yet.</p>".into() } else { format!("<ul class=\"posts\">{items}</ul>") }
+                    if items.is_empty() { format!("<p>{}</p>", escape(&i18n::tr(&lang, "Nothing has been published yet."))) } else { format!("<ul class=\"posts\">{items}</ul>") }
                 );
-                Ok(page(&section.title, &section.description, &body, feed_link, &section.theme))
+                Ok(page(&section.title, &section.description, &body, feed_link, &section.theme, &lang))
             }
             ["feed.xml"] if feed.is_some() => {
                 let base = site_url(&headers);
@@ -890,15 +916,15 @@ pub(super) async fn public(State(store): State<Shared>, uri: Uri, headers: Heade
             }
             [slug] => {
                 let Some((p, content)) = posts.iter().find(|(p, _)| p.slug == *slug) else {
-                    return Ok(not_found());
+                    return Ok(not_found(&lang));
                 };
                 let description = if p.description.is_empty() { content.title.clone() } else { p.description.clone() };
                 let page_url = page_path(d, p);
-                Ok(page(&content.title, &description, &article(content, Links::Public(&page_url), "", &section, &pages), feed_link, &section.theme))
+                Ok(page(&content.title, &description, &article(content, Links::Public(&page_url), "", &section, &pages, &lang), feed_link, &section.theme, &lang))
             }
             [slug, "files", key] | [slug, "files", key, "preview"] => {
                 let Some((p, content)) = posts.iter().find(|(p, _)| p.slug == *slug) else {
-                    return Ok(not_found());
+                    return Ok(not_found(&lang));
                 };
                 // Only files of this note that the published content actually references.
                 let referenced = content.cover.contains(*key) || content.blocks.iter().any(|b| b.markdown.contains(*key));
@@ -907,13 +933,13 @@ pub(super) async fn public(State(store): State<Shared>, uri: Uri, headers: Heade
                     if owner.id == note_id && referenced { Ok(()) } else { Err(missing()) }
                 })
             }
-            _ => Ok(not_found()),
+            _ => Ok(not_found(&lang)),
         }
     })
     .await;
     match result {
         Ok(Ok(response)) => response,
-        Ok(Err(ApiError(StatusCode::NOT_FOUND, _))) => not_found(),
+        Ok(Err(ApiError(StatusCode::NOT_FOUND, _))) => not_found(&outer),
         Ok(Err(e)) => e.into_response(),
         Err(_) => internal().into_response(),
     }
@@ -929,7 +955,14 @@ pub(super) async fn preview(
     let u = authenticate(&s.data, &headers)?;
     let n = find_note(&s.data, &nid)?;
     manage(&s.data, &u, n)?;
-    let banner = "<p class=\"preview-banner\" role=\"status\">Preview · This is how the page will look when published. It is not public until you publish it.</p>";
+    let lang = i18n::for_request(&headers);
+    let banner = format!(
+        "<p class=\"preview-banner\" role=\"status\">{}</p>",
+        escape(&i18n::tr(
+            &lang,
+            "Preview · This is how the page will look when published. It is not public until you publish it."
+        ))
+    );
     // Preview in the site the note is published to, if any.
     let site_id = s
         .data
@@ -939,7 +972,7 @@ pub(super) async fn preview(
         .map_or("", |p| p.site_id.as_str());
     let section = Section::find(&s.data, sites::base(&s.data, site_id)).ok_or_else(internal)?;
     Ok(page(
-        &format!("Preview: {}", n.title),
+        &i18n::trv(&lang, "Preview: {title}", &[("title", &n.title)]),
         "",
         &article(
             &Content {
@@ -950,12 +983,14 @@ pub(super) async fn preview(
                 updated: n.updated_at,
             },
             Links::Members,
-            banner,
+            &banner,
             &section,
             &[],
+            &lang,
         ),
         None,
         &section.theme,
+        &lang,
     ))
 }
 

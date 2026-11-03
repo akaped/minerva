@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn a_block_brings_its_nested_blocks() {
-        let mut n = getting_started("f");
+        let mut n = getting_started("f", "en");
         n.blocks = ["- top", "  - child", "    - grandchild", "- next"]
             .iter()
             .enumerate()

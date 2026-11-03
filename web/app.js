@@ -2,6 +2,7 @@ import {
   $t, $tn, msg,
   LANGUAGES,
   pickLanguage,
+  language,
   chosenLanguage,
   setLanguage,
 } from "./i18n.js";
@@ -769,6 +770,10 @@ new MutationObserver(() => {
     renderDatabaseEmbeds().catch(error);
     renderNoteEmbeds().catch(error);
     recordingButtons().catch(error);
+    // The server writes this tooltip in English for every reader.
+    $$('#blocks .reminder[title="Reminder by email"]').forEach(
+      (el) => (el.title = $t("Reminder by email")),
+    );
   }, 60);
 }).observe(document.body, { childList: true, subtree: true });
 // Links between notes and inline tags inside rendered blocks.
@@ -919,6 +924,11 @@ function editsWorkspace() {
 }
 async function refresh() {
   data = await api("bootstrap");
+  // A personal workspace keeps its English name; it shows in the reader's.
+  for (const w of data.workspaces) if (w.personal) w.name = $t("My Workspace");
+  // Emails and what the server makes speak the language the app shows.
+  if (!shareMode && data.language !== language())
+    api("account/language", "PUT", { language: language() }).catch(() => {});
   // Records' pages are listed with their records, not with the folder's notes.
   data.record_notes = data.notes.filter((n) => n.record);
   data.notes = data.notes.filter((n) => !n.record);

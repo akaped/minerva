@@ -6,7 +6,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Soon
 
-- [ ] **Translations, second part**: text with values in it ("Added 3 blocks", "Updated 3 Nov", "7 notes"), which needs `$t("Added {count} blocks", { count })` and plurals; labels kept in data tables (block types in the `/` menu, dashboard widgets, color themes, database property types); the quick-capture page; error messages from the server; emails, published pages and exports; and the names the server gives new things (My Workspace, Getting Started).
+- [ ] **Translations, what is left**: server messages built with values (`format!`, such as "Missing workspace_id"); names already stored in English before this round (a "General" folder, the first server's "Team" workspace and welcome note); plugin theme and PDF template names; key names in shortcuts (Ctrl, Shift); a third language.
 - [ ] **Flashcards**: study statistics, a desired-retention setting, per-person FSRS parameters fitted from review history, and media cards.
 
 ## Later

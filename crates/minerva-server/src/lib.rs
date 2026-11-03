@@ -12,6 +12,7 @@ mod flashcards;
 mod formulas;
 mod fsrs;
 mod graph;
+mod i18n;
 mod import;
 mod journal;
 mod live;
@@ -164,6 +165,9 @@ struct Data {
     mail_outbox: Vec<mail::Outgoing>,
     #[serde(default)]
     reminders: Vec<reminders::Reminder>,
+    /// The language each person last used the app in, by user ID (see `i18n.rs`).
+    #[serde(default)]
+    languages: HashMap<String, String>,
     #[serde(default)]
     password_resets: HashMap<String, mail::Reset>,
     /// Inline tags of each note, worked out once per version of the note (memory
@@ -320,9 +324,10 @@ fn valid_dashboard(v: &Value) -> Result<Option<Value>, ApiError> {
 }
 /// The name of every account's personal workspace.
 const PERSONAL: &str = "My Workspace";
-/// Creates an account's personal workspace, with a first folder, and makes it
-/// the workspace the app opens.
-fn create_personal(d: &mut Data, user_id: &str) -> String {
+/// Creates an account's personal workspace, with a first folder and the guide
+/// in `lang`, and makes it the workspace the app opens. The workspace keeps
+/// its English name, which the app shows in the reader's language.
+fn create_personal(d: &mut Data, user_id: &str, lang: &str) -> String {
     let w = Workspace {
         id: id(),
         name: PERSONAL.into(),
@@ -332,10 +337,10 @@ fn create_personal(d: &mut Data, user_id: &str) -> String {
     let folder = Folder {
         id: id(),
         workspace_id: w.id.clone(),
-        name: "General".into(),
+        name: i18n::tr(lang, "General"),
         parent_id: None,
     };
-    d.notes.push(Arc::new(getting_started(&folder.id)));
+    d.notes.push(Arc::new(getting_started(&folder.id, lang)));
     d.folders.push(folder);
     if let Some(a) = d.users.iter_mut().find(|a| a.user.id == user_id) {
         a.default_workspace = Some(w.id.clone());
@@ -344,15 +349,20 @@ fn create_personal(d: &mut Data, user_id: &str) -> String {
     d.workspaces.push(w);
     wid
 }
-/// The manual every personal workspace starts with: one block per paragraph of
-/// `getting-started.md` (its code, tables and lists have no blank lines).
-fn getting_started(folder_id: &str) -> Note {
+/// The manual every personal workspace starts with, in `lang`: one block per
+/// paragraph of `getting-started.md` (or its translation, such as
+/// `getting-started.it.md`; their code, tables and lists have no blank lines).
+fn getting_started(folder_id: &str, lang: &str) -> Note {
+    let guide = match lang {
+        "it" => include_str!("getting-started.it.md"),
+        _ => include_str!("getting-started.md"),
+    };
     Note {
         id: id(),
         folder_id: folder_id.into(),
-        title: "Getting Started".into(),
+        title: i18n::tr(lang, "Getting Started"),
         icon: "🧭".into(),
-        blocks: include_str!("getting-started.md")
+        blocks: guide
             .split("\n\n")
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -420,7 +430,7 @@ fn ensure_personal(d: &mut Data) {
                     .iter()
                     .find(|a| a.user.id == uid)
                     .and_then(|a| a.default_workspace.clone());
-                create_personal(d, &uid);
+                create_personal(d, &uid, &i18n::default_language());
                 // Someone who already works elsewhere keeps opening there.
                 if let Some(default) = had_default {
                     if let Some(a) = d.users.iter_mut().find(|a| a.user.id == uid) {
@@ -1357,7 +1367,7 @@ fn dispatch(
                 })
                 .collect();
             let account = d.users.iter().find(|a| a.user.id == u.id);
-            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -1720,8 +1730,14 @@ fn dispatch(
                 default_workspace: None,
                 dashboard: None,
             });
-            create_personal(d, &user.id);
-            let invited = mail::invite(d, &u, &user);
+            // In the server's language, or else the administrator's.
+            let lang = if std::env::var("MINERVA_LANGUAGE").is_ok() {
+                i18n::default_language()
+            } else {
+                i18n::for_request(headers)
+            };
+            create_personal(d, &user.id, &lang);
+            let invited = mail::invite(d, &u, &user, &lang);
             let mut out = json!(user);
             out["invited"] = json!(invited);
             out
@@ -1818,6 +1834,7 @@ fn dispatch(
             mcp::forget_user(d, uid);
             tokens::forget_user(d, uid);
             calendar::forget_user(d, uid);
+            d.languages.remove(*uid);
             twofactor::forget(d, uid);
             json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
         }
@@ -1839,6 +1856,15 @@ fn dispatch(
                 .ok_or_else(missing)?;
             a.dashboard = widgets;
             json!({ "widgets": a.dashboard })
+        }
+        // The language the app shows, for emails and new things.
+        ("PUT", ["account", "language"]) => {
+            let language = v["language"].as_str().unwrap_or("");
+            if !i18n::known(language) {
+                return Err(bad("Unknown language"));
+            }
+            d.languages.insert(u.id.clone(), language.to_string());
+            json!({ "language": language })
         }
         // Changes your own password; other sessions end, this one stays.
         ("POST", ["account", "password"]) => {
@@ -2006,7 +2032,7 @@ mod tests {
     /// Fails when `Note` gains a field that `note_summary` leaves out.
     #[test]
     fn note_summary_is_the_note_without_blocks() {
-        let plain = getting_started("folder");
+        let plain = getting_started("folder", "en");
         let mut detailed = plain.clone();
         detailed.metadata.insert("author".into(), "Ada".into());
         detailed.print_template = "01-standard".into();

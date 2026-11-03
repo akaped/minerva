@@ -72,7 +72,11 @@ Interface text is written in English in the code and wrapped in `$t()` from `web
 
 When you add or change text, add its Italian to `web/locales/it.json`. `npm test` fails if text in the code has no translation, if a translation is no longer used, or if one loses a `{value}`. Translations are inserted into HTML, so they must not contain `<`, `>` or `"` (use « » or “ ” for quotes).
 
-To add a language, add `web/locales/{code}.json` with the same keys, import it in `web/i18n.js`, and list it in `LANGUAGES`.
+Text with values uses braces, `$t("Shared with {name}", { name })`, and counts choose their form with `$tn(count, "{count} note", "{count} notes")`. Text kept in a table and used as a key is marked with `msg("…")` and translated where it is shown with `$t(value)`.
+
+The server shares the same catalog. Its error messages (`bad("…")`) stay English and the app translates them, so a new message needs its Italian in `web/locales/it.json` too. What the server writes itself (emails, published pages, exports) uses `i18n::tr(lang, "…")`, `i18n::trv(lang, "… {name} …", &[("name", …)])` and `i18n::msg("…")` from `crates/minerva-server/src/i18n.rs`. The catalog test reads these from the Rust code as well.
+
+To add a language, add `web/locales/{code}.json` with the same keys, import it in `web/i18n.js` and list it in `LANGUAGES`, add it to `CATALOGS` in `crates/minerva-server/src/i18n.rs`, and translate `getting-started.md`.
 
 ## Send a pull request
 

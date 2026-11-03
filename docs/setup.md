@@ -147,7 +147,8 @@ Notes come in from Markdown files and from Notion, Obsidian, Logseq and Evernote
 | `MINERVA_ADMIN_PASSWORD`        | none                  | Required on initial setup, minimum 12 characters                                                              |
 | `MINERVA_SECURE_COOKIE`         | unset                 | Set to `1` behind HTTPS                                                                                       |
 | `MINERVA_PUBLIC_URL`            | HTTP listen address   | Exact allowed MCP browser origin and base for published-page feed links, e.g. `https://notes.example.com`     |
-| `MINERVA_SITE_NAME`             | `Published notes`     | Title of the published pages index and feed                                                                   |
+| `MINERVA_SITE_NAME`             | `Published notes`     | Title of the published pages index and feed (by default in each visitor's language)                          |
+| `MINERVA_LANGUAGE`              | the browser's         | `en` or `it`: the language of what the server makes for new accounts (their first folder and guide), and of emails to people who have not used the app yet. Unset, new accounts follow the browser of the administrator who makes them |
 | `MINERVA_TOTP_ISSUER`           | `Minerva`             | Name shown in authenticator apps                                                                              |
 | `MINERVA_ATTACHMENT_STORAGE_GB` | `10`                  | Total space for note files, in GiB (60 MiB per file, 500 MiB per note)                                        |
 | `MINERVA_SMTP_HOST`             | none                  | SMTP server; with `MINERVA_MAIL_FROM`, turns email on (see [Email](#email))                                   |

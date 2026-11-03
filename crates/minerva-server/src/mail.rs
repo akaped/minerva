@@ -4,8 +4,8 @@
 //! task sends them over SMTP, retrying with backoff. Without `MINERVA_SMTP_HOST`
 //! and `MINERVA_MAIL_FROM`, nothing is queued and reminders are not emailed.
 use crate::{
-    bad, field, hash_token, id, missing, note_access, note_role, now, persist, ApiError, Data,
-    Note, Shared,
+    bad, field, hash_token, i18n, id, missing, note_access, note_role, now, persist, ApiError,
+    Data, Note, Shared,
 };
 use lettre::{
     message::{Mailbox, MultiPart},
@@ -103,9 +103,11 @@ fn escape(text: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
 }
-/// Queues a message: a few paragraphs, an optional quoted excerpt, and a button.
+/// Queues a message in `lang`: a few paragraphs, an optional quoted excerpt,
+/// and a button. Callers write the paragraphs in that language.
 fn queue(
     d: &mut Data,
+    lang: &str,
     to: &str,
     subject: &str,
     paragraphs: &[String],
@@ -137,10 +139,10 @@ fn queue(
     }
     text += &format!("\n\n{label}: {url}\n");
     html += &format!(
-        "<p><a href=\"{}\" style=\"display:inline-block;padding:10px 18px;background:#2a493b;color:#fff;border-radius:8px;text-decoration:none\">{}</a></p><p style=\"color:#888;font-size:12px\">Sent by Minerva · {}</p>",
+        "<p><a href=\"{}\" style=\"display:inline-block;padding:10px 18px;background:#2a493b;color:#fff;border-radius:8px;text-decoration:none\">{}</a></p><p style=\"color:#888;font-size:12px\">{}</p>",
         escape(url),
         escape(label),
-        escape(&base_url())
+        escape(&i18n::trv(lang, "Sent by Minerva · {server}", &[("server", &base_url())]))
     );
     let html = format!(
         "<!doctype html><html><body style=\"font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#1d2432;max-width:560px\">{html}</body></html>"
@@ -177,25 +179,29 @@ fn reset_link(d: &mut Data, user_id: &str, valid_for: u64) -> String {
     format!("{}/?reset={token}", base_url())
 }
 /// Tells a new member about their account, with a link to choose a password.
-pub(crate) fn invite(d: &mut Data, by: &User, user: &User) -> bool {
+/// Invites a new account by email, in `lang` (it has not used the app yet).
+pub(crate) fn invite(d: &mut Data, by: &User, user: &User, lang: &str) -> bool {
     if !enabled() {
         return false;
     }
     let link = reset_link(d, &user.id, 7 * 86400);
+    let tr = |text: &str| i18n::tr(lang, text);
     queue(
         d,
+        lang,
         &user.email,
-        "Your Minerva account is ready",
+        &tr("Your Minerva account is ready"),
         &[
-            format!("Hi {},", user.name),
-            format!(
-                "{} created a Minerva account for you. You sign in with {}.",
-                by.name, user.email
+            i18n::trv(lang, "Hi {name},", &[("name", &user.name)]),
+            i18n::trv(
+                lang,
+                "{inviter} created a Minerva account for you. You sign in with {email}.",
+                &[("inviter", &by.name), ("email", &user.email)],
             ),
-            "Choose your password with the button below. The link works once, for 7 days; after that, ask for a new one with “Forgot your password?” on the sign-in page.".into(),
+            tr("Choose your password with the button below. The link works once, for 7 days; after that, ask for a new one with “Forgot your password?” on the sign-in page."),
         ],
         None,
-        ("Choose your password", &link),
+        (&tr("Choose your password"), &link),
     )
 }
 /// Public endpoints: ask for a reset link, and use it.
@@ -216,17 +222,20 @@ pub(crate) fn reset_route(d: &mut Data, path: &str, v: &Value) -> Result<Option<
             {
                 let user = a.user.clone();
                 let link = reset_link(d, &user.id, 3600);
+                let lang = i18n::of_user(d, &user.id);
+                let tr = |text: &str| i18n::tr(&lang, text);
                 queue(
                     d,
+                    &lang,
                     &user.email,
-                    "Reset your Minerva password",
+                    &tr("Reset your Minerva password"),
                     &[
-                        format!("Hi {},", user.name),
-                        "Someone asked to reset the password of your Minerva account. If it was you, choose a new password with the button below; the link works once, for one hour.".into(),
-                        "If it was not you, ignore this email: your password stays the same.".into(),
+                        i18n::trv(&lang, "Hi {name},", &[("name", &user.name)]),
+                        tr("Someone asked to reset the password of your Minerva account. If it was you, choose a new password with the button below; the link works once, for one hour."),
+                        tr("If it was not you, ignore this email: your password stays the same."),
                     ],
                     None,
-                    ("Choose a new password", &link),
+                    (&tr("Choose a new password"), &link),
                 );
             }
             Ok(Some(json!({"ok":true})))
@@ -268,20 +277,27 @@ pub(crate) fn access(d: &mut Data, by: &User, user_id: &str, place: &str, editor
     else {
         return;
     };
+    let lang = i18n::of_user(d, &user.id);
+    let values = [("name", by.name.as_str()), ("place", place)];
     queue(
         d,
+        &lang,
         &user.email,
-        &format!("{} shared {place} with you", by.name),
+        &i18n::trv(&lang, "{name} shared {place} with you", &values),
         &[
-            format!("Hi {},", user.name),
-            format!(
-                "{} gave you access to {place}: you can {} it.",
-                by.name,
-                if editor { "view and edit" } else { "view" }
+            i18n::trv(&lang, "Hi {name},", &[("name", &user.name)]),
+            i18n::trv(
+                &lang,
+                if editor {
+                    i18n::msg("{name} gave you access to {place}: you can view and edit it.")
+                } else {
+                    i18n::msg("{name} gave you access to {place}: you can view it.")
+                },
+                &values,
             ),
         ],
         None,
-        ("Open Minerva", &base_url()),
+        (&i18n::tr(&lang, "Open Minerva"), &base_url()),
     );
 }
 
@@ -378,18 +394,21 @@ pub(crate) fn assignments(old: &Data, d: &mut Data, actor: Option<&User>) {
             }
         }
     }
-    let by = actor.map_or("Someone".to_string(), |a| a.name.clone());
     for (user, note, block) in out {
+        let lang = i18n::of_user(d, &user.id);
+        let by = actor.map_or_else(|| i18n::tr(&lang, "Someone"), |a| a.name.clone());
+        let values = [("name", by.as_str()), ("title", note.title.as_str())];
         queue(
             d,
+            &lang,
             &user.email,
-            &format!("{by} assigned you in “{}”", note.title),
+            &i18n::trv(&lang, "{name} assigned you in “{title}”", &values),
             &[
-                format!("Hi {},", user.name),
-                format!("{by} assigned you in “{}”:", note.title),
+                i18n::trv(&lang, "Hi {name},", &[("name", &user.name)]),
+                i18n::trv(&lang, "{name} assigned you in “{title}”:", &values),
             ],
             Some(&block),
-            ("Open the note", &note_link(&note)),
+            (&i18n::tr(&lang, "Open the note"), &note_link(&note)),
         );
     }
 }
@@ -397,16 +416,19 @@ pub(crate) fn assignments(old: &Data, d: &mut Data, actor: Option<&User>) {
 /// Tells `to` about a comment in a note: one that mentions them, or a reply in a
 /// thread they took part in.
 pub(crate) fn comment(d: &mut Data, by: &User, to: &User, note: &Note, text: &str) {
+    let lang = i18n::of_user(d, &to.id);
+    let values = [("name", by.name.as_str()), ("title", note.title.as_str())];
     queue(
         d,
+        &lang,
         &to.email,
-        &format!("{} commented on “{}”", by.name, note.title),
+        &i18n::trv(&lang, "{name} commented on “{title}”", &values),
         &[
-            format!("Hi {},", to.name),
-            format!("{} commented on “{}”:", by.name, note.title),
+            i18n::trv(&lang, "Hi {name},", &[("name", &to.name)]),
+            i18n::trv(&lang, "{name} commented on “{title}”:", &values),
         ],
         Some(text),
-        ("Open the note", &note_link(note)),
+        (&i18n::tr(&lang, "Open the note"), &note_link(note)),
     );
 }
 /// `GET notes/{id}/people`: the members who can open a note, for the `@`
@@ -452,9 +474,10 @@ pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<
 pub(crate) fn wake_sender() {
     wake().notify_one();
 }
-/// Queues a message whose button opens `path` on this server.
+/// Queues a message in `lang` whose button opens `path` on this server.
 pub(crate) fn send(
     d: &mut Data,
+    lang: &str,
     to: &str,
     subject: &str,
     paragraphs: &[String],
@@ -462,7 +485,7 @@ pub(crate) fn send(
     (label, path): (&str, &str),
 ) -> bool {
     let url = format!("{}{path}", base_url());
-    queue(d, to, subject, paragraphs, quote, (label, &url))
+    queue(d, lang, to, subject, paragraphs, quote, (label, &url))
 }
 
 /// Starts the sender, when email is configured.

@@ -35,8 +35,9 @@ function texts() {
 }
 
 /**
- * The fixed error messages the server sends (`bad("…")`, `ApiError(…, "…")`):
- * the app shows them in the reader's language from the same catalog.
+ * The server's text: its fixed error messages (`bad("…")`, `ApiError(…, "…")`),
+ * which the app shows in the reader's language, and what it writes itself in
+ * emails, published pages and exports (`tr`, `trv`, `msg` in `i18n.rs`).
  */
 function serverMessages() {
   const dir = path.join(web, "../crates/minerva-server/src");
@@ -51,6 +52,8 @@ function serverMessages() {
       .readFileSync(path.join(dir, file), "utf8")
       .split(/#\[cfg\(test\)\]/)[0];
     const patterns = [
+      // The server's own text: tr(lang, "…"), trv(lang, "…", …), msg("…").
+      /\b(?:trv?|msg)\(\s*(?:&?\w+,\s*)?"((?:[^"\\]|\\[\s\S])*)"/g,
       /\bbad\(\s*"((?:[^"\\]|\\[\s\S])*)"\s*,?\s*\)/g,
       /ApiError\(\s*StatusCode::\w+,\s*"((?:[^"\\]|\\[\s\S])*)"\s*\.\s*(?:into|to_string)\(\)/g,
     ];

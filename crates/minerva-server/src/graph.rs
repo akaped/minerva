@@ -86,7 +86,7 @@ mod tests {
     fn finds_note_links_once() {
         let a = "0b8f5f9e-0000-4000-8000-000000000001";
         let b = "0b8f5f9e-0000-4000-8000-00000000000b";
-        let mut n = getting_started("f");
+        let mut n = getting_started("f", "en");
         n.id = a.into();
         n.blocks = vec![
             Block::new(&format!("See [B](#note/{b}) and [B again](#note/{b})."), 0),
