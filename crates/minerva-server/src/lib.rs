@@ -952,6 +952,27 @@ async fn editor_pane() -> Response {
         .into_response()
 }
 
+/// The service worker, named after this build's web app: a new release gives
+/// a new worker, which replaces the app kept on devices.
+fn service_worker() -> &'static str {
+    static WORKER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    WORKER.get_or_init(|| {
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for part in [
+            include_str!("../../../web/dist/app.js"),
+            include_str!("../../../web/style.css"),
+            include_str!("../../../web/index.html"),
+            include_str!("../../../web/capture.html"),
+            include_str!("../../../web/dist/capture.js"),
+        ] {
+            for b in part.bytes() {
+                hash = (hash ^ b as u64).wrapping_mul(0x100000001b3);
+            }
+        }
+        include_str!("../../../web/sw.js").replace("__VERSION__", &format!("{hash:016x}"))
+    })
+}
+
 pub fn app(store: Shared) -> Router {
     mail::spawn(store.clone());
     Router::new()
@@ -967,6 +988,14 @@ pub fn app(store: Shared) -> Router {
         .route("/export.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], export::EXPORT_JS) }))
         .route("/favicon.ico", get(|| async { ([("content-type","image/x-icon"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/favicon.ico").as_slice()) }))
         .route("/favicon.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/favicon-32.png").as_slice()) }))
+        // The installable app: its description, icons, worker and quick capture.
+        .route("/manifest.webmanifest", get(|| async { ([("content-type","application/manifest+json"),("cache-control","no-cache")], include_str!("../../../web/manifest.webmanifest")) }))
+        .route("/sw.js", get(|| async { ([("content-type","text/javascript; charset=utf-8"),("cache-control","no-cache")], service_worker()) }))
+        .route("/capture", get(|| async { axum::response::Html(include_str!("../../../web/capture.html")) }))
+        .route("/capture.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], include_str!("../../../web/dist/capture.js")) }))
+        .route("/icons/icon-192.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/icon-192.png").as_slice()) }))
+        .route("/icons/icon-512.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/icon-512.png").as_slice()) }))
+        .route("/icons/maskable-512.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/maskable-512.png").as_slice()) }))
         .route("/apple-touch-icon.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/apple-touch-icon.png").as_slice()) }))
         .route("/plugins/{*path}", get(plugins::serve))
         .route("/public.css", get(|| async { ([("content-type","text/css; charset=utf-8")], sharing::PUBLIC_CSS) }))

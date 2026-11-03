@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <title>Quick note · Minerva</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/capture.js" defer></script>
+  </head>
+  <body class="capture-page">
+    <main class="capture" id="capture">
+      <header class="capture-head">
+        <a class="capture-brand" href="/" aria-label="Open Minerva"
+          ><span aria-hidden="true">✳</span>minerva</a
+        >
+        <span class="capture-status" id="capture-status" role="status"></span>
+      </header>
+      <form id="capture-form" hidden>
+        <label class="sr-only" for="capture-text">Your note</label>
+        <textarea
+          id="capture-text"
+          placeholder="What’s on your mind? The first line becomes the title."
+          required
+        ></textarea>
+        <label class="capture-where"
+          >Save to<select id="capture-target"></select
+        ></label>
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+      <section id="capture-done" class="capture-done" hidden>
+        <p id="capture-done-text"></p>
+        <div class="capture-actions">
+          <a class="btn" id="capture-open" href="/">Open it</a>
+          <button class="btn primary" id="capture-again" type="button">
+            Write another
+          </button>
+        </div>
+      </section>
+      <section id="capture-signin" class="capture-done" hidden>
+        <p>Sign in to Minerva on this device first, then come back here.</p>
+        <div class="capture-actions">
+          <a class="btn primary" href="/?next=capture">Sign in</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

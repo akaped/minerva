@@ -24,6 +24,15 @@ import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import { buildGraph, neighborhood, mountGraph, folderColor } from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
 import {
+  startWorker,
+  offlineReading,
+  setOfflineReading,
+  installed,
+  canInstall,
+  install,
+  onInstallChange,
+} from "./install.js";
+import {
   noteTarget,
   slotTarget,
   blockLabel,
@@ -779,6 +788,33 @@ function sharingBadges(sharing) {
     sharing.members ? '<span class="share-badge">Shared</span>' : "",
   ].join("");
 }
+/**
+ * Says when what is shown is this device's kept copy because the server
+ * cannot be reached, and catches up once it can.
+ */
+let offlineShown = false;
+function showOffline(on) {
+  if (!on) return;
+  offlineShown = true;
+  // A note tab's window says it once for all its tabs.
+  if (isPane || $("#offline-bar")) return;
+  const bar = document.createElement("div");
+  bar.id = "offline-bar";
+  bar.className = "offline-bar";
+  bar.setAttribute("role", "status");
+  bar.textContent =
+    "Offline · showing what this device kept. Changes cannot be saved until you are back online.";
+  document.body.append(bar);
+}
+addEventListener("online", async () => {
+  if (!offlineShown) return;
+  offlineShown = false;
+  $("#offline-bar")?.remove();
+  if (!data || shareMode) return;
+  await refresh().catch(() => {});
+  if (note?.offline_copy) await openNote(note.id).catch(error);
+  else shell();
+});
 async function api(path, method = "GET", body) {
   const r = await fetch("/api/v1/" + path, {
     method,
@@ -786,11 +822,16 @@ async function api(path, method = "GET", body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const v = await r.json();
+  // The server could not be reached: the service worker answered.
+  const kept = !!r.headers.get("x-minerva-offline");
+  if (kept || !r.ok) showOffline(kept);
   if (!r.ok) {
     const e = new Error(v.error || "Request failed");
-    e.status = r.status;
+    e.status = kept ? 0 : r.status;
     throw e;
   }
+  if (kept && v && typeof v === "object" && !Array.isArray(v))
+    v.offline_copy = true;
   // A note tab tells the window around it, which redraws its sidebar.
   if (isPane && changesSidebar(path, method, body, v)) paneMessage("changed");
   return v;
@@ -1187,6 +1228,9 @@ function login() {
       await refresh();
       shell();
       firstSignIn();
+      if (!localMode && !isPane) startWorker();
+      if (new URLSearchParams(location.search).get("next") === "capture")
+        return location.assign("/capture");
       if (initialNote) await openNote(initialNote, { block: initialBlock });
     } catch (err) {
       $(".form-error").textContent = err.message;
@@ -1264,6 +1308,9 @@ function secondFactor(challenge) {
       await refresh();
       shell();
       firstSignIn();
+      if (!localMode && !isPane) startWorker();
+      if (new URLSearchParams(location.search).get("next") === "capture")
+        return location.assign("/capture");
       if (initialNote) await openNote(initialNote, { block: initialBlock });
     } catch (err) {
       $(".form-error", form).textContent = err.message;
@@ -1877,6 +1924,13 @@ async function openNote(id, { split = false, block = null } = {}) {
   conflict = false;
   mode = "document";
   comments.attach(id);
+  if (note.offline_copy) {
+    note.role = "viewer";
+    live = null;
+    shell();
+    if (block) showBlock(block);
+    return;
+  }
   live = new Collaboration(
     id,
     api,
@@ -5735,6 +5789,40 @@ async function renderJournalTasks() {
     );
   }
 }
+/** Account → This device: installing the app and reading offline. */
+function deviceHTML() {
+  const worker = "serviceWorker" in navigator && isSecureContext;
+  const app = installed()
+    ? "<p>Minerva is installed on this device.</p>"
+    : canInstall()
+      ? '<p>Install Minerva to open it in its own window, from your home screen or dock, with <strong>Quick note</strong> and sharing from other apps on phones.</p><button class="btn primary" id="install-app">Install Minerva</button>'
+      : "<p>To install Minerva, use your browser’s menu: <strong>Install app</strong> or <strong>Add to Home Screen</strong> (Safari: Share → Add to Home Screen). Then share pages and text to it, or write a <a href=\"/capture\">quick note</a>.</p>";
+  return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><div><h2>This device</h2><p>Settings for this browser only.</p></div></div><div class="security-body">${app}${
+    worker
+      ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>Keep notes I open for reading offline</strong><br><small>Notes and pictures you open are kept in this browser and shown read-only when the server cannot be reached. They are deleted when you sign out. Leave this off on a shared computer.</small></span></label>`
+      : "<p class=\"hint\">Reading offline needs a secure (https) connection to the server.</p>"
+  }</div></section>`;
+}
+function bindDevice() {
+  action($("#offline-reading"), "change", (e) => {
+    setOfflineReading(e.target.checked);
+    toast(
+      e.target.checked
+        ? "Notes you open are now kept on this device for reading offline."
+        : "Notes kept on this device were deleted.",
+    );
+  });
+  action($("#install-app"), "click", async () => {
+    if (await install()) toast("Minerva is installed.");
+  });
+}
+onInstallChange(() => {
+  const panel = $("#device-panel");
+  if (panel) {
+    panel.outerHTML = deviceHTML();
+    bindDevice();
+  }
+});
 async function renderAccount() {
   const status = await api("account/2fa");
   $("#breadcrumb").textContent = "Account security";
@@ -5743,7 +5831,8 @@ async function renderAccount() {
       status.enabled
         ? `<p>On since ${esc(new Date(status.enabled_at * 1000).toLocaleDateString())}. ${status.recovery_remaining} of 10 recovery codes left.</p><div class="toolbar-group"><button class="btn" id="new-recovery">New recovery codes</button><button class="btn danger" id="disable-2fa">Turn off</button></div>`
         : `<p>Two-factor authentication protects your notes even if your password is stolen.</p><button class="btn primary" id="setup-2fa">Set up two-factor authentication</button>`
-    }</div></section></section>`;
+    }</div></section>${deviceHTML()}</section>`;
+  bindDevice();
   action($("#setup-2fa"), "click", setupTwoFactor);
   action($("#change-password"), "click", () =>
     formDialog(
@@ -9060,6 +9149,7 @@ function sharedUnavailable() {
       setInterval(() => loadReplicas().catch(() => {}), 4000);
     }
     await refresh();
+    if (!localMode && !isPane) startWorker();
     // Opened from another place's workspace menu: that workspace first.
     const asked = new URLSearchParams(location.search).get("workspace");
     if (asked && data.workspaces.some((x) => x.id === asked))
@@ -9087,9 +9177,10 @@ function sharedUnavailable() {
     if (isPane) paneMessage("loaded");
     if (e.status === 401) login();
     else {
+      // Offline (status 0): the service worker says what is missing.
       $("#app").innerHTML =
-        '<div class="loading"><span>Unable to connect to the server. Reload to try again.</span></div>';
-      error(e);
+        `<div class="loading"><span>${e.status === 0 ? esc(e.message) : "Unable to connect to the server. Reload to try again."}</span></div>`;
+      if (e.status !== 0) error(e);
     }
   }
 })();

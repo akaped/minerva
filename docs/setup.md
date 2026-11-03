@@ -82,6 +82,8 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 
 ## Detailed features
 
+- Installable app (a web app manifest and service worker, `web/sw.js`): its own window, a **Quick note** page (`/capture`) that phones can share pages and text to and that waits for a connection, and notes kept for reading offline when Account → This device allows it. Service workers need HTTPS (or `localhost`), so installing and reading offline work once the server has a certificate.
+
 - Server → workspaces → folders → notes, with stable UUID identities.
 - Workspace and folder creation, folder renaming, note creation and title editing.
 - Administrator-created accounts that administrators can edit (name, email, password, administrator role), disable, or delete (owned workspaces pass to the administrator), self-service password changes (people an administrator adds choose their own password at their first sign-in; their My Workspace opens by default), workspace-creation privileges, and workspace access: members added to a workspace can edit (or view) every folder and note in it.

@@ -7898,3 +7898,109 @@ body.comments-open .note-pane {
 .block-handle.readonly {
   cursor: pointer;
 }
+/* The installable app: offline notice, device settings, quick capture. */
+.offline-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 70;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #1b23382a;
+  color: var(--muted);
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+.device-offline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+.device-offline input {
+  margin-top: 4px;
+}
+.capture-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+}
+.capture {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.capture-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.capture-brand {
+  display: inline-flex;
+  gap: 8px;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+.capture-brand span {
+  color: var(--accent);
+}
+.capture-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+.capture form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.capture form[hidden],
+.capture-done[hidden] {
+  display: none;
+}
+.capture textarea {
+  min-height: 45vh;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.capture-where {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.capture-where select {
+  padding: 10px;
+  font-size: 15px;
+}
+.capture .btn.primary {
+  justify-content: center;
+  padding: 12px;
+  font-size: 15px;
+}
+.capture-done {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
