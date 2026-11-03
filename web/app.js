@@ -182,13 +182,17 @@ async function loadPlugins() {
     if (!response.ok) return;
     const index = await response.json();
     // Bundled plugins' names and descriptions are in the catalog.
+    // A plugin's own translation (`name.it: …`) comes first.
     const local = (list) =>
-      (list || []).map((p) => ({
-        ...p,
-        name: $t(p.name),
-        description: p.description && $t(p.description),
-        users: p.users && $t(p.users),
-      }));
+      (list || []).map((p) => {
+        const own = p.translations?.[language()] || {};
+        return {
+          ...p,
+          name: own.name || $t(p.name),
+          description: own.description || (p.description && $t(p.description)),
+          users: own.users || (p.users && $t(p.users)),
+        };
+      });
     pluginThemes = local(index.themes);
     publicThemes = local(index.public_themes);
     printTemplates = local(index.pdf_prints);

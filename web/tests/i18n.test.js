@@ -157,3 +157,12 @@ test("shortcuts name their keys for the language", () => {
   useLanguage("en");
   assert.equal(keys("Ctrl+Shift+F"), "Ctrl+Shift+F");
 });
+
+test("an error inside a message is translated too", () => {
+  useLanguage("it");
+  assert.equal(
+    serverMessage("Formula “Total”: There is no function “sum”"),
+    "Formula «Total»: Non esiste la funzione «sum»",
+  );
+  useLanguage("en");
+});

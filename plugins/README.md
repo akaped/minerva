@@ -33,6 +33,7 @@ Each file starts with a comment header of `key: value` lines:
 - `description`: optional, shown next to public themes.
 - `base` (app themes): `light` or `dark`. The theme is applied on top of Minerva's built-in light or dark theme, so it only needs to change what differs.
 - `scheme` (public themes): `light` or `dark` pins the page to that color scheme. Leave it out to follow the reader's system setting.
+- `name.it`, `description.it` (and `users.it` for PDF templates): the same in another language, by its code. People who read Minerva in that language see these instead. The plugins that come with Minerva are translated in its own catalog (`web/locales/`).
 
 The default **Light theme** uses cream paper, forest green, warm accents, and serif page titles, matching the project landing page. **Classic Light** (`themes/classic-light.css`) preserves the original white and indigo appearance. Select it from the app’s theme picker. Dark, Colorful, and Command line retain their existing appearance.
 

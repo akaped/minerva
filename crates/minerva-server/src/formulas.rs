@@ -77,16 +77,15 @@ fn tokens(src: &str) -> Result<Vec<Token>, String> {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
-            out.push(Token::Number(
-                text.parse()
-                    .map_err(|_| format!("“{text}” is not a number"))?,
-            ));
+            out.push(Token::Number(text.parse().map_err(|_| {
+                i18n::fill("“{text}” is not a number", &[("text", &text)])
+            })?));
         } else if c == '"' || c == '\'' {
             let mut text = String::new();
             i += 1;
             loop {
                 match chars.get(i) {
-                    None => return Err("A text in quotes is not closed".into()),
+                    None => return Err(i18n::msg("A text in quotes is not closed").into()),
                     Some(&q) if q == c => break,
                     Some('\\') if chars.get(i + 1).is_some() => {
                         text.push(chars[i + 1]);
@@ -122,7 +121,10 @@ fn tokens(src: &str) -> Result<Vec<Token>, String> {
             } else if "+-*/%<>=!".contains(c) {
                 c.to_string()
             } else {
-                return Err(format!("“{c}” cannot be used here"));
+                return Err(i18n::fill(
+                    "“{sign}” cannot be used here",
+                    &[("sign", &c.to_string())],
+                ));
             };
             i += op.chars().count();
             out.push(Token::Op(op));
@@ -177,7 +179,7 @@ impl Parser {
     fn expr(&mut self) -> Result<Expr, String> {
         self.depth += 1;
         if self.depth > MAX_DEPTH {
-            return Err("The formula is nested too deeply".into());
+            return Err(i18n::msg("The formula is nested too deeply").into());
         }
         let e = self.binary(&["or", "||"], |p| {
             p.binary(&["and", "&&"], |p| {
@@ -193,7 +195,7 @@ impl Parser {
         if let Some(op) = self.op(&["-", "!", "not"]) {
             self.depth += 1;
             if self.depth > MAX_DEPTH {
-                return Err("The formula is nested too deeply".into());
+                return Err(i18n::msg("The formula is nested too deeply").into());
             }
             let inner = self.unary()?;
             self.depth -= 1;
@@ -212,7 +214,7 @@ impl Parser {
                 let e = self.expr()?;
                 match self.next() {
                     Some(Token::Close) => Ok(e),
-                    _ => Err("A “(” is not closed".into()),
+                    _ => Err(i18n::msg("A “(” is not closed").into()),
                 }
             }
             Some(Token::Name(n)) if matches!(n.to_lowercase().as_str(), "true" | "false") => {
@@ -230,55 +232,69 @@ impl Parser {
                         match self.next() {
                             Some(Token::Comma) => continue,
                             Some(Token::Close) => break,
-                            _ => return Err(format!("Expected “,” or “)” in {n}(…)")),
+                            _ => {
+                                return Err(i18n::fill(
+                                    "Expected “,” or “)” in {name}(…)",
+                                    &[("name", &n)],
+                                ))
+                            }
                         }
                     }
                 }
                 if n == "prop" {
                     return match args.as_slice() {
                         [Expr::Value(Value::String(name))] => Ok(Expr::Prop(name.clone())),
-                        _ => Err("prop(…) takes a property name in quotes".into()),
+                        _ => Err(i18n::msg("prop(…) takes a property name in quotes").into()),
                     };
                 }
                 let (_, fewest, most) = FUNCTIONS
                     .iter()
                     .find(|(f, _, _)| *f == n)
-                    .ok_or_else(|| format!("There is no function “{n}”"))?;
+                    .ok_or_else(|| i18n::fill("There is no function “{name}”", &[("name", &n)]))?;
                 if args.len() < *fewest || args.len() > *most {
-                    return Err(format!(
-                        "{n}(…) takes {}",
-                        if fewest == most {
-                            format!("{fewest} values")
-                        } else {
-                            format!("{fewest}–{most} values")
-                        }
-                    ));
+                    let (fewest, most) = (fewest.to_string(), most.to_string());
+                    return Err(if fewest == most {
+                        i18n::fill(
+                            "{name}(…) takes {count} values",
+                            &[("name", &n), ("count", &fewest)],
+                        )
+                    } else {
+                        i18n::fill(
+                            "{name}(…) takes {min}–{max} values",
+                            &[("name", &n), ("min", &fewest), ("max", &most)],
+                        )
+                    });
                 }
                 Ok(Expr::Call(n, args))
             }
-            Some(Token::Name(n)) => Err(format!(
-                "Unknown name “{n}”; properties are written prop(\"{n}\")"
+            Some(Token::Name(n)) => Err(i18n::fill(
+                "Unknown name “{name}”; properties are written prop(\"{name}\")",
+                &[("name", &n)],
             )),
-            Some(t) => Err(format!("Unexpected {}", describe(&t))),
-            None => Err("The formula ends too early".into()),
+            Some(t) => Err(match describe(&t) {
+                Some(sign) => i18n::fill("Unexpected {sign}", &[("sign", &sign)]),
+                None => i18n::msg("Unexpected value").into(),
+            }),
+            None => Err(i18n::msg("The formula ends too early").into()),
         }
     }
 }
-fn describe(t: &Token) -> String {
+/// A sign the formula has where it should not, quoted; `None` for a value.
+fn describe(t: &Token) -> Option<String> {
     match t {
-        Token::Op(o) => format!("“{o}”"),
-        Token::Close => "“)”".into(),
-        Token::Comma => "“,”".into(),
-        _ => "value".into(),
+        Token::Op(o) => Some(format!("“{o}”")),
+        Token::Close => Some("“)”".into()),
+        Token::Comma => Some("“,”".into()),
+        _ => None,
     }
 }
 
 pub(super) fn parse(src: &str) -> Result<Expr, String> {
     if src.trim().is_empty() {
-        return Err("Write a formula".into());
+        return Err(i18n::msg("Write a formula").into());
     }
     if src.len() > MAX_LENGTH {
-        return Err("A formula has up to 1,000 characters".into());
+        return Err(i18n::msg("A formula has up to 1,000 characters").into());
     }
     let mut p = Parser {
         tokens: tokens(src)?,
@@ -288,7 +304,10 @@ pub(super) fn parse(src: &str) -> Result<Expr, String> {
     let e = p.expr()?;
     match p.peek() {
         None => Ok(e),
-        Some(t) => Err(format!("Unexpected {} after the formula", describe(t))),
+        Some(t) => Err(match describe(t) {
+            Some(sign) => i18n::fill("Unexpected {sign} after the formula", &[("sign", &sign)]),
+            None => i18n::msg("Unexpected value after the formula").into(),
+        }),
     }
 }
 /// The property names a formula refers to.

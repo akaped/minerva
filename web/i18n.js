@@ -97,7 +97,16 @@ export function serverMessage(text) {
   for (const { key, names, re } of patterns) {
     const m = re.exec(text);
     if (m)
-      return $t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+      return $t(
+        key,
+        Object.fromEntries(
+          // An {error} inside a message is a message of its own.
+          names.map((n, i) => [
+            n,
+            n === "error" ? serverMessage(m[i + 1]) : m[i + 1],
+          ]),
+        ),
+      );
   }
   return text;
 }

@@ -205,8 +205,13 @@ fn header(css: &str) -> HashMap<String, String> {
         .filter_map(|line| {
             let (key, value) = line.trim().trim_start_matches('*').trim().split_once(':')?;
             let key = key.trim().to_lowercase();
-            (key.chars().all(|c| c.is_ascii_alphabetic()) && !key.is_empty())
-                .then(|| (key, value.trim().chars().take(200).collect()))
+            // `name`, or `name.it` for its translation into a language.
+            let (field, language) = key.split_once('.').unwrap_or((&key, "a"));
+            let valid = !field.is_empty()
+                && field.chars().all(|c| c.is_ascii_alphabetic())
+                && (1..=3).contains(&language.len())
+                && language.chars().all(|c| c.is_ascii_lowercase());
+            valid.then(|| (key.clone(), value.trim().chars().take(200).collect()))
         })
         .collect()
 }
@@ -253,6 +258,19 @@ pub(super) fn list(kind: Kind) -> Vec<Value> {
                     v["variables"] = json!(variables(&meta));
                     v["orientation"] = json!(if field("orientation") == "landscape" { "landscape" } else { "portrait" });
                 }
+            }
+            // `name.it: …` and the like: the plugin's own translations.
+            let mut translations = serde_json::Map::new();
+            for (key, value) in &meta {
+                if let Some((field, language)) = key.split_once('.') {
+                    if matches!(field, "name" | "description" | "users") {
+                        let entry = translations.entry(language.to_string()).or_insert_with(|| json!({}));
+                        entry[field] = json!(value);
+                    }
+                }
+            }
+            if !translations.is_empty() {
+                v["translations"] = Value::Object(translations);
             }
             v
         })
@@ -305,6 +323,9 @@ mod tests {
         assert_eq!(meta["name"], "Paper");
         assert_eq!(meta["scheme"], "light");
         assert!(header(":root{}").is_empty());
+        let translated = header("/*\n * name: Ocean\n * name.it: Oceano\n * bad.key.x: no\n */");
+        assert_eq!(translated["name.it"], "Oceano");
+        assert_eq!(translated.len(), 2);
         assert!(valid_id("my-theme2"));
         for bad in ["", "../x", "A", "a.b", "-x"] {
             assert!(!valid_id(bad), "{bad}");
