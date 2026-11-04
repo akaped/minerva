@@ -168,6 +168,11 @@ pub struct Column {
     /// A formula's expression; properties are written `prop("Name")`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub formula: String,
+    /// How a number (or a rollup's or formula's number) shows: empty for plain,
+    /// `percent` (0.25 shows as 25%), or `currency:{ISO code}` such as
+    /// `currency:EUR`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub format: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Record {
@@ -184,6 +189,10 @@ pub struct Record {
     /// edit; names the record it conflicted with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict_of: Option<String>,
+    /// Where the record goes among others in a board column, when moved there:
+    /// lower first; records without one follow in the order they were added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<f64>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Database {

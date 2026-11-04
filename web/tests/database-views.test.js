@@ -6,6 +6,9 @@ import {
   moveToGroup,
   calendarExtras,
   reminderText,
+  formatNumber,
+  boardKey,
+  rankBetween,
 } from "../database-views.js";
 
 test("computed values as text", () => {
@@ -97,4 +100,39 @@ test("reminders and journal entries on the calendar", () => {
 test("reminder text without stamps and marks", () => {
   assert.equal(reminderText("Book club ⏰2026-11-12 18:30"), "Book club");
   assert.equal(reminderText("1. *Pay* `rent` ⏰2026-11-12"), "Pay rent");
+});
+
+test("numbers show in their property's format", () => {
+  assert.equal(formatNumber(0.25, "percent", "en-US"), "25%");
+  assert.equal(formatNumber(0.125, "percent", "en-US"), "12.5%");
+  assert.equal(formatNumber(12.5, "currency:EUR", "en-US"), "€12.50");
+  assert.equal(formatNumber(1234.5, "currency:USD", "en-US"), "$1,234.50");
+  assert.match(
+    formatNumber(1234.5, "currency:EUR", "it-IT"),
+    /^1\.?234,50\s€$/,
+  );
+  assert.equal(formatNumber(3, "", "en-US"), "3");
+  assert.equal(formatNumber("x", "percent"), "");
+  // Computed values follow it too, lists included.
+  assert.equal(computedText([0.5, 0.25], "percent"), "50%, 25%");
+  assert.equal(computedText(2 / 3), "0.6667");
+});
+
+test("cards keep the place they were moved to in a column", () => {
+  const col = { id: "s", kind: "select", options: ["A"] };
+  const rows = [
+    { id: "1", cells: { s: "A" } },
+    { id: "2", cells: { s: "A" } },
+    { id: "3", cells: { s: "A" }, rank: -0.5 },
+  ];
+  const [a] = boardGroups(col, rows);
+  assert.deepEqual(
+    a.rows.map((r) => r.id),
+    ["3", "1", "2"],
+  );
+  const key = boardKey(rows);
+  assert.equal(rankBetween(key(rows[0]), key(rows[1])), 0.5);
+  assert.equal(rankBetween(null, key(rows[2])), -1.5);
+  assert.equal(rankBetween(key(rows[1]), null), 2);
+  assert.equal(rankBetween(null, null), 0);
 });

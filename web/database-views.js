@@ -16,16 +16,51 @@ export const ROLLUP_FUNCTIONS = [
   ["list", "List the values"],
 ];
 
-/** A rollup or formula value as text: numbers to at most 4 decimals. */
-export function computedText(value) {
+/**
+ * A rollup or formula value as text: numbers to at most 4 decimals, or as the
+ * property's `format` shows them (see `formatNumber`).
+ */
+export function computedText(value, format = "") {
   if (value == null) return "";
   if (typeof value === "boolean") return value ? "☑" : "☐";
   if (typeof value === "number")
-    return Number.isInteger(value)
-      ? String(value)
-      : String(Math.round(value * 10000) / 10000);
-  if (Array.isArray(value)) return value.map(computedText).join(", ");
+    return format
+      ? formatNumber(value, format)
+      : Number.isInteger(value)
+        ? String(value)
+        : String(Math.round(value * 10000) / 10000);
+  if (Array.isArray(value))
+    return value.map((v) => computedText(v, format)).join(", ");
   return String(value);
+}
+
+/** Number formats a property can have: `percent`, or `currency:{code}`. */
+export const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD"];
+
+/**
+ * A number as its property's `format` shows it, in the reader's language:
+ * `percent` shows 0.25 as 25%, `currency:EUR` as €12.50.
+ */
+export function formatNumber(value, format = "", locale = undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  try {
+    if (format === "percent")
+      return new Intl.NumberFormat(locale, {
+        style: "percent",
+        maximumFractionDigits: 2,
+      }).format(value);
+    const code = format.startsWith("currency:") ? format.slice(9) : "";
+    if (code)
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: code,
+      }).format(value);
+  } catch {
+    // An unknown currency code: shown plain.
+  }
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 10 }).format(
+    value,
+  );
 }
 
 /** Properties a board can be grouped by. */
@@ -36,8 +71,11 @@ export const GROUPABLE = ["select", "multi_select", "person"];
  * records without a value. A multi-select record shows in each of its options.
  * `people` is `[{id, name}]` for a person property.
  */
-export function boardGroups(col, rows, people = []) {
+export function boardGroups(col, rows, people = [], all = rows) {
   const value = (r) => r.cells[col.id];
+  // Within a column: by the place each card was moved to (see `boardKey`).
+  const key = boardKey(all);
+  const sorted = (list) => [...list].sort((a, b) => key(a) - key(b));
   let keys;
   if (col.kind === "person") {
     const used = new Set(rows.map(value).filter(Boolean));
@@ -58,10 +96,28 @@ export function boardGroups(col, rows, people = []) {
     ...keys.map(([key, label]) => ({
       key,
       label,
-      rows: rows.filter((r) => has(r, key)),
+      rows: sorted(rows.filter((r) => has(r, key))),
     })),
-    { key: "", label: "", rows: rows.filter(empty) },
+    { key: "", label: "", rows: sorted(rows.filter(empty)) },
   ];
+}
+
+/**
+ * Where a record sits in a board column: the `rank` it was moved to, else its
+ * place among `all` the database's records (so unmoved cards keep the order
+ * they were added in).
+ */
+export function boardKey(all) {
+  const index = new Map(all.map((r, i) => [r.id, i]));
+  return (r) => r.rank ?? index.get(r.id) ?? all.length;
+}
+
+/** A rank between two neighbours' keys (either may be missing, at an end). */
+export function rankBetween(before, after) {
+  if (before == null && after == null) return 0;
+  if (before == null) return after - 1;
+  if (after == null) return before + 1;
+  return (before + after) / 2;
 }
 
 /** The cells to send when a card moves from one board column to another. */

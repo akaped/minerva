@@ -258,16 +258,36 @@ pub(crate) const CONTENTS: &str = "[[toc]]";
 const CONTENTS_SENTINEL: &str = "\u{E000}toc\u{E000}";
 pub(crate) const CONTENTS_SLOT: &str = "<span class=\"note-toc\"></span>";
 /// `[[database:{id}]]`, `[[database:{id}:board]]` or `[[database:{id}:calendar]]`
-/// embeds a live database view.
+/// embeds a live database view; a board or calendar may name the property it
+/// groups or places records by (`[[database:{id}:board:{property}]]`).
 /// While parsing it becomes `\u{E001}{id}[:view]\u{E001}`.
 pub(crate) const DATABASE_EMBED: &str = "[[database:";
 const DB_MARK: char = '\u{E001}';
-/// The ID and view of a database embed body (`{id}` or `{id}:{view}`).
+/// The ID and view of a database embed body (`{id}`, `{id}:{view}` or
+/// `{id}:{view}:{property}`).
 pub(crate) fn database_embed(body: &str) -> Option<(&str, &str)> {
-    let (id, view) = body.split_once(':').unwrap_or((body, "table"));
-    let valid_id =
-        (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-');
-    (valid_id && matches!(view, "table" | "board" | "calendar")).then_some((id, view))
+    let mut parts = body.splitn(3, ':');
+    let id = parts.next()?;
+    let view = parts.next().unwrap_or("table");
+    let property = parts.next();
+    let valid = |s: &str| {
+        (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    };
+    // Property IDs are any short word (the app makes UUIDs).
+    let property_id = |s: &str| {
+        (1..=80).contains(&s.len())
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    };
+    (valid(id)
+        && matches!(view, "table" | "board" | "calendar")
+        && property.is_none_or(|p| view != "table" && property_id(p)))
+    .then_some((id, view))
+}
+/// The property a database embed's board or calendar was set to, if any.
+pub(crate) fn database_embed_property(body: &str) -> Option<&str> {
+    database_embed(body)?;
+    body.splitn(3, ':').nth(2)
 }
 /// Calls `replace` with each well-formed database embed body and splices in what
 /// it returns.
@@ -322,8 +342,11 @@ fn database_slot(body: &str, links: Links) -> String {
     let Some((id, view)) = database_embed(body) else {
         return String::new();
     };
+    let property = database_embed_property(body).map_or(String::new(), |p| format!(" db-col-{p}"));
     match links {
-        Links::Members => format!("<span class=\"db-embed db-id-{id} db-view-{view}\"></span>"),
+        Links::Members => {
+            format!("<span class=\"db-embed db-id-{id} db-view-{view}{property}\"></span>")
+        }
         _ => {
             "<span class=\"db-embed-note\">▦ Embedded database · shown to workspace members</span>"
                 .into()
@@ -1039,6 +1062,33 @@ fn clean(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn database_embeds_keep_their_board_or_calendar_property() {
+        let id = "0b8f5f9e-0000-4000-8000-000000000001";
+        let col = "c0ffee00-0000-4000-8000-0000000000aa";
+        let html = render(&format!("[[database:{id}:board:{col}]]"));
+        assert!(
+            html.contains(&format!("db-view-board db-col-{col}")),
+            "{html}"
+        );
+        assert!(render(&format!("[[database:{id}:calendar]]")).contains("db-view-calendar\""));
+        // A table has no property, and anything else stays text.
+        for odd in [
+            format!("{id}:table:{col}"),
+            format!("{id}:board:<b>"),
+            format!("{id}:board:"),
+        ] {
+            assert_eq!(database_embed(&odd), None, "{odd}");
+        }
+        assert_eq!(
+            database_embed_property(&format!("{id}:board:{col}")),
+            Some(col)
+        );
+        assert_eq!(
+            database_embed_property(&format!("{id}:board:stage_2")),
+            Some("stage_2")
+        );
+    }
     #[test]
     fn published_youtube_links_become_players() {
         assert_eq!(

@@ -61,8 +61,12 @@ import {
 import {
   ROLLUP_FUNCTIONS,
   computedText,
+  formatNumber,
+  CURRENCIES,
   GROUPABLE,
   boardGroups,
+  boardKey,
+  rankBetween,
   moveToGroup,
   calendarExtras,
 } from "./database-views.js";
@@ -8052,7 +8056,9 @@ function cellText(col, row, db) {
       return relatedTitles(col, v, db).join(", ");
     case "rollup":
     case "formula":
-      return computedText(row.computed?.[col.id]);
+      return computedText(row.computed?.[col.id], col.format);
+    case "number":
+      return v == null ? "" : col.format ? formatNumber(v, col.format) : String(v);
     default:
       return v == null ? "" : String(v);
   }
@@ -8091,6 +8097,24 @@ function cellInput(col, value, key, disabled = false, { db, row } = {}) {
   }
   if (col.kind === "multi_select" || col.kind === "relation")
     return `<button type="button" class="cell-picker" ${attr} data-db="${esc(db?.id || "")}" data-value="${esc(JSON.stringify(value || []))}">${pickerChips(col, value, db)}</button>`;
+  // A formatted number is typed plainly beside its symbol; a percentage as
+  // 25 for 0.25.
+  if (col.kind === "number" && col.format) {
+    const percent = col.format === "percent";
+    const shown =
+      value == null || value === ""
+        ? ""
+        : percent
+          ? Math.round(value * 100 * 1e8) / 1e8
+          : value;
+    const symbol = percent
+      ? "%"
+      : formatNumber(0, col.format)
+          .replace(/[\d\s.,\u00a0\u202f-]/g, "")
+          .trim() || col.format.slice(9);
+    const input = `<input ${attr} type="number" step="any" value="${esc(shown)}" placeholder="—" title="${esc(value == null ? "" : formatNumber(value, col.format))}">`;
+    return `<span class="number-cell ${percent ? "suffix" : "prefix"}"><span class="number-symbol" aria-hidden="true">${esc(symbol)}</span>${input}</span>`;
+  }
   return `<input ${attr} type="${{ number: "number", date: "date", url: "url" }[col.kind] || "text"}" ${col.kind === "number" ? 'step="any"' : ""} value="${esc(value ?? "")}" placeholder="—">`;
 }
 function parseCell(col, el) {
@@ -8100,6 +8124,8 @@ function parseCell(col, el) {
     return list.length ? list : null;
   }
   if (el.value === "") return null;
+  if (col.kind === "number" && col.format === "percent")
+    return Math.round((Number(el.value) / 100) * 1e10) / 1e10;
   return col.kind === "number" ? Number(el.value) : el.value;
 }
 /** When a cell's editor saves: at once for choices, on leaving for typing. */
@@ -8199,7 +8225,14 @@ function propertyFields(db, col = {}) {
   const related = (data.databases || []).filter(
     (d) => data.folders.find((f) => f.id === d.folder_id)?.workspace_id === ws,
   );
-  return `<label>${$t("Name")}<input name="name" required maxlength="100" value="${esc(col.name || "")}" placeholder="${$t("e.g. Due date")}"></label><label>${$t("Type")}<select name="kind" id="property-kind">${DB_KINDS.map(([k, l]) => `<option value="${k}" ${k === (col.kind || "text") ? "selected" : ""}>${l}</option>`).join("")}</select></label><label data-for="select multi_select">${$t("Options (one per line)")}<textarea name="options" placeholder="${$t("Low&#10;Medium&#10;High")}">${esc((col.options || []).join("\n"))}</textarea></label><label data-for="relation">${$t("Links to records of")}<select name="target">${related.map((d) => `<option value="${d.id}" ${d.id === col.target ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>${rollupFields(db, col)}<label data-for="formula">${$t("Formula")}<textarea name="formula" rows="3" spellcheck="false" placeholder='prop("Price") * prop("Quantity")'>${esc(col.formula || "")}</textarea><small class="hint">${$t("Use properties as")} <code>prop("Name")</code>${$t(", with + − * / %, comparisons,")} <code>and</code>, <code>or</code>, <code>not</code>. Functions: if, concat, join, length, contains, lower, upper, empty, round, floor, ceil, abs, min, max, today, days(from, to), add_days(date, n), year, month.</small></label>`;
+  return `<label>${$t("Name")}<input name="name" required maxlength="100" value="${esc(col.name || "")}" placeholder="${$t("e.g. Due date")}"></label><label>${$t("Type")}<select name="kind" id="property-kind">${DB_KINDS.map(([k, l]) => `<option value="${k}" ${k === (col.kind || "text") ? "selected" : ""}>${l}</option>`).join("")}</select></label><label data-for="select multi_select">${$t("Options (one per line)")}<textarea name="options" placeholder="${$t("Low&#10;Medium&#10;High")}">${esc((col.options || []).join("\n"))}</textarea></label><label data-for="relation">${$t("Links to records of")}<select name="target">${related.map((d) => `<option value="${d.id}" ${d.id === col.target ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>${rollupFields(db, col)}${formatFields(col)}<label data-for="formula">${$t("Formula")}<textarea name="formula" rows="3" spellcheck="false" placeholder='prop("Price") * prop("Quantity")'>${esc(col.formula || "")}</textarea><small class="hint">${$t("Use properties as")} <code>prop("Name")</code>${$t(", with + − * / %, comparisons,")} <code>and</code>, <code>or</code>, <code>not</code>. Functions: if, concat, join, length, contains, lower, upper, empty, round, floor, ceil, abs, min, max, sum, average, first, last, unique, today, days(from, to), add_days(date, n), year, month. ${$t("A relation's records:")} <code>related("Tasks", "Hours")</code> ${$t("gives the Hours of every linked task, as a list.")}</small></label>`;
+}
+/** How a number shows: plain, a percentage, or an amount in a currency. */
+function formatFields(col) {
+  const format = col.format || "";
+  const code = format.startsWith("currency:") ? format.slice(9) : "EUR";
+  const kind = format.startsWith("currency:") ? "currency" : format;
+  return `<label data-for="number rollup formula">${$t("Number format")}<select name="number_format" id="number-format"><option value="" ${kind === "" ? "selected" : ""}>${$t("Number")}</option><option value="percent" ${kind === "percent" ? "selected" : ""}>${$t("Percent (0.25 shows as 25%)")}</option><option value="currency" ${kind === "currency" ? "selected" : ""}>${$t("Currency")}</option></select></label><label data-for="number rollup formula" id="currency-label">${$t("Currency")}<select name="currency">${CURRENCIES.map((c) => `<option ${c === code ? "selected" : ""}>${c}</option>`).join("")}</select></label>`;
 }
 /** A rollup's settings: the relation it follows, what it computes, of which property. */
 function rollupFields(db, col) {
@@ -8211,7 +8244,8 @@ function rollupFields(db, col) {
   const spec = col.rollup || {};
   const properties = relations.flatMap((r) =>
     (contextOf(db).targets.get(r.target)?.columns || [])
-      .filter((p) => !["relation", "rollup", "formula"].includes(p.kind))
+      // Rollups and formulas there too: a rollup of a rollup.
+      .filter((p) => p.kind !== "relation")
       .map(
         (p) =>
           `<option value="${esc(p.id)}" data-relation="${esc(r.id)}" ${spec.relation === r.id && spec.property === p.id ? "selected" : ""}>${esc(p.name)}</option>`,
@@ -8228,6 +8262,9 @@ function bindPropertyFields() {
     $$("[data-for]", modal).forEach(
       (el) => (el.hidden = !el.dataset.for.split(" ").includes(kind.value)),
     );
+    const currency = $("#currency-label", modal);
+    if (currency && !currency.hidden)
+      currency.hidden = $("#number-format", modal).value !== "currency";
     if (!relation) return;
     // Only the related database's properties, and none for a plain count.
     $$("option[data-relation]", property).forEach(
@@ -8237,7 +8274,8 @@ function bindPropertyFields() {
     $("#rollup-property-label", modal).hidden =
       kind.value !== "rollup" || fn.value === "count";
   };
-  for (const el of [kind, relation, fn]) el?.addEventListener("change", show);
+  for (const el of [kind, relation, fn, $("#number-format", modal)])
+    el?.addEventListener("change", show);
   show();
 }
 /** The column a property dialog describes. */
@@ -8274,6 +8312,11 @@ function propertyColumn(v, base = {}) {
     if (!v.formula?.trim()) throw new Error($t("Write the formula."));
     col.formula = v.formula.trim();
   }
+  if (["number", "rollup", "formula"].includes(v.kind) && v.number_format)
+    col.format =
+      v.number_format === "currency"
+        ? `currency:${v.currency || "EUR"}`
+        : v.number_format;
   return col;
 }
 // Calendar view on the database page: the month shown, the date property it
@@ -8435,7 +8478,7 @@ function boardColumn(db, wanted) {
 }
 /** Board columns of `rows` by `col`; cards can be dragged between columns. */
 function boardHTML(db, rows, col, { edit, embed = false }) {
-  const groups = boardGroups(col, rows, contextOf(db).people);
+  const groups = boardGroups(col, rows, contextOf(db).people, db.rows);
   const [wrap, column, heading, card, open] = embed
     ? ["db-embed-board", "db-embed-column", "h4", "db-embed-card", "data-embed-record"]
     : ["board", "board-column", "h3", "record-card", "data-edit-record"];
@@ -8482,14 +8525,52 @@ function bindBoardDrag(root, db, col, redraw) {
       zone.classList.remove("drop-target");
       const move = dragged;
       dragged = null;
-      if (!move || move.from === zone.dataset.dropGroup) return;
+      if (!move) return;
       const row = db.rows.find((r) => r.id === move.id);
+      // The card goes before the first card whose middle is below the pointer.
+      const cards = $$("[data-drag-record]", zone).filter(
+        (c) => c.dataset.dragRecord !== move.id,
+      );
+      const at = cards.findIndex((c) => {
+        const box = c.getBoundingClientRect();
+        return e.clientY < box.top + box.height / 2;
+      });
+      const key = boardKey(db.rows);
+      const rowOf = (c) =>
+        c && db.rows.find((r) => r.id === c.dataset.dragRecord);
+      const before = rowOf(at < 0 ? cards.at(-1) : cards[at - 1]);
+      const after = rowOf(at < 0 ? null : cards[at]);
+      const rank = rankBetween(
+        before ? key(before) : null,
+        after ? key(after) : null,
+      );
+      const moved = move.from !== zone.dataset.dropGroup;
+      // Dropped where it already was: nothing to save.
+      const all = $$("[data-drag-record]", zone);
+      const here = all.findIndex((c) => c.dataset.dragRecord === move.id);
+      if (
+        !moved &&
+        here >= 0 &&
+        before === rowOf(all[here - 1]) &&
+        after === rowOf(all[here + 1])
+      )
+        return;
       try {
         Object.assign(
           row,
           await api(`databases/${db.id}/rows/${row.id}`, "PATCH", {
             revision: row.revision,
-            cells: moveToGroup(col, row, move.from, zone.dataset.dropGroup),
+            rank,
+            ...(moved
+              ? {
+                  cells: moveToGroup(
+                    col,
+                    row,
+                    move.from,
+                    zone.dataset.dropGroup,
+                  ),
+                }
+              : {}),
           }),
         );
         embedCache.set(db.id, { at: Date.now(), db });
@@ -8929,15 +9010,24 @@ function drawEmbed(slot, entry) {
   const db = entry.db;
   const edit = data.roles[db.folder_id] === "editor";
   const rows = db.rows.filter((r) => !r.archived);
-  const group = boardColumn(db);
+  const chosen = slot.dataset.column || null;
+  const group = boardColumn(
+    db,
+    slot.dataset.view === "board" ? chosen : null,
+  );
+  const groupable = db.columns.filter((c) => GROUPABLE.includes(c.kind));
   const dated = db.columns.some((c) => DATED.includes(c.kind));
   let view = slot.dataset.view;
   if ((view === "board" && !group) || (view === "calendar" && !dated))
     view = "table";
-  slot.calendar ||= { month: null, column: null, extras: false };
+  slot.calendar ||= {
+    month: null,
+    column: view === "calendar" ? chosen : null,
+    extras: false,
+  };
   const body =
     view === "board"
-      ? boardHTML(db, rows, group, { edit, embed: true })
+      ? `${groupable.length > 1 ? `<label class="cal-by db-embed-group">${$t("Group by")}<select data-embed-group>${groupable.map((c) => `<option value="${c.id}" ${c.id === group.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}${boardHTML(db, rows, group, { edit, embed: true })}`
       : view === "calendar"
         ? calendarHTML(db, rows, edit, slot.calendar)
         : `<div class="db-embed-scroll"><table class="db-embed-table"><thead><tr>${db.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>${rows
@@ -8958,8 +9048,20 @@ function drawEmbed(slot, entry) {
       slot,
       db,
       slot.calendar,
-      () => drawEmbed(slot, embedCache.get(db.id) || { db }),
+      () => {
+        // A different date property is kept in the note.
+        if ((slot.calendar.column || "") !== slot.dataset.column)
+          return setEmbedView(slot, "calendar", slot.calendar.column).catch(
+            error,
+          );
+        drawEmbed(slot, embedCache.get(db.id) || { db });
+      },
       (row) => editRecordDialog(db, row, true, () => redrawEmbeds(db.id)),
+    );
+  const groupBy = $("[data-embed-group]", slot);
+  if (groupBy)
+    groupBy.addEventListener("change", () =>
+      setEmbedView(slot, "board", groupBy.value).catch(error),
     );
   bindEmbed(slot, db, edit);
 }
@@ -9053,8 +9155,15 @@ function redrawEmbeds(id, skip = null) {
   });
 }
 // Switches between table and board; editors save the choice in the note.
-async function setEmbedView(slot, view) {
+/**
+ * Shows an embed as `view`, grouped or placed by `column` (a board's or a
+ * calendar's property), and keeps both in the note's `[[database:…]]` code.
+ */
+async function setEmbedView(slot, view, column = null) {
+  // A view of its own starts from its own property.
+  if (slot.dataset.view !== view) slot.calendar = null;
   slot.dataset.view = view;
+  slot.dataset.column = view === "table" ? "" : column || "";
   const entry = embedCache.get(slot.dataset.database);
   if (entry) drawEmbed(slot, entry);
   const blockId = slot.closest(".block")?.dataset.block;
@@ -9063,8 +9172,12 @@ async function setEmbedView(slot, view) {
   const b = note.blocks[i];
   const id = slot.dataset.database;
   const updated = b.markdown.replace(
-    new RegExp(`\\[\\[database:${id}(:(table|board|calendar))?\\]\\]`),
-    view === "table" ? `[[database:${id}]]` : `[[database:${id}:${view}]]`,
+    new RegExp(
+      `\\[\\[database:${id}(:(table|board|calendar)(:[A-Za-z0-9_-]{1,80})?)?\\]\\]`,
+    ),
+    view === "table"
+      ? `[[database:${id}]]`
+      : `[[database:${id}:${view}${column ? ":" + column : ""}]]`,
   );
   if (updated === b.markdown) return;
   live?.boundary();
@@ -9086,6 +9199,9 @@ async function renderDatabaseEmbeds() {
       : classes.includes("db-view-calendar")
         ? "calendar"
         : "table";
+    // The property the board groups by, or the calendar places records by.
+    slot.dataset.column =
+      classes.find((c) => c.startsWith("db-col-"))?.slice(7) || "";
     slot.dataset.state = "loading";
     slot.innerHTML = `<span class="db-embed-note">${icon("grid")}${$t("Loading database…")}</span>`;
   }

@@ -256,3 +256,143 @@ async fn rollups_and_formulas_are_computed_for_each_reader() {
         assert!(err["error"].as_str().unwrap().contains(says), "{err}");
     }
 }
+
+#[tokio::test]
+async fn rollups_of_rollups_and_formulas_over_related_records() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let (_, login) = api(
+        &router,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await;
+    let root = login["token"].as_str().unwrap().to_string();
+    let owner = common::member(&router, &root, "owner@test.local").await;
+    let (_, boot) = api(&router, "GET", "bootstrap", &owner, json!({})).await;
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let create = |name: &'static str, columns: Value| {
+        let (router, owner, folder) = (router.clone(), owner.clone(), folder.clone());
+        async move {
+            let (status, db) = api(
+                &router,
+                "POST",
+                "databases",
+                &owner,
+                json!({"folder_id": folder, "name": name, "columns": columns}),
+            )
+            .await;
+            assert_eq!(status, 200, "{db}");
+            db["id"].as_str().unwrap().to_string()
+        }
+    };
+    let add = |db: String, cells: Value| {
+        let (router, owner) = (router.clone(), owner.clone());
+        async move {
+            let (_, row) = api(
+                &router,
+                "POST",
+                &format!("databases/{db}/rows"),
+                &owner,
+                json!({"cells": cells}),
+            )
+            .await;
+            row
+        }
+    };
+
+    // Tasks with hours, and a cost worked out by a formula.
+    let tasks = create(
+        "Tasks",
+        json!([col("t", "Task", "text"), col("hours", "Hours", "number"), {"id":"status","name":"Status","kind":"select","options":["Open","Done"]}, {"id":"cost","name":"Cost","kind":"formula","options":[],"formula":"prop(\"Hours\") * 10"}]),
+    )
+    .await;
+    let mut ids = vec![];
+    for (t, h, s) in [
+        ("Plan", 2, "Done"),
+        ("Build", 5, "Open"),
+        ("Test", 3, "Open"),
+    ] {
+        let row = add(tasks.clone(), json!({"t": t, "hours": h, "status": s})).await;
+        ids.push(row["id"].as_str().unwrap().to_string());
+    }
+    // Projects sum their tasks' costs (a rollup of a formula), and use the
+    // tasks' properties in formulas.
+    let projects = create(
+        "Projects",
+        json!([
+            col("p", "Project", "text"),
+            {"id":"tasks","name":"Tasks","kind":"relation","options":[],"target":tasks},
+            {"id":"cost","name":"Cost","kind":"rollup","options":[],"rollup":{"relation":"tasks","property":"cost","function":"sum"}},
+            {"id":"hours","name":"Hours","kind":"formula","options":[],"formula":"sum(related(\"Tasks\", \"Hours\"))"},
+            {"id":"avg","name":"Average","kind":"formula","options":[],"formula":"average(related(\"Tasks\", \"Hours\"))"},
+            {"id":"states","name":"States","kind":"formula","options":[],"formula":"join(unique(related(\"Tasks\", \"Status\")), \", \")"},
+            {"id":"first","name":"First","kind":"formula","options":[],"formula":"first(related(\"tasks\", \"task\"))"},
+            {"id":"open","name":"Open","kind":"formula","options":[],"formula":"length(related(\"Tasks\", \"Status\")) - 1"}
+        ]),
+    )
+    .await;
+    let row = add(
+        projects.clone(),
+        json!({"p": "Launch", "tasks": ids.clone()}),
+    )
+    .await;
+    let c = &row["computed"];
+    assert_eq!(c["cost"], 100, "{row}");
+    assert_eq!(c["hours"], 10);
+    assert!((c["avg"].as_f64().unwrap() - 10.0 / 3.0).abs() < 1e-9);
+    assert_eq!(c["states"], "Done, Open");
+    assert_eq!(c["first"], "Plan");
+    assert_eq!(c["open"], 2);
+    let launch = row["id"].as_str().unwrap().to_string();
+
+    // Clients roll up their projects' rollup: a rollup of a rollup.
+    let clients = create(
+        "Clients",
+        json!([
+            col("c", "Client", "text"),
+            {"id":"projects","name":"Projects","kind":"relation","options":[],"target":projects},
+            {"id":"total","name":"Total","kind":"rollup","options":[],"rollup":{"relation":"projects","property":"cost","function":"sum"}}
+        ]),
+    )
+    .await;
+    let row = add(clients.clone(), json!({"c": "Acme", "projects": [launch]})).await;
+    assert_eq!(row["computed"]["total"], 100, "{row}");
+
+    // A loop (tasks rolling up the clients that roll them up) ends, with no value.
+    let (_, base) = api(
+        &router,
+        "GET",
+        &format!("databases/{tasks}"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    let mut columns = base["columns"].as_array().unwrap().clone();
+    columns
+        .push(json!({"id":"back","name":"Back","kind":"relation","options":[],"target":clients}));
+    columns.push(json!({"id":"loop","name":"Loop","kind":"rollup","options":[],"rollup":{"relation":"back","property":"total","function":"sum"}}));
+    let (status, updated) = api(
+        &router,
+        "PATCH",
+        &format!("databases/{tasks}"),
+        &owner,
+        json!({"columns":columns,"revision":base["revision"]}),
+    )
+    .await;
+    assert_eq!(status, 200, "{updated}");
+    let (status, again) = api(
+        &router,
+        "GET",
+        &format!("databases/{clients}"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(again["rows"][0]["computed"]["total"], 100);
+}

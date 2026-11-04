@@ -75,8 +75,51 @@ pub(super) fn validate_columns(cols: &[Column]) -> Result<(), ApiError> {
         } else if !c.formula.is_empty() {
             return Err(bad("Invalid property schema"));
         }
+        let numeric = matches!(
+            c.kind,
+            ColumnKind::Number | ColumnKind::Rollup | ColumnKind::Formula
+        );
+        if !c.format.is_empty() && (!numeric || !valid_format(&c.format)) {
+            return Err(bad("Invalid number format"));
+        }
     }
     Ok(())
+}
+/// `percent`, or `currency:` and a three-letter code.
+fn valid_format(format: &str) -> bool {
+    format == "percent"
+        || format
+            .strip_prefix("currency:")
+            .is_some_and(|code| code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase()))
+}
+/// A number as its property's format shows it: `25%`, `€12.50`, `CHF 3.00`.
+pub(super) fn formatted(format: &str, x: f64) -> String {
+    let trimmed = |x: f64, digits: usize| {
+        let s = format!("{x:.digits$}");
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s
+        }
+    };
+    if format == "percent" {
+        return format!("{}%", trimmed(x * 100.0, 2));
+    }
+    match format.strip_prefix("currency:") {
+        Some(code) => {
+            let digits = if matches!(code, "JPY" | "KRW") { 0 } else { 2 };
+            let amount = format!("{:.digits$}", x.abs());
+            let sign = if x < 0.0 { "-" } else { "" };
+            match code {
+                "EUR" => format!("{sign}€{amount}"),
+                "USD" => format!("{sign}${amount}"),
+                "GBP" => format!("{sign}£{amount}"),
+                "JPY" => format!("{sign}¥{amount}"),
+                _ => format!("{sign}{code} {amount}"),
+            }
+        }
+        None => trimmed(x, 10),
+    }
 }
 pub(super) fn valid_date(s: &str) -> bool {
     let parts: Vec<_> = s.split('-').collect();
@@ -175,17 +218,13 @@ fn validate_targets(
             .find(|x| x.id == spec.relation)
             .and_then(|x| x.target.as_ref())
             .and_then(|t| d.databases.iter().find(|db| &db.id == t));
+        // Rollups and formulas there are fine: rollups of rollups.
         let fits = target
             .and_then(|t| t.columns.iter().find(|x| x.id == spec.property))
-            .is_some_and(|p| {
-                !matches!(
-                    p.kind,
-                    ColumnKind::Rollup | ColumnKind::Formula | ColumnKind::Relation
-                )
-            });
+            .is_some_and(|p| p.kind != ColumnKind::Relation);
         if !fits {
             return Err(badv(
-                "“{name}” combines a property of the related database (not a relation, rollup or formula)",
+                "“{name}” combines a property of the related database (not a relation)",
                 &[("name", &c.name)],
             ));
         }
@@ -254,6 +293,9 @@ pub(super) fn markdown_table(d: &Data, u: &User, db: &Database) -> String {
                 .and_then(|values| values.get(&c.id))
                 .map(|v| match v {
                     Value::Bool(b) => (if *b { "☑" } else { "☐" }).into(),
+                    Value::Number(n) if !c.format.is_empty() => {
+                        formatted(&c.format, n.as_f64().unwrap_or(0.0))
+                    }
                     v => formulas::text(v),
                 })
                 .unwrap_or_default(),
@@ -304,6 +346,9 @@ pub(super) fn markdown_table(d: &Data, u: &User, db: &Database) -> String {
                 None | Some(Value::Null) => String::new(),
                 Some(Value::Bool(b)) => (if *b { "☑" } else { "☐" }).into(),
                 Some(Value::String(s)) => s.clone(),
+                Some(Value::Number(n)) if !c.format.is_empty() => {
+                    formatted(&c.format, n.as_f64().unwrap_or(0.0))
+                }
                 Some(other) => other.to_string(),
             },
         }
@@ -382,6 +427,7 @@ pub(super) fn route(
                     target: None,
                     rollup: None,
                     formula: String::new(),
+                    format: String::new(),
                 },
                 Column {
                     id: id(),
@@ -391,6 +437,7 @@ pub(super) fn route(
                     target: None,
                     rollup: None,
                     formula: String::new(),
+                    format: String::new(),
                 },
             ]
         };
@@ -554,6 +601,7 @@ pub(super) fn route(
                 created_at: now(),
                 archived: false,
                 conflict_of: None,
+                rank: None,
             };
             db.rows.push(row.clone());
             db.updated_at = now();
@@ -583,6 +631,16 @@ pub(super) fn route(
             if let Some(archived) = v["archived"].as_bool() {
                 row.archived = archived;
             }
+            // A place in its board column: a number, or null to forget it.
+            match &v["rank"] {
+                Value::Null if v.get("rank").is_some() => row.rank = None,
+                Value::Number(n) => match n.as_f64().filter(|x| x.is_finite() && x.abs() < 1e12) {
+                    Some(x) => row.rank = Some(x),
+                    None => return Err(bad("Invalid record position")),
+                },
+                Value::Null => {}
+                _ => return Err(bad("Invalid record position")),
+            }
             row.revision += 1;
             row.updated_at = now();
             db.updated_at = now();
@@ -590,5 +648,26 @@ pub(super) fn route(
             Ok(record_view(d, u, did, parts[3]))
         }
         _ => Err(missing()),
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+    #[test]
+    fn numbers_show_in_their_format() {
+        assert_eq!(formatted("percent", 0.25), "25%");
+        assert_eq!(formatted("percent", 0.125), "12.5%");
+        assert_eq!(formatted("currency:EUR", 12.5), "€12.50");
+        assert_eq!(formatted("currency:USD", -3.0), "-$3.00");
+        assert_eq!(formatted("currency:JPY", 1200.4), "¥1200");
+        assert_eq!(formatted("currency:CHF", 3.0), "CHF 3.00");
+        assert_eq!(formatted("", 2.5), "2.5");
+        for ok in ["percent", "currency:EUR"] {
+            assert!(valid_format(ok));
+        }
+        for bad in ["currency:eur", "currency:EURO", "money", "currency:"] {
+            assert!(!valid_format(bad), "{bad}");
+        }
     }
 }

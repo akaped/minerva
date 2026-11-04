@@ -344,6 +344,7 @@ fn write_call(
                 created_at: now(),
                 archived: false,
                 conflict_of: None,
+                rank: None,
             };
             let db = d.databases.iter_mut().find(|db| db.id == did).unwrap();
             db.rows.push(row.clone());

@@ -24,7 +24,7 @@ pub(super) enum Expr {
     Binary(String, Box<Expr>, Box<Expr>),
 }
 
-const FUNCTIONS: [(&str, usize, usize); 22] = [
+const FUNCTIONS: [(&str, usize, usize); 28] = [
     // name, fewest and most arguments
     ("if", 3, 3),
     ("and", 1, 20),
@@ -48,7 +48,24 @@ const FUNCTIONS: [(&str, usize, usize); 22] = [
     ("add_days", 2, 2),
     ("year", 1, 1),
     ("month", 1, 1),
+    // Lists, as relations and `related` give them.
+    ("related", 2, 2),
+    ("sum", 1, 20),
+    ("average", 1, 20),
+    ("first", 1, 1),
+    ("last", 1, 1),
+    ("unique", 1, 1),
 ];
+
+/// How the scope is asked for a property of the records a relation links to:
+/// a name no property can have.
+pub(super) fn related_key(relation: &str, property: &str) -> String {
+    format!(
+        "\u{0}{}\u{0}{}",
+        relation.to_lowercase(),
+        property.to_lowercase()
+    )
+}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -567,6 +584,40 @@ fn call(f: &str, args: &[Expr], scope: Scope, today: i64) -> Value {
             pick.map_or(Value::Null, number)
         }
         "today" => json!(date_text(today)),
+        // `related("Tasks", "Hours")`: the Hours of every record Tasks links to.
+        "related" => scope(&related_key(&text(&ev(0)), &text(&ev(1)))).unwrap_or(json!([])),
+        "sum" => number(nums().iter().sum()),
+        "average" => {
+            let values = nums();
+            if values.is_empty() {
+                Value::Null
+            } else {
+                number(values.iter().sum::<f64>() / values.len() as f64)
+            }
+        }
+        "first" | "last" => match ev(0) {
+            Value::Array(items) => {
+                let pick = if f == "first" {
+                    items.first()
+                } else {
+                    items.last()
+                };
+                pick.cloned().unwrap_or(Value::Null)
+            }
+            v => v,
+        },
+        "unique" => match ev(0) {
+            Value::Array(items) => {
+                let mut kept: Vec<Value> = vec![];
+                for i in items {
+                    if !kept.iter().any(|k| equal(k, &i)) {
+                        kept.push(i);
+                    }
+                }
+                json!(kept)
+            }
+            v => v,
+        },
         "days" => match (day_number(&ev(0)), day_number(&ev(1))) {
             (Some(a), Some(b)) => json!(b - a),
             _ => Value::Null,
@@ -695,20 +746,28 @@ fn plain(
     }
 }
 
+/// Computed values of records: record ID → property ID → value.
+type Computed = BTreeMap<String, BTreeMap<String, Value>>;
+/// How many relations deep rollups of rollups (and `related` of computed
+/// properties) follow.
+const DEPTH: usize = 3;
+
 /// Computed values of every record: record ID → property ID → value.
-pub(super) fn computed(
-    d: &Data,
-    u: &User,
-    db: &Database,
-) -> BTreeMap<String, BTreeMap<String, Value>> {
+pub(super) fn computed(d: &Data, u: &User, db: &Database) -> Computed {
+    computed_within(d, u, db, &mut vec![])
+}
+/// `computed`, inside the databases being worked out (`stack`): a database
+/// already on it, or too deep, gives none, so loops end.
+fn computed_within(d: &Data, u: &User, db: &Database, stack: &mut Vec<String>) -> Computed {
     let mut out = BTreeMap::new();
     let has_computed = db
         .columns
         .iter()
         .any(|c| matches!(c.kind, ColumnKind::Rollup | ColumnKind::Formula));
-    if !has_computed {
+    if !has_computed || stack.len() >= DEPTH || stack.contains(&db.id) {
         return out;
     }
+    stack.push(db.id.clone());
     let today = (now() / 86400) as i64;
     let people: HashMap<String, String> = d
         .users
@@ -726,6 +785,18 @@ pub(super) fn computed(
             });
         }
     }
+    // Their computed values too, for rollups of rollups and formulas.
+    let mut further: HashMap<String, Computed> = HashMap::new();
+    for (id, target) in &related {
+        if let Some(t) = target {
+            further.insert(id.clone(), computed_within(d, u, t, stack));
+        }
+    }
+    stack.pop();
+    let related = Related {
+        databases: related,
+        computed: further,
+    };
     let formulas: Vec<(&Column, Option<Expr>)> = db
         .columns
         .iter()
@@ -760,12 +831,69 @@ pub(super) fn computed(
     }
     out
 }
+/// The databases relations link to (when readable), and their computed values.
+struct Related<'a> {
+    databases: HashMap<String, Option<&'a Database>>,
+    computed: HashMap<String, Computed>,
+}
+impl Related<'_> {
+    /// Each value of `property` (by ID) of the records relation `relation`
+    /// links to from `r`, lists flattened; `None` when it cannot be followed.
+    fn values(
+        &self,
+        relation: &Column,
+        property: &str,
+        r: &Record,
+        people: &HashMap<String, String>,
+    ) -> Option<(Vec<Value>, usize)> {
+        let target = relation
+            .target
+            .as_ref()
+            .and_then(|t| self.databases.get(t).copied().flatten())?;
+        let ids = r
+            .cells
+            .get(&relation.id)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let linked: Vec<&Record> = ids
+            .iter()
+            .filter_map(|id| {
+                target
+                    .rows
+                    .iter()
+                    .find(|x| Some(x.id.as_str()) == id.as_str())
+            })
+            .collect();
+        let Some(p) = target.columns.iter().find(|x| x.id == property) else {
+            return Some((vec![], linked.len()));
+        };
+        let values = linked
+            .iter()
+            .map(|x| match p.kind {
+                ColumnKind::Rollup | ColumnKind::Formula => self
+                    .computed
+                    .get(&target.id)
+                    .and_then(|c| c.get(&x.id))
+                    .and_then(|c| c.get(&p.id))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                _ => plain(p, x, people, &HashMap::new()),
+            })
+            .flat_map(|v| match v {
+                Value::Array(items) => items,
+                v => vec![v],
+            })
+            .collect();
+        Some((values, linked.len()))
+    }
+}
 fn rollup_value(
     db: &Database,
     c: &Column,
     r: &Record,
     people: &HashMap<String, String>,
-    related: &HashMap<String, Option<&Database>>,
+    related: &Related,
 ) -> Value {
     let Some(spec) = &c.rollup else {
         return Value::Null;
@@ -777,44 +905,13 @@ fn rollup_value(
     else {
         return Value::Null;
     };
-    let Some(target) = relation
-        .target
-        .as_ref()
-        .and_then(|t| related.get(t).copied().flatten())
-    else {
+    let Some((values, linked)) = related.values(relation, &spec.property, r, people) else {
         return Value::Null;
     };
-    let ids = r
-        .cells
-        .get(&relation.id)
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let linked: Vec<&Record> = ids
-        .iter()
-        .filter_map(|id| {
-            target
-                .rows
-                .iter()
-                .find(|x| Some(x.id.as_str()) == id.as_str())
-        })
-        .collect();
-    let property = target.columns.iter().find(|x| x.id == spec.property);
-    let values: Vec<Value> = match property {
-        Some(p) => linked
-            .iter()
-            .map(|x| plain(p, x, people, &HashMap::new()))
-            .flat_map(|v| match v {
-                Value::Array(items) => items,
-                v => vec![v],
-            })
-            .collect(),
-        None => vec![],
-    };
-    if property.is_none() && spec.function != "count" {
+    if spec.property.is_empty() && spec.function != "count" {
         return Value::Null;
     }
-    rollup(&spec.function, &values, linked.len())
+    rollup(&spec.function, &values, linked)
 }
 #[allow(clippy::too_many_arguments)]
 fn formula_value(
@@ -823,7 +920,7 @@ fn formula_value(
     expr: Option<&Expr>,
     r: &Record,
     people: &HashMap<String, String>,
-    related: &HashMap<String, Option<&Database>>,
+    related: &Related,
     formulas: &[(&Column, Option<Expr>)],
     values: &mut BTreeMap<String, Value>,
     busy: &mut Vec<String>,
@@ -862,12 +959,31 @@ fn formula_value(
     busy.pop();
     let snapshot = values.clone();
     let scope = |name: &str| -> Option<Value> {
+        // `related(relation, property)`: the property across the linked records.
+        if let Some(rest) = name.strip_prefix('\u{0}') {
+            let (relation, property) = rest.split_once('\u{0}')?;
+            let relation = db
+                .columns
+                .iter()
+                .find(|x| x.kind == ColumnKind::Relation && x.name.to_lowercase() == relation)?;
+            let target = relation
+                .target
+                .as_ref()
+                .and_then(|t| related.databases.get(t).copied().flatten())?;
+            let p = target
+                .columns
+                .iter()
+                .find(|x| x.name.to_lowercase() == property)?;
+            return related
+                .values(relation, &p.id, r, people)
+                .map(|(values, _)| json!(values));
+        }
         let col = db.columns.iter().find(|x| x.name.to_lowercase() == name)?;
         Some(match col.kind {
             ColumnKind::Rollup | ColumnKind::Formula => {
                 snapshot.get(&col.id).cloned().unwrap_or(Value::Null)
             }
-            _ => plain(col, r, people, related),
+            _ => plain(col, r, people, &related.databases),
         })
     };
     eval(expr, &scope, today)

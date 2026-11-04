@@ -137,8 +137,27 @@ fn note_entity(d: &Data, n: &Note) -> Option<Entity> {
             ("journal".into(), json!(n.journal)),
             ("metadata".into(), json!(n.metadata)),
             ("print_template".into(), json!(n.print_template)),
+            // A record's page stays one in every copy.
+            ("record".into(), json!(n.record)),
         ]),
     })
+}
+/// The record a pushed note is the page of, when the field names one.
+fn record_page(fields: &Fields) -> Result<Option<RecordPage>, ApiError> {
+    match fields.get("record") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => {
+            let page: RecordPage =
+                serde_json::from_value(v.clone()).map_err(|_| bad("Invalid record page"))?;
+            let id_like = |s: &str| {
+                (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+            };
+            if !id_like(&page.database_id) || !id_like(&page.record_id) {
+                return Err(bad("Invalid record page"));
+            }
+            Ok(Some(page))
+        }
+    }
 }
 fn database_entity(d: &Data, db: &Database) -> Option<Entity> {
     Some(Entity {
@@ -158,6 +177,7 @@ fn record_entity(workspace: &str, db: &Database, r: &Record) -> Entity {
         ("archived".into(), json!(r.archived)),
         ("conflict_of".into(), json!(r.conflict_of)),
         ("created_at".into(), json!(r.created_at)),
+        ("rank".into(), json!(r.rank)),
     ]);
     for (column, value) in &r.cells {
         fields.insert(format!("cells/{column}"), value.clone());
@@ -807,7 +827,7 @@ fn apply_note(
             journal: string(fields, "journal").filter(|j| databases::valid_date(j)),
             metadata: normalize_metadata(fields.get("metadata").unwrap_or(&Value::Null))?,
             print_template: template(fields, upstream)?,
-            record: None,
+            record: record_page(fields)?,
         }));
         d.collaboration.insert(id.into(), Arc::new(crdt.into()));
         if let Err(error) = sync_text(d, "") {
@@ -835,6 +855,12 @@ fn apply_note(
         _ => None,
     };
     let metadata = win.get("metadata").map(normalize_metadata).transpose()?;
+    // Which record a page belongs to is fixed once known.
+    let record = if n.record.is_none() {
+        record_page(&win)?
+    } else {
+        None
+    };
     let print_template = win
         .contains_key("print_template")
         .then(|| template(&win, upstream))
@@ -852,6 +878,9 @@ fn apply_note(
     }
     if let Some(t) = print_template {
         n.print_template = t;
+    }
+    if record.is_some() {
+        n.record = record;
     }
     settle(d, "note", id, &win, clocks);
     Ok(outcome(lost))
@@ -987,6 +1016,10 @@ fn apply_record(
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             conflict_of: string(fields, "conflict_of"),
+            rank: fields
+                .get("rank")
+                .and_then(Value::as_f64)
+                .filter(|x| x.is_finite()),
         };
         let db = d.databases.iter_mut().find(|db| db.id == did).unwrap();
         db.rows.push(row);
@@ -1021,6 +1054,9 @@ fn apply_record(
     if win.contains_key("conflict_of") {
         row.conflict_of = string(&win, "conflict_of");
     }
+    if let Some(rank) = win.get("rank") {
+        row.rank = rank.as_f64().filter(|x| x.is_finite());
+    }
     row.revision += 1;
     row.updated_at = now();
     let mut result = outcome(lost);
@@ -1037,6 +1073,7 @@ fn apply_record(
             created_at: now(),
             archived: true,
             conflict_of: Some(id.into()),
+            rank: None,
         });
         result = json!({"status":"conflict","lost":result["lost"],"copy_id":copy_id});
     }

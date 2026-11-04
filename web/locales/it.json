@@ -1908,7 +1908,6 @@
   "Choose the property “{name}” combines": "Scegli la proprietà che «{name}» combina",
   "Formula “{name}”: {error}": "Formula «{name}»: {error}",
   "Formula “{name}”: there is no property “{property}”": "Formula «{name}»: non esiste la proprietà «{property}»",
-  "“{name}” combines a property of the related database (not a relation, rollup or formula)": "«{name}» combina una proprietà del database collegato (non una relazione, un rollup o una formula)",
   "Invalid value for {name}": "Valore non valido per {name}",
   "{key} must contain {min}–{max} bytes": "{key} deve contenere da {min} a {max} byte",
   "This file has {decks} decks; you have room for {room} more (100 at most).": "Questo file ha {decks} mazzi; c’è posto per altri {room} (al massimo 100).",
@@ -2179,5 +2178,14 @@
   "Any tag": "Qualsiasi tag",
   "Search titles, text and tags, database records, and the text of attached PDFs.": "Cerca in titoli, testo e tag, nei record dei database e nel testo dei PDF allegati.",
   "Database records": "Record dei database",
-  "In attached files": "Nei file allegati"
+  "In attached files": "Nei file allegati",
+  "A relation's records:": "I record di una relazione:",
+  "gives the Hours of every linked task, as a list.": "dà le Hours di ogni attività collegata, come elenco.",
+  "Number format": "Formato numerico",
+  "Percent (0.25 shows as 25%)": "Percentuale (0,25 diventa 25%)",
+  "Currency": "Valuta",
+  "“{name}” combines a property of the related database (not a relation)": "“{name}” combina una proprietà del database collegato (non una relazione)",
+  "Invalid number format": "Formato numerico non valido",
+  "Invalid record position": "Posizione del record non valida",
+  "Invalid record page": "Pagina del record non valida"
 }

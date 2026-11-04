@@ -959,6 +959,7 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
             target: None,
             rollup: None,
             formula: String::new(),
+            format: String::new(),
         });
     }
     let records = rows
@@ -986,6 +987,7 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
                 created_at: now(),
                 archived: false,
                 conflict_of: None,
+                rank: None,
             }
         })
         .collect();

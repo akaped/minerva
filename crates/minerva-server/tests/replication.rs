@@ -596,3 +596,101 @@ async fn a_replica_is_read_only_where_the_server_grants_view_access() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn record_pages_stay_record_pages_in_replicas() {
+    let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let admin = login(&server, "admin@test.local").await;
+    let owner = common::member(&server, &admin, "owner@test.local").await;
+    let (_, boot) = request(&server, "GET", "bootstrap", &owner, json!({})).await;
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let folder = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, db) = request(
+        &server,
+        "POST",
+        "databases",
+        &owner,
+        json!({"folder_id":folder,"name":"Clients"}),
+    )
+    .await;
+    let did = db["id"].as_str().unwrap().to_string();
+    let (_, row) = request(
+        &server,
+        "POST",
+        &format!("databases/{did}/rows"),
+        &owner,
+        json!({"cells":{}}),
+    )
+    .await;
+    let rid = row["id"].as_str().unwrap().to_string();
+    let (status, page) = request(
+        &server,
+        "POST",
+        &format!("databases/{did}/rows/{rid}/page"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    let pid = page["id"].as_str().unwrap().to_string();
+
+    // The pulled note says which record it is the page of.
+    let pulled = pull(&server, &owner, &ws, 0).await;
+    let note = entry(&pulled, "note", &pid).expect("the page is replicated");
+    assert_eq!(
+        note["fields"]["record"]["record_id"],
+        rid.as_str(),
+        "{note}"
+    );
+
+    // A replica applying it keeps the link; nonsense is refused.
+    let (store, token) = Store::open_local(":memory:").unwrap();
+    let local = app(store);
+    request(
+        &local,
+        "POST",
+        "local/replicas",
+        &token,
+        json!({"workspace_id":ws,"connection_id":"c1","server_id":"remote","name":"Team"}),
+    )
+    .await;
+    let c = later();
+    let doc = Doc::new();
+    {
+        use yrs::Map;
+        let meta = doc.get_or_insert_map("meta");
+        let mut txn = doc.transact_mut();
+        meta.insert(&mut txn, "icon", "▤");
+        meta.insert(&mut txn, "favorite", false);
+        meta.insert(&mut txn, "trashed", false);
+    }
+    let state = encode(&doc);
+    let (status, applied) = request(&local, "POST", "sync/push", &token, json!({"workspace_id":ws,"upstream":true,"cursor":1,"access":"digest","ops":[
+        {"op_id":"r:1","kind":"workspace","id":ws,"role":"editor","fields":{"name":"Team"},"clocks":{"name":c}},
+        {"op_id":"r:2","kind":"folder","id":folder,"role":"editor","fields":{"name":"General","parent_id":null},"clocks":{"name":c,"parent_id":c}},
+        {"op_id":"r:3","kind":"note","id":pid,"role":"editor","crdt":state,"fields":{"folder_id":folder,"record":{"database_id":did,"record_id":rid}},"clocks":{"folder_id":c,"record":c}},
+    ]})).await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert!(
+        applied["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["status"] == "applied"),
+        "{applied}"
+    );
+    let (status, local_page) =
+        request(&local, "GET", &format!("notes/{pid}"), &token, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{local_page}");
+    assert_eq!(
+        local_page["record"]["record_id"],
+        rid.as_str(),
+        "{local_page}"
+    );
+}

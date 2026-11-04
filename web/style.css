@@ -8463,3 +8463,21 @@ body.presenting {
   height: 16px;
   color: var(--muted);
 }
+/* A formatted number cell: its symbol beside the field. */
+.number-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+}
+.number-cell.suffix {
+  flex-direction: row-reverse;
+}
+.number-cell input {
+  flex: 1;
+  min-width: 0;
+}
+.number-symbol {
+  color: var(--muted);
+  font-size: 0.9em;
+}
