@@ -8042,3 +8042,130 @@ body.comments-open .note-pane {
 .recording-actions-list legend {
   font-weight: 600;
 }
+/* Flashcards: statistics and scheduling. */
+.fc-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.fc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.fc-tile span,
+.fc-tile small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.fc-tile strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.fc-chart {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.fc-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.fc-chart figcaption span,
+.fc-axis {
+  color: var(--muted);
+  font-size: 12px;
+}
+.fc-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  border-bottom: 1px solid var(--line);
+}
+.fc-bar {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+  outline: none;
+}
+.fc-bar > span {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.fc-bar:hover > span,
+.fc-bar:focus-visible > span {
+  filter: brightness(1.15);
+}
+.fc-bar:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: 4px;
+}
+.fc-bar:hover::after,
+.fc-bar:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 5;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* Tooltips of the first and last bars stay inside the chart. */
+.fc-bar:nth-child(-n + 4)::after {
+  left: 0;
+  transform: none;
+}
+.fc-bar:nth-last-child(-n + 4)::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+.fc-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.fc-retention {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fc-retention input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.fc-retention output {
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.fc-attach {
+  align-self: flex-start;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-sound {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+}

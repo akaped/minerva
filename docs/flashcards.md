@@ -1,10 +1,10 @@
 # Flashcards
 
-Open **Flashcards** in the sidebar. Make a deck for a subject, book, course, or project. Add a clear question on the front and a concise answer on the back. Cards are plain text, with two additions: `[label](https://…)` becomes a link and `![](https://…)` a picture. Other HTML and Markdown are shown literally.
+Open **Flashcards** in the sidebar. Make a deck for a subject, book, course, or project. Add a clear question on the front and a concise answer on the back. Cards are plain text, with a few additions: `[label](https://…)` becomes a link, `![](https://…)` a picture, and pictures and sounds added to the card show with it. Other HTML and Markdown are shown literally.
 
 ## Make your own cards
 
-Choose **Create a deck**, give it a name, then **Add card**. You can edit both sides, add source links, pause a card, or delete it. Decks and progress are private to your account on this Minerva instance. They are not shared with a workspace or synchronized through workspace replication. Personal desktop decks are stored locally; manual study works offline there.
+Choose **Create a deck**, give it a name, then **Add card**. You can edit both sides, add source links, pause a card, or delete it. **Add picture or sound**, under each side, puts a picture (PNG, JPEG, GIF or WebP, up to 10 MB) or a sound (MP3, M4A, Ogg, WAV, WebM or FLAC, up to 20 MB) where the cursor is; a sound plays with a player, for pronunciation or music. A deck holds up to 200 MB of them, private to you like the deck. Decks and progress are private to your account on this Minerva instance. They are not shared with a workspace or synchronized through workspace replication. Personal desktop decks are stored locally; manual study works offline there.
 
 **Export JSON** downloads the deck, its cards, sources, and scheduling state. JSON exports cannot be imported back yet. Back up the Minerva database to preserve all decks.
 
@@ -17,9 +17,9 @@ On the decks page, choose **Import from Anki** and pick a file:
 
 Each Anki deck becomes a deck here; subdecks keep their path, such as _Spanish › Verbs_. Decks with more than 2,000 cards are split into parts. Every card is built from its note type's templates, so reversed cards, optional fields, and cloze deletions come out as in Anki: on a cloze question, the hidden part shows as `[...]` or its hint. Parts of a template that Anki hides with styles or scripts, such as a hidden copy of the cloze text or a "Show all" button, are left out.
 
-Pictures and links come along: export **with media** to keep the pictures (PNG, JPEG, GIF, or WebP, up to 10 MB each and 100 MB per import). Each deck stores its own copy, visible only to you, and deleting the deck deletes them. Other formatting becomes plain text, and sounds show as `[audio]`.
+Pictures, sounds and links come along: export **with media** to keep them (pictures up to 10 MB each, sounds up to 20 MB, 100 MB per import). Each deck stores its own copy, visible only to you, and deleting the deck deletes them. Other formatting becomes plain text; a picture or sound missing from the package shows as `[image]` or `[audio]`.
 
-With **Keep my review progress** (the default), cards keep their intervals, due dates, review and lapse counts, and paused state, and continue with Minerva's scheduler. Otherwise every card starts as new. Tags and Anki's own scheduling settings are not imported.
+With **Keep my review progress** (the default), cards keep their intervals, due dates, review and lapse counts, and paused state, and their **review history** comes along: each card's memory is rebuilt from it, it counts in your statistics, and it is enough to fit the scheduler to you right away. Otherwise every card starts as new. Tags and Anki's own scheduling settings are not imported.
 
 Files can be up to 100 MB and 20,000 cards.
 
@@ -57,11 +57,15 @@ The deck keeps up with your notes each time you open it: new cards appear, chang
 
 Choose **Study due cards**. Try to answer before choosing **Reveal answer**, then rate your recall: **Again**, **Hard**, **Good** or **Easy**. Each button shows when the card would come back.
 
-Minerva schedules reviews with [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm) (version 4.5, with its default parameters), the scheduler Anki uses. Each card has a memory: its _stability_ (how many days until you would recall it with 90% probability) and its _difficulty_. Every rating updates both, taking into account how long it has been since the last review, and the card comes back when your recall is expected to drop to 90%. A new card answered Good returns after 4 days, Easy after 14; Again brings it back in 10 minutes. Intervals are capped at 10 years.
+Minerva schedules reviews with [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm) (version 4.5), the scheduler Anki uses. Each card has a memory: its _stability_ (how many days until you would recall it with 90% probability) and its _difficulty_. Every rating updates both, taking into account how long it has been since the last review, and the card comes back when your recall is expected to drop to your **desired retention** (90% unless you choose otherwise). With the default weights, a new card answered Good returns after 4 days, Easy after 14; Again brings it back in 10 minutes. Intervals are capped at 10 years.
+
+**Scheduling**, on the decks page, sets the desired retention between 70% and 97%: higher means more reviews and less forgetting, lower the reverse. It applies to reviews from then on. **Optimize for my memory** fits FSRS's 17 weights to your own review history, as Anki's optimizer does: it needs at least 400 reviews of cards studied more than once, on different days, and takes a few seconds. The fitted weights are kept only if they predict your recall better than the defaults; the page shows the prediction error before and after. **Back to the defaults** undoes it.
+
+**Statistics**, on the decks page or in a deck, shows reviews per day over 30 days, your true retention (how often you recalled cards studied on earlier days, against your target), your streak of study days, the recall expected for your cards now, how many cards are new, learning (intervals under 21 days), mature or paused, and how many come due in each of the next 30 days. Every review is logged for this, and deleting a card or deck deletes its history.
 
 Cards reviewed before FSRS keep their schedule: on their next review, their last interval stands for their stability. Cards imported from Anki with their progress do the same.
 
-Each session reviews the cards due when it starts, once each; return later for cards scheduled again. Cards keep review and lapse counts, and pausing a card excludes it from sessions. Media cards, shared decks, and study statistics are not implemented yet.
+Each session reviews the cards due when it starts, once each; return later for cards scheduled again. Cards keep review and lapse counts, and pausing a card excludes it from sessions. Shared decks are not implemented yet.
 
 ## Limits and privacy
 

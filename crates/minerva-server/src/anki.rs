@@ -28,6 +28,8 @@ pub(super) struct ImportedCard {
     pub reviews: u32,
     pub lapses: u32,
     pub suspended: bool,
+    /// Its reviews in Anki, oldest first: (Unix seconds, grade 1–4).
+    pub history: Vec<(u64, u8)>,
 }
 pub(super) struct Import {
     pub decks: Vec<ImportedDeck>,
@@ -99,17 +101,18 @@ fn package(bytes: &[u8], keep_progress: bool) -> Result<Import, ApiError> {
             .any(|n| !import.media.contains_key(n))
     });
     if missing {
-        import.warnings.push("Some pictures were not in the package; they show as [image]. Export with media included to keep them.".into());
+        import.warnings.push("Some pictures or sounds were not in the package; they show as [image] or [audio]. Export with media included to keep them.".into());
     }
     Ok(import)
 }
-/// File names of the pictures a card's text refers to.
+/// File names of the pictures and sounds a card's text refers to.
 pub(super) fn pictures(text: &str) -> impl Iterator<Item = &str> {
-    text.split(IMAGE_START)
+    text.split([IMAGE_START, SOUND_START])
         .skip(1)
-        .filter_map(|s| s.split(IMAGE_END).next())
+        .filter_map(|s| s.split([IMAGE_END, SOUND_END]).next())
 }
 const PICTURE_LIMIT: usize = 10 * 1024 * 1024;
+const SOUND_LIMIT: usize = 20 * 1024 * 1024;
 const MEDIA_LIMIT: usize = 100 * 1024 * 1024;
 fn zstd(bytes: &[u8], limit: usize) -> Option<Vec<u8>> {
     let mut out = Vec::new();
@@ -119,21 +122,6 @@ fn zstd(bytes: &[u8], limit: usize) -> Option<Vec<u8>> {
         .read_to_end(&mut out)
         .ok()?;
     (out.len() <= limit).then_some(out)
-}
-/// The picture's media type, recognised by its first bytes; other files are
-/// not kept.
-fn picture_type(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("image/png")
-    } else if bytes.starts_with(b"\xff\xd8\xff") {
-        Some("image/jpeg")
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some("image/gif")
-    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
-        Some("image/webp")
-    } else {
-        None
-    }
 }
 /// The pictures the imported cards use. The package's `media` file maps zip
 /// entries ("0", "1", …) to file names: JSON in older packages, a compressed
@@ -185,22 +173,27 @@ fn media(
             continue;
         };
         if file
-            .take(PICTURE_LIMIT as u64 + 1)
+            .take(SOUND_LIMIT as u64 + 1)
             .read_to_end(&mut bytes)
             .is_err()
         {
             continue;
         }
         if bytes.starts_with(&[0x28, 0xb5, 0x2f, 0xfd]) {
-            match zstd(&bytes, PICTURE_LIMIT) {
+            match zstd(&bytes, SOUND_LIMIT) {
                 Some(plain) => bytes = plain,
                 None => continue,
             }
         }
-        let Some(kind) = picture_type(&bytes) else {
+        let Some(kind) = super::flashcards::media_kind(&bytes) else {
             continue;
         };
-        if bytes.len() > PICTURE_LIMIT || total + bytes.len() > MEDIA_LIMIT {
+        let limit = if kind.starts_with("image/") {
+            PICTURE_LIMIT
+        } else {
+            SOUND_LIMIT
+        };
+        if bytes.len() > limit || total + bytes.len() > MEDIA_LIMIT {
             continue;
         }
         total += bytes.len();
@@ -348,11 +341,39 @@ fn collection(db: &Connection, keep_progress: bool) -> Result<Import, Option<Api
         }
     }
 
+    // Review history, by card: learning, review, relearning and early
+    // reviews with an answer (not manual rescheduling).
+    let mut revlog: HashMap<i64, Vec<(u64, u8)>> = HashMap::new();
+    if keep_progress && table("revlog") {
+        let mut stmt = db
+            .prepare(
+                "SELECT cid, id, ease FROM revlog
+                 WHERE ease BETWEEN 1 AND 4 AND type BETWEEN 0 AND 3
+                 ORDER BY cid, id LIMIT 500000",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(sql)?;
+        for row in rows {
+            let (card, at, ease) = row.map_err(sql)?;
+            revlog
+                .entry(card)
+                .or_default()
+                .push(((at / 1000).max(0) as u64, ease as u8));
+        }
+    }
     // Cards in a filtered deck count for their original deck.
     let mut stmt = db
         .prepare(
             "SELECT CASE WHEN c.odid != 0 THEN c.odid ELSE c.did END, c.ord, c.type, c.queue,
-                    c.due, c.ivl, c.reps, c.lapses, n.mid, n.flds
+                    c.due, c.ivl, c.reps, c.lapses, n.mid, n.flds, c.id
              FROM cards c JOIN notes n ON n.id = c.nid
              ORDER BY 1, n.id, c.ord",
         )
@@ -370,6 +391,7 @@ fn collection(db: &Connection, keep_progress: bool) -> Result<Import, Option<Api
                 r.get::<_, i64>(7)?,
                 r.get::<_, i64>(8)?,
                 r.get::<_, String>(9)?,
+                r.get::<_, i64>(10)?,
             ))
         })
         .map_err(sql)?;
@@ -377,7 +399,8 @@ fn collection(db: &Connection, keep_progress: bool) -> Result<Import, Option<Api
     let (mut skipped, mut read) = (0, 0);
     let mut warnings = vec![];
     for row in rows {
-        let (deck, ord, kind, queue, due, ivl, reps, lapses, mid, flds) = row.map_err(sql)?;
+        let (deck, ord, kind, queue, due, ivl, reps, lapses, mid, flds, card_id) =
+            row.map_err(sql)?;
         read += 1;
         if read > CARD_LIMIT {
             warnings.push(format!("Only the first {CARD_LIMIT} cards were read."));
@@ -400,8 +423,10 @@ fn collection(db: &Connection, keep_progress: bool) -> Result<Import, Option<Api
             reviews: 0,
             lapses: 0,
             suspended: false,
+            history: vec![],
         };
         if keep_progress {
+            card.history = revlog.remove(&card_id).unwrap_or_default();
             schedule(&mut card, created, kind, queue, due, ivl, reps, lapses);
         }
         let name = decks
@@ -613,6 +638,9 @@ fn cloze_text(value: &str, current: i64, question: bool) -> String {
 /// stores it: `\u{e000}name\u{e001}`.
 pub(super) const IMAGE_START: char = '\u{e000}';
 pub(super) const IMAGE_END: char = '\u{e001}';
+/// The same for a sound: `\u{e002}name\u{e003}`.
+pub(super) const SOUND_START: char = '\u{e002}';
+pub(super) const SOUND_END: char = '\u{e003}';
 
 /// The value of an HTML attribute in a tag's source, entities decoded.
 fn attribute(tag: &str, name: &str) -> Option<String> {
@@ -771,10 +799,17 @@ fn text(html: &str) -> String {
         out.push_str(rest);
     }
     let mut text = decode_entities(&out);
-    // Sounds: `[sound:file.mp3]`.
+    // Sounds: `[sound:file.mp3]`, marked like pictures until the import
+    // stores them.
     while let Some(start) = text.find("[sound:") {
         match text[start..].find(']') {
-            Some(end) => text.replace_range(start..start + end + 1, "[audio]"),
+            Some(end) => {
+                let file = text[start + 7..start + end].trim().to_string();
+                text.replace_range(
+                    start..start + end + 1,
+                    &format!("{SOUND_START}{file}{SOUND_END}"),
+                );
+            }
             None => break,
         }
     }
@@ -1015,6 +1050,7 @@ fn text_export(export: &str, file_name: &str) -> Import {
             reviews: 0,
             lapses: 0,
             suspended: false,
+            history: vec![],
         };
         match decks.iter_mut().find(|d| d.name == name) {
             Some(d) => d.cards.push(card),
@@ -1107,7 +1143,8 @@ mod tests {
         );
         assert_eq!(
             text("a<div>b</div>[sound:x.mp3]<script>alert(1)</script>c &#x41;&lt;"),
-            "a\nb\n[audio]c A<"
+            "a\nb\n\u{e002}x.mp3\u{e003}c A<",
+            "sounds are marked until the import stores them"
         );
         assert_eq!(
             limit("ééé", 5),

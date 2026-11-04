@@ -813,6 +813,8 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
                 "ai_chats",
                 "flashcard_decks",
                 "flashcard_media",
+                "flashcard_reviews",
+                "flashcard_settings",
                 "plugin_jobs",
             ] {
                 tx.execute(
@@ -1041,6 +1043,8 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/attachments/{attachment_id}/preview", get(attachments::endpoint))
         // Anki packages can be large; their media is not kept.
         .route("/api/v1/flashcards/import", any(flashcards::import).layer(DefaultBodyLimit::max(100 * 1024 * 1024)))
+        // A card's picture or sound (up to 20 MB).
+        .route("/api/v1/flashcards/decks/{deck}/media", axum::routing::post(flashcards::upload_media).layer(DefaultBodyLimit::max(21 * 1024 * 1024)))
         .route("/api/v1/flashcards/{*path}", any(flashcards::endpoint))
         // Questions may carry images and documents (see ai.rs `uploads`).
         .route("/api/v1/ai/{*path}", any(ai::endpoint).layer(DefaultBodyLimit::max(30 * 1024 * 1024)))

@@ -2,6 +2,10 @@
 //! workspace or folder: its cards are the ones written in those notes (blocks
 //! tagged `#card`, and cloze deletions), kept in step with the notes each time
 //! the deck is opened, with their review history.
+//!
+//! Every review is logged (`flashcard_reviews`): for statistics, and so the
+//! scheduler can be fitted to the person's own memory. Each person also
+//! chooses the recall to aim for (`flashcard_settings`).
 use super::*;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -47,8 +51,347 @@ struct NoteSource {
 }
 pub(super) fn initialize(db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS flashcard_decks(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_owner ON flashcard_decks(user_id);
-        CREATE TABLE IF NOT EXISTS flashcard_media(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,deck_id TEXT NOT NULL,media_type TEXT NOT NULL,content BLOB NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_media_deck ON flashcard_media(deck_id);")
+        CREATE TABLE IF NOT EXISTS flashcard_media(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,deck_id TEXT NOT NULL,media_type TEXT NOT NULL,content BLOB NOT NULL); CREATE INDEX IF NOT EXISTS flashcard_media_deck ON flashcard_media(deck_id);
+        CREATE TABLE IF NOT EXISTS flashcard_reviews(user_id TEXT NOT NULL,deck_id TEXT NOT NULL,card_id TEXT NOT NULL,at INTEGER NOT NULL,grade INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS flashcard_reviews_user ON flashcard_reviews(user_id,at);
+        CREATE INDEX IF NOT EXISTS flashcard_reviews_card ON flashcard_reviews(deck_id,card_id);
+        CREATE TABLE IF NOT EXISTS flashcard_settings(user_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")
 }
+/// A person's scheduling: the recall to aim for, and weights fitted to their
+/// reviews (FSRS's defaults until then).
+#[derive(Clone, Serialize, Deserialize)]
+struct Settings {
+    retention: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    weights: Option<Vec<f64>>,
+    /// The last fitting, kept or not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fitted: Option<Value>,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            retention: fsrs::DEFAULT_RETENTION,
+            weights: None,
+            fitted: None,
+        }
+    }
+}
+fn settings(s: &Store, user: &str) -> Settings {
+    s.db.query_row(
+        "SELECT payload FROM flashcard_settings WHERE user_id=?1",
+        params![user],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|raw| serde_json::from_str(&raw).ok())
+    .unwrap_or_default()
+}
+fn save_settings(s: &Store, user: &str, settings: &Settings) -> Result<(), ApiError> {
+    s.db.execute(
+        "INSERT INTO flashcard_settings(user_id,payload) VALUES(?1,?2) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload",
+        params![user, serde_json::to_string(settings).map_err(|_| internal())?],
+    )
+    .map_err(|_| internal())?;
+    Ok(())
+}
+fn scheduling(settings: &Settings) -> fsrs::Params {
+    let mut p = fsrs::Params {
+        retention: settings.retention,
+        ..Default::default()
+    };
+    if let Some(w) = settings
+        .weights
+        .as_deref()
+        .and_then(|w| <[f64; 17]>::try_from(w).ok())
+    {
+        p.w = w;
+    }
+    p
+}
+fn reviews_logged(s: &Store, user: &str) -> i64 {
+    s.db.query_row(
+        "SELECT count(*) FROM flashcard_reviews WHERE user_id=?1",
+        params![user],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
+}
+fn settings_view(s: &Store, user: &str, st: &Settings) -> Value {
+    json!({
+        "retention": st.retention,
+        "retention_range": [fsrs::RETENTION_RANGE.0, fsrs::RETENTION_RANGE.1],
+        "optimized": st.weights.is_some(),
+        "fitted": st.fitted,
+        "reviews": reviews_logged(s, user),
+        "min_reviews": fsrs::MIN_REVIEWS,
+    })
+}
+/// Every logged history of `user`'s cards, each in time order.
+fn histories(s: &Store, user: &str) -> Result<Vec<Vec<fsrs::Review>>, ApiError> {
+    let mut stmt = s
+        .db
+        .prepare("SELECT deck_id,card_id,at,grade FROM flashcard_reviews WHERE user_id=?1 ORDER BY deck_id,card_id,at")
+        .map_err(|_| internal())?;
+    let rows = stmt
+        .query_map(params![user], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|_| internal())?;
+    let mut out: Vec<Vec<fsrs::Review>> = vec![];
+    let mut current = (String::new(), String::new());
+    for row in rows {
+        let (deck, card, at, grade) = row.map_err(|_| internal())?;
+        if (deck.as_str(), card.as_str()) != (current.0.as_str(), current.1.as_str()) {
+            out.push(vec![]);
+            current = (deck, card);
+        }
+        if let Some(h) = out.last_mut() {
+            h.push((at.max(0) as u64, grade.clamp(1, 4) as u8));
+        }
+    }
+    Ok(out)
+}
+/// `POST flashcards/settings/optimize`: fits the scheduler to the person's
+/// review history, outside the store lock (it takes a few seconds). The fitted
+/// weights are kept only when they predict the history better.
+async fn optimize(store: Shared, headers: HeaderMap) -> Result<Response, ApiError> {
+    let (user, all) = {
+        let s = store.lock().map_err(|_| internal())?;
+        let u = authenticate(&s.data, &headers)?;
+        let all = histories(&s, &u.id)?;
+        (u.id, all)
+    };
+    let fitted = tokio::task::spawn_blocking(move || fsrs::fit(&all))
+        .await
+        .map_err(|_| internal())?;
+    let s = store.lock().map_err(|_| internal())?;
+    let Some(f) = fitted else {
+        return Err(badv(
+            "Optimizing needs at least {count} reviews of cards studied more than once, on different days.",
+            &[("count", &fsrs::MIN_REVIEWS.to_string())],
+        ));
+    };
+    let mut st = settings(&s, &user);
+    let better = f.loss_after < f.loss_before;
+    if better {
+        st.weights = Some(f.w.to_vec());
+    }
+    st.fitted = Some(json!({
+        "at": now(),
+        "reviews": f.reviews,
+        "loss_before": f.loss_before,
+        "loss_after": f.loss_after,
+        "kept": better,
+    }));
+    save_settings(&s, &user, &st)?;
+    Ok(axum::Json(settings_view(&s, &user, &st)).into_response())
+}
+
+/// `GET flashcards/stats?deck=<id>&offset=<minutes east of UTC>`: study
+/// statistics for one deck or all of them, by the reader's local days.
+fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value, ApiError> {
+    let st = settings(s, user);
+    let at = now();
+    let local_day = |t: u64| (t as i64 + offset * 60).div_euclid(86400);
+    let today = local_day(at);
+    // Reviews: by day for 30 days, and true retention (reviews at least a day
+    // after the previous one, recalled).
+    let mut stmt = s
+        .db
+        .prepare("SELECT deck_id,card_id,at,grade FROM flashcard_reviews WHERE user_id=?1 ORDER BY deck_id,card_id,at")
+        .map_err(|_| internal())?;
+    let rows = stmt
+        .query_map(params![user], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|_| internal())?;
+    let mut days = vec![[0u32; 4]; 30];
+    let (mut recalled, mut checked) = (0u32, 0u32);
+    let mut total = 0u32;
+    let mut studied: HashSet<i64> = HashSet::new();
+    let mut previous: Option<(String, String, i64)> = None;
+    for row in rows {
+        let (d, card, when, grade) = row.map_err(|_| internal())?;
+        if deck.is_some_and(|id| id != d) {
+            continue;
+        }
+        total += 1;
+        let day = local_day(when.max(0) as u64);
+        studied.insert(day);
+        let back = today - day;
+        if (0..30).contains(&back) {
+            days[(29 - back) as usize][(grade.clamp(1, 4) - 1) as usize] += 1;
+            if let Some((pd, pc, pt)) = &previous {
+                if *pd == d && *pc == card && when - pt >= 86400 {
+                    checked += 1;
+                    if grade > 1 {
+                        recalled += 1;
+                    }
+                }
+            }
+        }
+        previous = Some((d, card, when));
+    }
+    drop(stmt);
+    let mut streak = 0;
+    // Today counts once studied; until then, the streak runs to yesterday.
+    let mut day = if studied.contains(&today) {
+        today
+    } else {
+        today - 1
+    };
+    while studied.contains(&day) {
+        streak += 1;
+        day -= 1;
+    }
+    // Cards: their state now, recall expected today, and when they are due.
+    let mut stmt =
+        s.db.prepare("SELECT payload FROM flashcard_decks WHERE user_id=?1")
+            .map_err(|_| internal())?;
+    let decks: Vec<Deck> = stmt
+        .query_map(params![user], |r| r.get::<_, String>(0))
+        .map_err(|_| internal())?
+        .filter_map(|r| r.ok().and_then(|raw| serde_json::from_str(&raw).ok()))
+        .filter(|d: &Deck| deck.is_none_or(|id| id == d.id))
+        .collect();
+    let (mut new, mut learning, mut mature, mut paused, mut due_now) = (0, 0, 0, 0, 0);
+    let mut forecast = vec![0u32; 30];
+    let (mut recall_sum, mut recall_n) = (0.0, 0u32);
+    for c in decks.iter().flat_map(|d| &d.cards) {
+        if c.suspended {
+            paused += 1;
+            continue;
+        }
+        if c.reviews == 0 {
+            new += 1;
+        } else if c.interval >= 21 * 86400 {
+            mature += 1;
+        } else {
+            learning += 1;
+        }
+        if c.due <= at {
+            due_now += 1;
+        } else {
+            let ahead = local_day(c.due) - today;
+            if (0..30).contains(&ahead) {
+                forecast[ahead as usize] += 1;
+            }
+        }
+        if let Some(m) = memory(c) {
+            recall_sum += fsrs::retrievability(elapsed_days(c, at), m.stability);
+            recall_n += 1;
+        }
+    }
+    Ok(json!({
+        "days": days.iter().enumerate().map(|(i, r)| json!({
+            "day": crate::sharing::date(((today - 29 + i as i64) * 86400).max(0) as u64),
+            "again": r[0], "hard": r[1], "good": r[2], "easy": r[3],
+        })).collect::<Vec<_>>(),
+        "reviews": total,
+        "reviews_30_days": days.iter().map(|r| r.iter().sum::<u32>()).sum::<u32>(),
+        "retention": (checked > 0).then(|| recalled as f64 / checked as f64),
+        "retention_reviews": checked,
+        "desired_retention": st.retention,
+        "streak": streak,
+        "studied_today": studied.contains(&today),
+        "cards": {"new": new, "learning": learning, "mature": mature, "paused": paused, "due": due_now},
+        "expected_recall": (recall_n > 0).then(|| recall_sum / recall_n as f64),
+        "forecast": forecast,
+    }))
+}
+
+/// `POST /api/v1/flashcards/decks/{deck}/media?name=<file>`: a picture or a
+/// sound for a card, as the request body; answers `{markdown}` to put in it.
+pub(super) async fn upload_media(
+    State(store): State<Shared>,
+    axum::extract::Path(deck): axum::extract::Path<String>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, ApiError> {
+    if headers
+        .get("x-minerva-client")
+        .and_then(|h| h.to_str().ok())
+        != Some("1")
+    {
+        return Err(bad("X-Minerva-Client: 1 is required"));
+    }
+    let s = store.lock().map_err(|_| internal())?;
+    let u = authenticate(&s.data, &headers)?;
+    let d = load(&s, &u.id, &deck)?;
+    let (kind, limit) = match media_kind(&body) {
+        Some(k) if k.starts_with("image/") => (k, 10 * 1024 * 1024),
+        Some(k) => (k, 20 * 1024 * 1024),
+        None => {
+            return Err(bad(
+                "Choose a picture (PNG, JPEG, GIF, WebP) or a sound (MP3, M4A, Ogg, WAV, WebM)",
+            ))
+        }
+    };
+    if body.is_empty() || body.len() > limit {
+        return Err(bad("Pictures can be up to 10 MB and sounds up to 20 MB"));
+    }
+    let used: i64 =
+        s.db.query_row(
+            "SELECT COALESCE(SUM(length(content)),0) FROM flashcard_media WHERE deck_id=?1",
+            params![d.id],
+            |r| r.get(0),
+        )
+        .map_err(|_| internal())?;
+    if used as usize + body.len() > 200 * 1024 * 1024 {
+        return Err(bad("A deck holds up to 200 MB of pictures and sounds"));
+    }
+    let media_id = id();
+    s.db.execute(
+        "INSERT INTO flashcard_media(id,user_id,deck_id,media_type,content) VALUES(?1,?2,?3,?4,?5)",
+        params![media_id, u.id, d.id, kind, body.to_vec()],
+    )
+    .map_err(|_| internal())?;
+    let markdown = if kind.starts_with("audio/") {
+        format!("![audio](media:{media_id})")
+    } else {
+        format!("![](media:{media_id})")
+    };
+    Ok(axum::Json(json!({ "markdown": markdown })).into_response())
+}
+/// A picture's or sound's media type, recognised by its first bytes.
+pub(super) fn media_kind(bytes: &[u8]) -> Option<&'static str> {
+    let at = |i: usize, sig: &[u8]| bytes.get(i..i + sig.len()) == Some(sig);
+    Some(if at(0, b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if at(0, b"\xff\xd8\xff") {
+        "image/jpeg"
+    } else if at(0, b"GIF87a") || at(0, b"GIF89a") {
+        "image/gif"
+    } else if at(0, b"RIFF") && at(8, b"WEBP") {
+        "image/webp"
+    } else if at(0, b"RIFF") && at(8, b"WAVE") {
+        "audio/wav"
+    } else if at(0, b"ID3") || (bytes.len() > 2 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0) {
+        "audio/mpeg"
+    } else if at(0, b"OggS") {
+        "audio/ogg"
+    } else if at(4, b"ftyp") {
+        "audio/mp4"
+    } else if at(0, &[0x1a, 0x45, 0xdf, 0xa3]) {
+        "audio/webm"
+    } else if at(0, b"fLaC") {
+        "audio/flac"
+    } else {
+        return None;
+    })
+}
+
 fn load(s: &Store, user: &str, id: &str) -> Result<Deck, ApiError> {
     let raw: Option<String> =
         s.db.query_row(
@@ -142,22 +485,22 @@ fn elapsed_days(c: &Card, at: u64) -> f64 {
     since as f64 / 86400.0
 }
 /// The interval each rating would give the card now, in seconds.
-fn next_intervals(c: &Card, at: u64) -> Value {
+fn next_intervals(p: &fsrs::Params, c: &Card, at: u64) -> Value {
     let mut next = serde_json::Map::new();
     for rating in ["again", "hard", "good", "easy"] {
         let g = fsrs::grade(rating).unwrap_or(3);
-        let m = fsrs::review(memory(c), g, elapsed_days(c, at));
-        next.insert(rating.into(), json!(fsrs::interval(m, g)));
+        let m = fsrs::review(p, memory(c), g, elapsed_days(c, at));
+        next.insert(rating.into(), json!(fsrs::interval(p, m, g)));
     }
     Value::Object(next)
 }
 /// A deck for the page: each card with the interval every rating would give it.
-fn deck_view(d: &Deck) -> Value {
+fn deck_view(p: &fsrs::Params, d: &Deck) -> Value {
     let at = now();
     let mut v = json!(d);
     if let Some(cards) = v["cards"].as_array_mut() {
         for (view, c) in cards.iter_mut().zip(&d.cards) {
-            view["next"] = next_intervals(c, at);
+            view["next"] = next_intervals(p, c, at);
         }
     }
     json!({"deck": v, "now": at})
@@ -356,9 +699,58 @@ pub(super) async fn endpoint(
     if path == "generate" && method == Method::POST {
         return generate(store, headers, v).await;
     }
+    if path == "settings/optimize" && method == Method::POST {
+        return optimize(store, headers).await;
+    }
     let parts: Vec<_> = path.split('/').collect();
     let s = store.lock().map_err(|_| internal())?;
     let u = authenticate(&s.data, &headers)?;
+    match (method.as_str(), parts.as_slice()) {
+        ("GET", ["settings"]) => {
+            let st = settings(&s, &u.id);
+            return Ok(axum::Json(settings_view(&s, &u.id, &st)).into_response());
+        }
+        ("PUT", ["settings"]) => {
+            let mut st = settings(&s, &u.id);
+            let (lo, hi) = fsrs::RETENTION_RANGE;
+            let retention = v["retention"]
+                .as_f64()
+                .filter(|r| (lo..=hi).contains(r))
+                .ok_or_else(|| bad("Choose a desired retention between 70% and 97%"))?;
+            st.retention = (retention * 100.0).round() / 100.0;
+            save_settings(&s, &u.id, &st)?;
+            return Ok(axum::Json(settings_view(&s, &u.id, &st)).into_response());
+        }
+        // Back to FSRS's default weights.
+        ("DELETE", ["settings", "optimize"]) => {
+            let mut st = settings(&s, &u.id);
+            st.weights = None;
+            st.fitted = None;
+            save_settings(&s, &u.id, &st)?;
+            return Ok(axum::Json(settings_view(&s, &u.id, &st)).into_response());
+        }
+        ("GET", ["stats"]) => {
+            let query: HashMap<String, String> =
+                url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+                    .into_owned()
+                    .collect();
+            let offset = query
+                .get("offset")
+                .and_then(|o| o.parse::<i64>().ok())
+                .filter(|o| (-900..=900).contains(o))
+                .unwrap_or(0);
+            let deck = query
+                .get("deck")
+                .map(String::as_str)
+                .filter(|d| !d.is_empty());
+            if let Some(id) = deck {
+                load(&s, &u.id, id)?;
+            }
+            return Ok(axum::Json(stats(&s, &u.id, deck, offset)?).into_response());
+        }
+        _ => {}
+    }
+    let p = scheduling(&settings(&s, &u.id));
     if parts == ["decks"] {
         if method == Method::GET {
             let mut stmt =
@@ -436,7 +828,7 @@ pub(super) async fn endpoint(
     }
     if parts.len() == 2 {
         if method == Method::GET {
-            return Ok(axum::Json(deck_view(&d)).into_response());
+            return Ok(axum::Json(deck_view(&p, &d)).into_response());
         }
         check_revision(&v["revision"], d.revision)?;
         if method == Method::DELETE {
@@ -447,6 +839,11 @@ pub(super) async fn endpoint(
             .map_err(|_| internal())?;
             s.db.execute(
                 "DELETE FROM flashcard_media WHERE deck_id=?1 AND user_id=?2",
+                params![d.id, u.id],
+            )
+            .map_err(|_| internal())?;
+            s.db.execute(
+                "DELETE FROM flashcard_reviews WHERE deck_id=?1 AND user_id=?2",
                 params![d.id, u.id],
             )
             .map_err(|_| internal())?;
@@ -481,10 +878,15 @@ pub(super) async fn endpoint(
             let g = fsrs::grade(v["rating"].as_str().unwrap_or(""))
                 .ok_or_else(|| bad("Choose again, hard, good, or easy"))?;
             let at = now();
-            let m = fsrs::review(memory(c), g, elapsed_days(c, at));
+            let m = fsrs::review(&p, memory(c), g, elapsed_days(c, at));
             c.stability = Some(m.stability);
             c.difficulty = Some(m.difficulty);
-            c.interval = fsrs::interval(m, g);
+            c.interval = fsrs::interval(&p, m, g);
+            s.db.execute(
+                "INSERT INTO flashcard_reviews(user_id,deck_id,card_id,at,grade) VALUES(?1,?2,?3,?4,?5)",
+                params![u.id, d.id, c.id, at as i64, g as i64],
+            )
+            .map_err(|_| internal())?;
             c.due = at + c.interval;
             c.last_review = at;
             c.reviews += 1;
@@ -512,7 +914,12 @@ pub(super) async fn endpoint(
                     "This card comes from a note: remove it there, or pause it.",
                 ));
             }
-            d.cards.remove(index);
+            let removed = d.cards.remove(index);
+            s.db.execute(
+                "DELETE FROM flashcard_reviews WHERE deck_id=?1 AND card_id=?2",
+                params![d.id, removed.id],
+            )
+            .map_err(|_| internal())?;
         } else {
             return Err(missing());
         }
@@ -520,7 +927,7 @@ pub(super) async fn endpoint(
         return Err(missing());
     }
     save(&s, &u.id, &mut d)?;
-    Ok(axum::Json(deck_view(&d)).into_response())
+    Ok(axum::Json(deck_view(&p, &d)).into_response())
 }
 
 /// `POST /api/v1/flashcards/import?name=<file>&progress=1`: an Anki package or
@@ -614,20 +1021,27 @@ pub(super) async fn import(
     for (name, cards) in parts {
         total += cards.len();
         let deck_id = id();
-        // Each deck keeps its own copy of the pictures its cards show, as
-        // `![](media:<id>)`; a picture that was not in the package stays [image].
+        // Each deck keeps its own copy of the pictures and sounds its cards
+        // use, as `![](media:<id>)` and `![audio](media:<id>)`; one that was
+        // not in the package stays [image] or [audio].
         let mut stored: HashMap<String, String> = HashMap::new();
         let mut picture = |text: &str| -> Result<String, ApiError> {
             let mut out = String::new();
             let mut rest = text;
-            while let Some(start) = rest.find(anki::IMAGE_START) {
+            while let Some(start) = rest.find([anki::IMAGE_START, anki::SOUND_START]) {
                 out.push_str(&rest[..start]);
-                let after = &rest[start + anki::IMAGE_START.len_utf8()..];
-                let end = after.find(anki::IMAGE_END).unwrap_or(after.len());
+                let sound = rest[start..].starts_with(anki::SOUND_START);
+                let (open, close) = if sound {
+                    (anki::SOUND_START, anki::SOUND_END)
+                } else {
+                    (anki::IMAGE_START, anki::IMAGE_END)
+                };
+                let after = &rest[start + open.len_utf8()..];
+                let end = after.find(close).unwrap_or(after.len());
                 let file = &after[..end];
-                rest = after.get(end + anki::IMAGE_END.len_utf8()..).unwrap_or("");
+                rest = after.get(end + close.len_utf8()..).unwrap_or("");
                 let Some((kind, bytes)) = imported.media.get(file) else {
-                    out.push_str("[image]");
+                    out.push_str(if sound { "[audio]" } else { "[image]" });
                     continue;
                 };
                 let media_id = match stored.get(file) {
@@ -643,7 +1057,11 @@ pub(super) async fn import(
                         media_id
                     }
                 };
-                out.push_str(&format!("![](media:{media_id})"));
+                out.push_str(&if sound {
+                    format!("![audio](media:{media_id})")
+                } else {
+                    format!("![](media:{media_id})")
+                });
             }
             out.push_str(rest);
             Ok(out)
@@ -654,23 +1072,36 @@ pub(super) async fn import(
             let back = anki::limit(&picture(&c.back)?, 8000);
             converted.push((front, back, c));
         }
+        let p = scheduling(&settings(&s, &u.id));
+        let mut histories = vec![];
         let mut deck = Deck {
             id: deck_id,
             name,
             description: description.clone(),
             cards: converted
                 .into_iter()
-                .map(|(front, back, c)| Card {
-                    id: id(),
-                    front,
-                    back,
-                    sources: vec![],
-                    due: c.due,
-                    interval: c.interval,
-                    reviews: c.reviews,
-                    lapses: c.lapses,
-                    suspended: c.suspended,
-                    ..Default::default()
+                .map(|(front, back, c)| {
+                    let mut card = Card {
+                        id: id(),
+                        front,
+                        back,
+                        sources: vec![],
+                        due: c.due,
+                        interval: c.interval,
+                        reviews: c.reviews,
+                        lapses: c.lapses,
+                        suspended: c.suspended,
+                        ..Default::default()
+                    };
+                    // Anki's review history becomes the card's memory, and is
+                    // logged for statistics and fitting.
+                    if let Some(m) = fsrs::replay(&p, &c.history) {
+                        card.stability = Some(m.stability);
+                        card.difficulty = Some(m.difficulty);
+                        card.last_review = c.history.last().map_or(0, |r| r.0);
+                    }
+                    histories.push((card.id.clone(), c.history));
+                    card
                 })
                 .collect(),
             updated_at: now(),
@@ -678,6 +1109,15 @@ pub(super) async fn import(
             source: None,
         };
         save(&s, &u.id, &mut deck)?;
+        for (card, history) in histories {
+            for (at, grade) in history {
+                s.db.execute(
+                    "INSERT INTO flashcard_reviews(user_id,deck_id,card_id,at,grade) VALUES(?1,?2,?3,?4,?5)",
+                    params![u.id, deck.id, card, at as i64, grade as i64],
+                )
+                .map_err(|_| internal())?;
+            }
+        }
         created.push(json!({"id":deck.id,"name":deck.name,"count":deck.cards.len()}));
     }
     Ok(axum::Json(json!({
@@ -907,7 +1347,7 @@ mod tests {
             reviews: 3,
             ..Default::default()
         };
-        let next = next_intervals(&c, 0);
+        let next = next_intervals(&fsrs::Params::default(), &c, 0);
         let days = |r: &str| next[r].as_u64().unwrap() / 86400;
         assert_eq!(next["again"], 600);
         assert!(days("hard") < days("good") && days("good") < days("easy"));

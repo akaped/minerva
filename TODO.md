@@ -4,16 +4,10 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-## Soon
-
-- [ ] **Flashcards**: study statistics, a desired-retention setting, per-person FSRS parameters fitted from review history, and media cards.
-
-## Later
-
-- [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.
-- [ ] **Web clipper** browser extension, saving a page or selection to an inbox note.
+- [ ] **Flashcards**: shared decks for a workspace; a retention or weights per deck; time spent per review in the statistics; recording a sound straight into a card.
 - [ ] **Archive** for notes: out of search and the sidebar without being in the trash.
 - [ ] **Presentation mode**: a note as slides, split at dividers or headings.
+
 
 
 ## Follow-ups from the last round
@@ -36,6 +30,8 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Block references and embeds**: editing an embedded block in place (now it opens its note); choosing a block in the `[[` picker (now from the block's ⠿ menu); block anchors on published pages (a block link goes to the page's top); importing Logseq's `((uuid))` references and `{{embed …}}`; embeds refresh every 5 seconds instead of on a live signal.
 
 ## MAYBE IN FUTURE. I will tell you when
+- [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.
+- [ ] **Web clipper** browser extension, saving a page or selection to an inbox note.
 - [ ] **AI**: semantic retrieval (embeddings stored next to the search index), per-person provider keys and usage limits, scheduled agents, AI actions on several selected blocks, streaming in the selection assistant.
 - [ ] **Identity**: SSO (OIDC), passkeys, an audit log.
 - [ ] **Markdown folder copy** in the desktop app: keep a plain Markdown copy of local workspaces in a folder, as Logseq's Markdown Mirror does (read-only first).
