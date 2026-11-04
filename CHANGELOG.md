@@ -18,6 +18,7 @@ turns that section into the next version.
 - **Shared flashcard decks:** share a deck with a workspace; everyone in it studies with their own progress, and those who can edit there change its cards. A deck can also aim for its own desired retention, and statistics show the time spent studying.
 - **Archive:** put a note away from its ⋯ menu without trashing it. Archived notes leave the sidebar, search, link suggestions, the graph and AI answers about a folder or workspace; **Archived** in the sidebar lists them, and **Unarchive** brings one back.
 - **Presentation mode:** ⋯ → **Present** (Ctrl+Alt+P) shows a note as full-screen slides. Divider blocks (`---`) split the slides; a note without them is split at its top-level headings, with what comes before the first one under the title. Move with the arrow keys, Space, Page Up/Down or a click; Home and End jump to the first and last slide; F leaves or returns to full screen; Escape ends. Text grows with the screen and shrinks to fit a long slide; tasks, code, tables, quotes, pictures and diagrams show as in the note, in the light or dark theme.
+- **Graph:** a note you drag stays where you put it, on any device (**Let it move again** or **Reset layout** release them); colour notes by tag instead of folder; show only a folder (with its subfolders) or notes updated in the last week, month or year; and under each note, **Linked notes as a graph** draws the note with the notes it links with.
 
 ## [0.6.0] - 2026-11-03
 

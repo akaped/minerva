@@ -31,7 +31,13 @@ import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
-import { buildGraph, neighborhood, mountGraph, folderColor } from "./graph.js";
+import {
+  buildGraph,
+  neighborhood,
+  mountGraph,
+  folderColor,
+  tagColors,
+} from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
 import { recordingBlocks, timestamp } from "./recording.js";
 import { present } from "./presentation.js";
@@ -1728,6 +1734,8 @@ async function noteFromReply(markdown, question, scope) {
 async function navigate(v, f = null) {
   graphView?.destroy();
   graphView = null;
+  localGraph?.destroy();
+  localGraph = null;
   noteTabs?.hide();
   videos.stop();
   await flush();
@@ -1973,6 +1981,8 @@ async function openNote(id, { split = false, block = null } = {}) {
   await flush();
   videos.stop();
   stopLive();
+  localGraph?.destroy();
+  localGraph = null;
   note = await api("notes/" + id);
   workspaceId = workspaceOfNote(note) || workspaceId;
   rememberRendered();
@@ -2733,8 +2743,48 @@ function renderBacklinks() {
   const links = shareMode ? [] : note.backlinks || [];
   const linksOut = note.blocks.some((b) => b.markdown.includes("](#note/"));
   panel.hidden = !links.length && !linksOut;
-  panel.innerHTML = `${links.length ? `<h2>${$tn(links.length, "Linked from {count} note", "Linked from {count} notes")}</h2>${links.map((l) => `<a class="backlink" href="#note/${esc(l.id)}">${esc(l.icon)} ${esc(l.title)}</a>`).join("")}` : ""}${shareMode ? "" : `<button class="text-link graph-link" id="show-graph">${icon("graph")}${$t("Show in the graph")}</button>`}`;
+  panel.innerHTML = `${links.length ? `<h2>${$tn(links.length, "Linked from {count} note", "Linked from {count} notes")}</h2>${links.map((l) => `<a class="backlink" href="#note/${esc(l.id)}">${esc(l.icon)} ${esc(l.title)}</a>`).join("")}` : ""}${shareMode ? "" : `<details class="local-graph" id="local-graph" ${localGraphOpen() ? "open" : ""}><summary>${$t("Linked notes as a graph")}</summary><div class="local-graph-body"><canvas id="local-graph-canvas" role="img" aria-label="${$t("This note and the notes it links with")}"></canvas></div></details><button class="text-link graph-link" id="show-graph">${icon("graph")}${$t("Show in the graph")}</button>`}`;
   $("#show-graph", panel)?.addEventListener("click", () => showGraph(note.id));
+  const details = $("#local-graph", panel);
+  if (!details) return;
+  details.addEventListener("toggle", () => {
+    try {
+      localStorage.setItem("minerva.localGraph", details.open ? "1" : "");
+    } catch {}
+    if (details.open) drawLocalGraph().catch(() => {});
+    else {
+      localGraph?.destroy();
+      localGraph = null;
+    }
+  });
+  if (details.open) drawLocalGraph().catch(() => {});
+}
+// The small graph under a note: the note and the notes it links with.
+let localGraph = null;
+function localGraphOpen() {
+  try {
+    return localStorage.getItem("minerva.localGraph") === "1";
+  } catch {
+    return false;
+  }
+}
+async function drawLocalGraph() {
+  localGraph?.destroy();
+  localGraph = null;
+  const id = note?.id;
+  const wid = workspaceOfNote(note);
+  if (!id || !wid) return;
+  const raw = await api(`workspaces/${wid}/graph`);
+  const canvas = $("#local-graph-canvas");
+  if (note?.id !== id || !canvas) return;
+  const graph = neighborhood(buildGraph(raw), id, 1);
+  const folderIds = [...new Set(raw.nodes.map((n) => n.folder_id))];
+  localGraph = mountGraph(canvas, graph, {
+    color: (n) => folderColor(folderIds, n.folder),
+    onOpen: (n) => n.id !== id && openGraphNode(n),
+  });
+  // All of it in sight, this note marked.
+  localGraph.select(id);
 }
 /** The graph around a note: in the main page when the note is in a tab. */
 function showGraph(id) {
@@ -2742,7 +2792,15 @@ function showGraph(id) {
   navigate("graph", id).catch(error);
 }
 // The graph view's choices, kept while the page is open.
-const graphChoices = { tags: false, orphans: true, journal: true, depth: 2 };
+const graphChoices = {
+  tags: false,
+  orphans: true,
+  journal: true,
+  depth: 2,
+  folder: "",
+  since: "",
+  color: "folder",
+};
 let graphView = null;
 /**
  * The graph of the workspace's notes, or of the notes around `focus` (a note
@@ -2753,65 +2811,175 @@ async function renderGraph(focus = null) {
   graphView = null;
   $("#breadcrumb").textContent = $t("Graph");
   $("#content").innerHTML = `<section class="page graph-page"><p class="hint">${$t("Drawing the graph…")}</p></section>`;
-  const raw = await api(`workspaces/${workspaceId}/graph`);
+  const wid = workspaceId;
+  const raw = await api(`workspaces/${wid}/graph`);
   if (view !== "graph") return;
-  const whole = buildGraph(raw, graphChoices);
+  // A folder chosen in another workspace does not apply here.
+  if (!folders().some((f) => f.id === graphChoices.folder)) graphChoices.folder = "";
+  // A folder filter keeps its subfolders too.
+  const inFolder = graphChoices.folder
+    ? new Set(
+        folders()
+          .filter((f) => folderPath(f.id).some((p) => p.id === graphChoices.folder))
+          .map((f) => f.id),
+      )
+    : null;
+  const since = graphChoices.since
+    ? Math.floor(Date.now() / 1000) - Number(graphChoices.since) * 86400
+    : 0;
+  const whole = buildGraph(raw, { ...graphChoices, folders: inFolder, since });
   const around = focus && whole.nodes.find((n) => n.id === focus);
   const graph = around ? neighborhood(whole, focus, graphChoices.depth) : whole;
   const folderIds = [...new Set(raw.nodes.map((n) => n.folder_id))];
   const folderName = (id) => data.folders.find((f) => f.id === id)?.name || "";
+  const byTag = graphChoices.color === "tag";
+  const tagged = tagColors(graph.nodes.filter((n) => n.kind === "note"));
   const notes = graph.nodes.filter((n) => n.kind === "note").length;
-  $("#content").innerHTML = `<section class="page graph-page"><div class="page-heading"><div><h1>${around ? $t("Around “{label}”", { label: esc(around.label) }) : $t("Graph")}</h1><p class="subtitle">${$tn(notes, "{count} note", "{count} notes")} · ${$tn(graph.edges.length, "{count} link", "{count} links")}. ${$t("Drag to move, scroll to zoom, click a note to open it.")}</p></div></div><div class="graph-toolbar"><div class="graph-find"><input type="search" id="graph-search" placeholder="${$t("Find a note…")}" aria-label="${$t("Find a note in the graph")}" autocomplete="off"><div class="graph-results" id="graph-results" role="listbox" aria-label="${$t("Matching notes")}"></div></div>${around ? `<label class="cal-by">${$t("Links away")}<select id="graph-depth">${[1, 2, 3].map((d) => `<option ${d === graphChoices.depth ? "selected" : ""}>${d}</option>`).join("")}</select></label><button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}${[
-    ["tags", "Tags"],
-    ["orphans", "Unlinked notes"],
-    ["journal", "Journal"],
-  ]
-    .map(
-      ([key, label]) =>
-        `<label class="checkbox-label"><input type="checkbox" data-graph-choice="${key}" ${graphChoices[key] ? "checked" : ""}>${label}</label>`,
-    )
-    .join("")}<button class="btn" id="graph-fit">${$t("Fit")}</button></div><div class="graph-wrap"><canvas id="graph-canvas" role="img" aria-label="Graph of ${notes} notes and their links. Use “Find a note” and the list beside it to move through it with the keyboard."></canvas><aside class="graph-panel" id="graph-panel" aria-live="polite"></aside></div><div class="graph-legend">${folderIds
-    .filter((id) => graph.nodes.some((n) => n.folder === id))
-    .map(
-      (id) =>
-        `<span><i style="background:${folderColor(folderIds, id)}"></i>${esc(folderName(id))}</span>`,
-    )
-    .join("")}</div>${graph.nodes.length ? "" : `<div class="empty"><h3>${$t("Nothing to draw yet.")}</h3>${$t("Link notes with")} <code>[[</code> ${$t("in the editor, and they appear here connected.")}</div>`}</section>`;
+  let positions = { ...(raw.positions || {}) };
+  const legend = byTag
+    ? tagged.tags.map(
+        (t) =>
+          `<span><i style="background:${tagged.colorOf(t)}"></i>#${esc(t)}</span>`,
+      )
+    : folderIds
+        .filter((id) => graph.nodes.some((n) => n.folder === id))
+        .map(
+          (id) =>
+            `<span><i style="background:${folderColor(folderIds, id)}"></i>${esc(folderName(id))}</span>`,
+        );
+  const select = (id, label, options, value) =>
+    `<label class="cal-by">${label}<select id="${id}">${options.map(([v, text]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
+  $("#content").innerHTML =
+    `<section class="page graph-page"><div class="page-heading"><div><h1>${around ? $t("Around “{label}”", { label: esc(around.label) }) : $t("Graph")}</h1><p class="subtitle">${$tn(notes, "{count} note", "{count} notes")} · ${$tn(graph.edges.length, "{count} link", "{count} links")}. ${$t("Drag to move, scroll to zoom, click a note to open it.")} ${$t("A note you drag stays where you put it.")}</p></div></div><div class="graph-toolbar"><div class="graph-find"><input type="search" id="graph-search" placeholder="${$t("Find a note…")}" aria-label="${$t("Find a note in the graph")}" autocomplete="off"><div class="graph-results" id="graph-results" role="listbox" aria-label="${$t("Matching notes")}"></div></div>${around ? `<label class="cal-by">${$t("Links away")}<select id="graph-depth">${[1, 2, 3].map((d) => `<option ${d === graphChoices.depth ? "selected" : ""}>${d}</option>`).join("")}</select></label><button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}${select(
+      "graph-folder",
+      $t("Folder"),
+      [
+        ["", $t("All folders")],
+        ...folders()
+          .filter((f) => raw.nodes.some((n) => n.folder_id === f.id) || data.folders.some((c) => c.parent_id === f.id))
+          .map((f) => [
+            f.id,
+            folderPath(f.id)
+              .map((p) => p.name)
+              .join(" / "),
+          ]),
+      ],
+      graphChoices.folder,
+    )}${select(
+      "graph-since",
+      $t("Updated"),
+      [
+        ["", $t("Any time")],
+        ["7", $t("In the last week")],
+        ["30", $t("In the last month")],
+        ["365", $t("In the last year")],
+      ],
+      graphChoices.since,
+    )}${select(
+      "graph-color",
+      $t("Colour by"),
+      [
+        ["folder", $t("Folder")],
+        ["tag", $t("Tag")],
+      ],
+      graphChoices.color,
+    )}${[
+      ["tags", $t("Tags")],
+      ["orphans", $t("Unlinked notes")],
+      ["journal", $t("Journal")],
+    ]
+      .map(
+        ([key, label]) =>
+          `<label class="checkbox-label"><input type="checkbox" data-graph-choice="${key}" ${graphChoices[key] ? "checked" : ""}>${label}</label>`,
+      )
+      .join(
+        "",
+      )}<button class="btn" id="graph-fit">${$t("Fit")}</button><button class="btn" id="graph-reset" ${Object.keys(positions).length ? "" : "hidden"} title="${$t("Let every note you placed move freely again")}">${$t("Reset layout")}</button></div><div class="graph-wrap"><canvas id="graph-canvas" role="img" aria-label="${$tn(notes, "Graph of {count} note and its links. Use “Find a note” and the list beside it to move through it with the keyboard.", "Graph of {count} notes and their links. Use “Find a note” and the list beside it to move through it with the keyboard.")}"></canvas><aside class="graph-panel" id="graph-panel" aria-live="polite"></aside></div><div class="graph-legend">${legend.join("")}${byTag && tagged.tags.length ? `<span><i class="untagged"></i>${$t("Other tags or none")}</span>` : ""}</div>${graph.nodes.length ? "" : `<div class="empty"><h3>${raw.nodes.length ? $t("No notes match these filters.") : $t("Nothing to draw yet.")}</h3>${raw.nodes.length ? "" : `${$t("Link notes with")} <code>[[</code> ${$t("in the editor, and they appear here connected.")}`}</div>`}</section>`;
   const panel = $("#graph-panel");
+  // Positions are saved shortly after the last drag.
+  let unsaved = {};
+  let saveTimer = 0;
+  const savePositions = (changes) => {
+    Object.assign(unsaved, changes);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const body = { positions: unsaved };
+      unsaved = {};
+      api(`workspaces/${wid}/graph/positions`, "PUT", body)
+        .then((r) => {
+          positions = r.positions;
+          $("#graph-reset")?.toggleAttribute(
+            "hidden",
+            !Object.keys(positions).length,
+          );
+        })
+        .catch(error);
+    }, 400);
+  };
   const describe = (node) => {
     if (!node) {
       panel.innerHTML = `<p class="hint">${$t("Point at a note to see its links, or find one above.")}</p>`;
       return;
     }
     const linked = graphView.neighbors(node.id);
-    panel.innerHTML = `<h2>${node.kind === "tag" ? esc(node.label) : esc(node.label)}</h2>${node.kind === "note" ? `<p class="hint">${esc(folderName(node.folder))}</p>` : ""}<div class="graph-actions"><button class="btn primary" data-graph-open>${node.kind === "tag" ? $t("Show notes") : $t("Open")}</button>${node.kind === "note" && node.id !== focus ? `<button class="btn" data-graph-around>${$t("Around this note")}</button>` : ""}</div>${linked.length ? `<h3>${$t("Connected")}</h3><ul>${linked.map((n) => `<li><button class="text-link" data-graph-select="${esc(n.id)}">${esc(n.label)}</button></li>`).join("")}</ul>` : `<p class="hint">${$t("No links.")}</p>`}`;
+    panel.innerHTML = `<h2>${esc(node.label)}</h2>${node.kind === "note" ? `<p class="hint">${esc(folderName(node.folder))}</p>` : ""}<div class="graph-actions"><button class="btn primary" data-graph-open>${node.kind === "tag" ? $t("Show notes") : $t("Open")}</button>${node.kind === "note" && node.id !== focus ? `<button class="btn" data-graph-around>${$t("Around this note")}</button>` : ""}${graphView.isFixed(node.id) ? `<button class="btn" data-graph-release>${$t("Let it move again")}</button>` : ""}</div>${linked.length ? `<h3>${$t("Connected")}</h3><ul>${linked.map((n) => `<li><button class="text-link" data-graph-select="${esc(n.id)}">${esc(n.label)}</button></li>`).join("")}</ul>` : `<p class="hint">${$t("No links.")}</p>`}`;
     $("[data-graph-open]", panel).onclick = () => openGraphNode(node);
     if ($("[data-graph-around]", panel))
       $("[data-graph-around]", panel).onclick = () =>
         navigate("graph", node.id).catch(error);
+    if ($("[data-graph-release]", panel))
+      $("[data-graph-release]", panel).onclick = () => {
+        graphView.release(node.id);
+        savePositions({ [node.id]: null });
+        describe(node);
+      };
     $$("[data-graph-select]", panel).forEach(
       (b) => (b.onclick = () => graphView.center(b.dataset.graphSelect)),
     );
   };
-  if (!graph.nodes.length) return;
-  graphView = mountGraph($("#graph-canvas"), graph, {
-    color: (n) => folderColor(folderIds, n.folder),
-    onOpen: openGraphNode,
-    onSelect: describe,
-    focus: around ? focus : null,
-  });
-  describe(around || null);
+  const rerender = () => renderGraph(focus).catch(error);
   $$("[data-graph-choice]").forEach((box) =>
     box.addEventListener("change", () => {
       graphChoices[box.dataset.graphChoice] = box.checked;
-      renderGraph(focus).catch(error);
+      rerender();
     }),
   );
+  for (const [id, key] of [
+    ["#graph-folder", "folder"],
+    ["#graph-since", "since"],
+    ["#graph-color", "color"],
+  ])
+    $(id).addEventListener("change", (e) => {
+      graphChoices[key] = e.target.value;
+      rerender();
+    });
   $("#graph-depth")?.addEventListener("change", (e) => {
     graphChoices.depth = Number(e.target.value);
-    renderGraph(focus).catch(error);
+    rerender();
   });
   action($("#graph-whole"), "click", () => navigate("graph"));
+  action($("#graph-reset"), "click", async () => {
+    clearTimeout(saveTimer);
+    unsaved = {};
+    await api(`workspaces/${wid}/graph/positions`, "PUT", { reset: true });
+    rerender();
+  });
+  if (!graph.nodes.length) return;
+  graphView = mountGraph($("#graph-canvas"), graph, {
+    color: byTag
+      ? (n) => tagged.color(n)
+      : (n) => folderColor(folderIds, n.folder),
+    plain: byTag ? "#a3abb9" : null,
+    positions,
+    onOpen: openGraphNode,
+    onSelect: describe,
+    onArrange: (node, xy) => {
+      savePositions({ [node.id]: xy });
+      describe(node);
+    },
+    focus: around ? focus : null,
+  });
+  describe(around || null);
   action($("#graph-fit"), "click", () => graphView.fit());
   const search = $("#graph-search"),
     results = $("#graph-results");

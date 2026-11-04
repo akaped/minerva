@@ -9,19 +9,33 @@
 /**
  * Nodes and edges from `GET workspaces/{id}/graph`.
  * Options: `tags` adds a node per tag, linked to its notes; `orphans: false`
- * leaves out notes with no links; `journal: false` leaves out journal entries.
+ * leaves out notes with no links; `journal: false` leaves out journal entries;
+ * `folders` (a set of folder IDs) keeps only notes in those folders; `since`
+ * (seconds) keeps only notes updated since then.
  */
 export function buildGraph(
   raw,
-  { tags = false, orphans = true, journal = true } = {},
+  {
+    tags = false,
+    orphans = true,
+    journal = true,
+    folders = null,
+    since = 0,
+  } = {},
 ) {
-  const notes = raw.nodes.filter((n) => journal || !n.journal);
+  const notes = raw.nodes.filter(
+    (n) =>
+      (journal || !n.journal) &&
+      (!folders || folders.has(n.folder_id)) &&
+      (!since || (n.updated_at || 0) >= since),
+  );
   const index = new Map(notes.map((n, i) => [n.id, i]));
   const nodes = notes.map((n) => ({
     id: n.id,
     label: n.title,
     kind: "note",
     folder: n.folder_id,
+    tags: n.tags || [],
     degree: 0,
   }));
   const edges = [];
@@ -103,18 +117,24 @@ function random(seed) {
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 }
 
-/** Positions for `graph`, started on a spiral so the first steps are calm. */
-export function createSimulation(graph, { seed = 7 } = {}) {
+/**
+ * Positions for `graph`, started on a spiral so the first steps are calm.
+ * `positions` ({id: [x, y]}) places the nodes a person arranged, which then
+ * stay put (`fixed`).
+ */
+export function createSimulation(graph, { seed = 7, positions = {} } = {}) {
   const r = random(seed);
-  const points = graph.nodes.map((_, i) => {
+  const points = graph.nodes.map((n, i) => {
     const angle = i * 2.399963; // golden angle
     const radius = 12 * Math.sqrt(i + 1);
+    const kept = positions[n.id];
     return {
-      x: Math.cos(angle) * radius + (r() - 0.5),
-      y: Math.sin(angle) * radius + (r() - 0.5),
+      x: kept ? kept[0] : Math.cos(angle) * radius + (r() - 0.5),
+      y: kept ? kept[1] : Math.sin(angle) * radius + (r() - 0.5),
       vx: 0,
       vy: 0,
       pinned: false,
+      fixed: !!kept,
     };
   });
   return { graph, points, alpha: 1 };
@@ -222,7 +242,7 @@ export function tick(sim) {
   for (const p of points) {
     p.vx -= p.x * GRAVITY * sim.alpha;
     p.vy -= p.y * GRAVITY * sim.alpha;
-    if (p.pinned) {
+    if (p.pinned || p.fixed) {
       p.vx = p.vy = 0;
       continue;
     }
@@ -259,6 +279,28 @@ export function folderColor(folders, id) {
   const i = folders.indexOf(id);
   return i < 0 ? null : PALETTE[i % PALETTE.length];
 }
+/**
+ * Colouring by tag: the most used tags (up to the palette's size) get a colour
+ * each, and a note takes the colour of its most used tag. Returns
+ * `{tags, color(node)}`; notes with none of those tags get `null`.
+ */
+export function tagColors(nodes) {
+  const counts = new Map();
+  for (const n of nodes)
+    for (const t of n.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
+  const tags = [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, PALETTE.length)
+    .map(([t]) => t);
+  return {
+    tags,
+    colorOf: (tag) => PALETTE[tags.indexOf(tag)] || null,
+    color(node) {
+      const best = tags.find((t) => (node.tags || []).includes(t));
+      return best ? PALETTE[tags.indexOf(best)] : null;
+    },
+  };
+}
 const radius = (n) =>
   n.kind === "tag" ? 3.5 : 3.5 + Math.sqrt(n.degree) * 1.6;
 
@@ -268,7 +310,7 @@ const radius = (n) =>
  * node ID to centre on). Returns `{ select(id), center(id), destroy() }`.
  */
 export function mountGraph(canvas, graph, options = {}) {
-  const sim = createSimulation(graph);
+  const sim = createSimulation(graph, { positions: options.positions || {} });
   const ctx = canvas.getContext("2d");
   const view = { x: 0, y: 0, k: 1 };
   let hover = -1,
@@ -353,7 +395,10 @@ export function mountGraph(canvas, graph, options = {}) {
       const dim = focus >= 0 && i !== focus && !near.has(i);
       ctx.globalAlpha = dim ? 0.25 : 1;
       const r = radius(n) * Math.max(0.6, Math.min(view.k, 1.6));
-      ctx.fillStyle = n.kind === "tag" ? muted : options.color?.(n) || accent;
+      ctx.fillStyle =
+        n.kind === "tag"
+          ? muted
+          : options.color?.(n) || options.plain || accent;
       ctx.beginPath();
       if (n.kind === "tag") ctx.rect(x - r, y - r, r * 2, r * 2);
       else ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -460,6 +505,15 @@ export function mountGraph(canvas, graph, options = {}) {
     if (i >= 0) sim.points[i].pinned = false;
     drag = null;
     if (i >= 0 && !moved) options.onOpen?.(graph.nodes[i]);
+    // A note put somewhere stays there.
+    if (i >= 0 && moved && options.onArrange) {
+      const p = sim.points[i];
+      p.fixed = true;
+      options.onArrange(graph.nodes[i], [
+        Math.round(p.x * 10) / 10,
+        Math.round(p.y * 10) / 10,
+      ]);
+    }
   };
   canvas.addEventListener("pointerup", release);
   canvas.addEventListener("pointercancel", release);
@@ -512,6 +566,17 @@ export function mountGraph(canvas, graph, options = {}) {
       moved = false;
       fit();
       if (!frame) draw();
+    },
+    /** Lets an arranged node move with the others again. */
+    release(id) {
+      const i = graph.nodes.findIndex((n) => n.id === id);
+      if (i < 0) return;
+      sim.points[i].fixed = false;
+      wake(0.3);
+    },
+    isFixed: (id) => {
+      const i = graph.nodes.findIndex((n) => n.id === id);
+      return i >= 0 && sim.points[i].fixed;
     },
     neighbors: (id) => {
       const i = graph.nodes.findIndex((n) => n.id === id);

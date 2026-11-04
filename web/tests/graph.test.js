@@ -6,6 +6,7 @@ import {
   createSimulation,
   settle,
   folderColor,
+  tagColors,
 } from "../graph.js";
 
 const raw = {
@@ -98,4 +99,40 @@ test("folder colours repeat", () => {
   assert.equal(folderColor(["f", "g"], "g"), folderColor(["f", "g"], "g"));
   assert.notEqual(folderColor(["f", "g"], "f"), folderColor(["f", "g"], "g"));
   assert.equal(folderColor(["f"], "x"), null);
+});
+
+test("filters by folder and by the date of the last change", () => {
+  const dated = {
+    nodes: raw.nodes.map((n, i) => ({ ...n, updated_at: 1000 * (i + 1) })),
+    links: raw.links,
+  };
+  const inF = buildGraph(dated, { folders: new Set(["f"]) });
+  assert.deepEqual(
+    inF.nodes.map((n) => n.id),
+    ["a", "b"],
+  );
+  assert.deepEqual(inF.edges, [[0, 1]]);
+  const recent = buildGraph(dated, { since: 3500 });
+  assert.deepEqual(
+    recent.nodes.map((n) => n.id),
+    ["d", "e"],
+  );
+});
+
+test("colours by the most used tag", () => {
+  const g = buildGraph(raw);
+  const t = tagColors(g.nodes);
+  assert.deepEqual(t.tags, ["x", "y"]);
+  const [a, b, c] = g.nodes;
+  assert.equal(t.color(a), t.colorOf("x"));
+  assert.equal(t.color(b), t.colorOf("x"), "x is used more than y");
+  assert.equal(t.color(c), null);
+});
+
+test("arranged nodes stay where they were put", () => {
+  const g = buildGraph(raw);
+  const sim = settle(createSimulation(g, { positions: { b: [500, -40] } }));
+  const b = sim.points[1];
+  assert.deepEqual([b.x, b.y, b.fixed], [500, -40, true]);
+  assert.equal(sim.points[0].fixed, false);
 });

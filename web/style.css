@@ -7782,6 +7782,30 @@ body.comments-open .note-pane {
   margin-right: 6px;
   border-radius: 50%;
 }
+.graph-legend i.untagged {
+  background: #a3abb9;
+}
+.local-graph {
+  margin: 14px 0 6px;
+}
+.local-graph summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.local-graph-body {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.local-graph canvas {
+  display: block;
+  width: 100%;
+  height: 240px;
+  cursor: grab;
+}
 .graph-link {
   display: inline-flex;
   align-items: center;

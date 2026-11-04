@@ -17,7 +17,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
 - [ ] **Search**: index database records and attachment text (PDFs); search filters (folder, tag, date) in the Ctrl+K dialog.
 - [ ] **Databases**: saving the board grouping and calendar property chosen for an embedded view (embeds use the first that fits); formulas over lists of related records, and rollups of rollups; number formats (currency, percent); records' pages in the desktop app's offline copies; reordering cards within a board column.
-- [ ] **Graph**: keep the positions people arrange; colour by tag as well as folder; filter by folder or date; a small graph of a note's neighbours inside the note.
 - [ ] **MCP and API**: tools to change or move a block and to attach files; OAuth for clients that only support it; a token's last use shown in the list; scopes narrower than "everything I can do" for personal tokens.
 - [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
 

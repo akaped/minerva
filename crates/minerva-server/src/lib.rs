@@ -266,6 +266,7 @@ impl Store {
         let ai = ai::initialize(&db, path)?;
         server_plugins::initialize(&db)?;
         flashcards::initialize(&db)?;
+        graph::initialize(&db)?;
         let (data, saved) = storage::open(&db, initial, |data| {
             ensure_personal(data);
             // Databases from before replication get a change-log row and field clocks
@@ -819,6 +820,7 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
                 "flashcard_progress",
                 "flashcard_reviews",
                 "flashcard_settings",
+                "graph_positions",
                 "plugin_jobs",
             ] {
                 tx.execute(
@@ -844,6 +846,11 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
             ] {
                 tx.execute(sql, [&owner]).map_err(|_| internal())?;
             }
+            tx.execute(
+                "DELETE FROM graph_positions WHERE workspace_id=?1",
+                [&gone.id],
+            )
+            .map_err(|_| internal())?;
         }
         tx.commit().map_err(|_| internal())?;
         s.saved = saved;
@@ -1265,7 +1272,10 @@ fn dispatch(
         ));
     }
     if let ("GET", ["workspaces", wid, "graph"]) = (method, parts.as_slice()) {
-        return Ok((graph::route(d, &u, wid)?, None));
+        return Ok((graph::with_positions(db, d, &u, wid)?, None));
+    }
+    if let ("PUT", ["workspaces", wid, "graph", "positions"]) = (method, parts.as_slice()) {
+        return Ok((graph::save_positions(db, d, &u, wid, &v)?, None));
     }
     if parts.as_slice() == ["calendar-feed"] {
         return Ok((calendar::route(d, &u, method, &v, headers)?, None));
