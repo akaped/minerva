@@ -8481,3 +8481,31 @@ body.presenting {
   color: var(--muted);
   font-size: 0.9em;
 }
+/* The text a comment thread is about, in its block. */
+mark.comment-quote {
+  background: color-mix(in srgb, #f6c344 35%, transparent);
+  border-bottom: 2px solid #e0a800;
+  color: inherit;
+  cursor: pointer;
+}
+.comment-edit {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.comment-edit + .comment-delete {
+  margin-left: 0;
+}
+.widget-comment {
+  font-weight: 400;
+  color: var(--muted);
+}
+.comment-edit {
+  opacity: 0;
+}
+.comment:hover .comment-edit,
+.comment-edit:focus-visible {
+  opacity: 1;
+}

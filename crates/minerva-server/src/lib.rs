@@ -1305,7 +1305,7 @@ fn dispatch(
     }
 
     if method == "GET" {
-        if let Some(result) = mail::people_route(d, &u, &parts)? {
+        if let Some(result) = mail::people_route(db, d, &u, &parts)? {
             return Ok((result, None));
         }
     }

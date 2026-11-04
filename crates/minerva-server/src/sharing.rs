@@ -514,6 +514,16 @@ pub(super) async fn shared(
                 persist(&mut s, d)?;
                 Ok(axum::Json(result).into_response())
             }
+            // Guests with an edit link comment too.
+            (m, ["comments", rest @ ..]) => {
+                let v = if body.is_empty() { json!({}) } else { json_body()? };
+                let mut d = s.data.clone();
+                let result = comments::guest_route(&s.db, &mut d, &share.id, &share.role, &note, m, rest, &v)?;
+                if m != "GET" {
+                    persist(&mut s, d)?;
+                }
+                Ok(axum::Json(result).into_response())
+            }
             ("POST", ["attachments"]) => {
                 if share.role != Role::Editor {
                     return Err(forbidden());

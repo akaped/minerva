@@ -30,10 +30,42 @@ export function ago(at, now = Date.now() / 1000) {
   });
 }
 
+/** A quote as read: without Markdown marks or link targets. */
+export function plainQuote(quote) {
+  return quote
+    .replace(/\]\([^)]*\)/g, "")
+    .replace(/[*_~`=[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
- * `deps`: `api`, `esc`, `error`, `announce`, `me()` (the user's ID),
- * `canResolveAll()` (an editor of the note), `note()` (the open note) and
- * `watch(id, onChange)` (live signals; returns a function that stops them).
+ * Where a thread's quote is in a block's rendered text: Markdown marks and
+ * link targets left out, spaces as one. Returns `[start, end]` in `text`, or
+ * null.
+ */
+export function findQuote(text, quote) {
+  const plain = plainQuote(quote);
+  if (plain.length < 2) return null;
+  // Compare without repeated spaces, keeping a map back to `text`.
+  const map = [];
+  let flat = "";
+  for (let i = 0; i < text.length; i++) {
+    const space = /\s/.test(text[i]);
+    if (space && flat.endsWith(" ")) continue;
+    flat += space ? " " : text[i];
+    map.push(i);
+  }
+  const at = flat.toLowerCase().indexOf(plain.toLowerCase());
+  if (at < 0) return null;
+  return [map[at], map[at + plain.length - 1] + 1];
+}
+
+/**
+ * `deps`: `api`, `esc`, `error`, `announce`, `canResolveAll()` (an editor of
+ * the note), `note()` (the open note), `watch(id, onChange)` (live signals;
+ * returns a function that stops them), and for share-link guests `path` (where
+ * the comments are) and `guest: true`.
  */
 export function createComments(deps) {
   const $ = (s, root = document) => root.querySelector(s);
@@ -48,11 +80,12 @@ export function createComments(deps) {
     loading = null;
   const names = () =>
     new Map(people.map((p) => [p.email.toLowerCase(), p.name]));
+  const path = (id = noteId) => deps.path || `notes/${id}/comments`;
 
   async function load() {
     if (!noteId) return;
     const id = noteId;
-    loading = deps.api(`notes/${id}/comments`).then(
+    loading = deps.api(path(id)).then(
       (list) => {
         if (id !== noteId) return;
         threads = list;
@@ -70,10 +103,12 @@ export function createComments(deps) {
     noteId = id;
     threads = [];
     people = [];
-    deps
-      .api(`notes/${id}/people`)
-      .then((list) => id === noteId && (people = list))
-      .catch(() => {});
+    // Guests do not see the people who can open the note.
+    if (!deps.guest)
+      deps
+        .api(`notes/${id}/people`)
+        .then((list) => id === noteId && (people = list))
+        .catch(() => {});
     load();
     let pending = null;
     unwatch = deps.watch(id, () => {
@@ -117,6 +152,7 @@ export function createComments(deps) {
       };
       el.append(badge);
     }
+    highlightQuotes();
     const button = $("#comments-toggle");
     if (button) {
       const n = openThreads().length;
@@ -129,6 +165,48 @@ export function createComments(deps) {
     }
   }
 
+  /** The text each open thread quotes, marked in its block. */
+  function highlightQuotes() {
+    document.querySelectorAll("mark.comment-quote").forEach((m) => {
+      const parent = m.parentNode;
+      m.replaceWith(...m.childNodes);
+      parent?.normalize();
+    });
+    for (const t of openThreads()) {
+      if (!t.block_id || !t.quote) continue;
+      const body = $(`[data-block="${CSS.escape(t.block_id)}"] .block-body`);
+      if (!body || body.querySelector("textarea")) continue;
+      const nodes = [];
+      let text = "";
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const n = walker.currentNode;
+        if (n.parentElement.closest("button, math, svg, .katex, mark"))
+          continue;
+        nodes.push([n, text.length]);
+        text += n.data;
+      }
+      const found = findQuote(text, t.quote);
+      if (!found) continue;
+      const [from, to] = found;
+      for (const [n, start] of nodes) {
+        const a = Math.max(from, start),
+          b = Math.min(to, start + n.data.length);
+        if (a >= b) continue;
+        const range = document.createRange();
+        range.setStart(n, a - start);
+        range.setEnd(n, b - start);
+        const mark = document.createElement("mark");
+        mark.className = "comment-quote";
+        mark.title = $t("Commented: open the thread");
+        mark.addEventListener("click", (e) => {
+          e.stopPropagation();
+          show(t.block_id);
+        });
+        range.surroundContents(mark);
+      }
+    }
+  }
   function show(focusBlock = null) {
     open = true;
     draw();
@@ -169,12 +247,12 @@ export function createComments(deps) {
   }
   function threadHTML(t) {
     const esc = deps.esc;
-    const mine = t.comments[0]?.author === deps.me();
+    const mine = !!t.comments[0]?.mine;
     const resolvable = deps.canResolveAll() || mine;
-    return `<article class="comment-thread ${t.resolved ? "resolved" : ""}" data-thread="${t.id}" data-block="${esc(t.block_id || "")}"><header>${t.block_id ? `<button class="comment-anchor" data-goto="${esc(t.block_id)}" title="${$t("Go to the block")}">${t.quote ? `“${esc(t.quote)}”` : esc(blockLabel(t.block_id))}</button>` : `<span class="comment-anchor">${$t("On the note")}</span>`}${resolvable ? `<button class="btn" data-resolve="${t.id}" data-value="${!t.resolved}">${t.resolved ? $t("Reopen") : $t("Resolve")}</button>` : ""}</header>${t.comments
+    return `<article class="comment-thread ${t.resolved ? "resolved" : ""}" data-thread="${t.id}" data-block="${esc(t.block_id || "")}"><header>${t.block_id ? `<button class="comment-anchor" data-goto="${esc(t.block_id)}" title="${$t("Go to the block")}">${t.quote ? `“${esc(plainQuote(t.quote))}”` : esc(blockLabel(t.block_id))}</button>` : `<span class="comment-anchor">${$t("On the note")}</span>`}${resolvable ? `<button class="btn" data-resolve="${t.id}" data-value="${!t.resolved}">${t.resolved ? $t("Reopen") : $t("Resolve")}</button>` : ""}</header>${t.comments
       .map(
         (c) =>
-          `<div class="comment" data-comment="${c.id}"><div class="comment-meta"><strong>${esc(c.author_name)}</strong><span>${esc(ago(c.created_at))}</span>${c.author === deps.me() ? `<button class="comment-delete" data-delete="${t.id}:${c.id}" title="${c === t.comments[0] ? $t("Delete the thread") : $t("Delete")}" aria-label="${$t("Delete comment")}">×</button>` : ""}</div><div class="comment-text">${commentHTML(c.text, esc, names())}</div></div>`,
+          `<div class="comment" data-comment="${c.id}"><div class="comment-meta"><strong>${esc(c.author_name)}</strong><span>${esc(ago(c.created_at))}${c.edited_at ? ` · ${$t("edited")}` : ""}</span>${c.mine ? `<button class="comment-edit" data-edit="${t.id}:${c.id}" title="${$t("Edit")}" aria-label="${$t("Edit comment")}">✎</button><button class="comment-delete" data-delete="${t.id}:${c.id}" title="${c === t.comments[0] ? $t("Delete the thread") : $t("Delete")}" aria-label="${$t("Delete comment")}">×</button>` : ""}</div><div class="comment-text">${commentHTML(c.text, esc, names())}</div></div>`,
       )
       .join(
         "",
@@ -202,7 +280,7 @@ export function createComments(deps) {
     const esc = deps.esc;
     el.innerHTML = `<header class="comments-head"><h2>${$t("Comments")}</h2><div class="comments-tabs" role="tablist"><button role="tab" aria-selected="${!showResolved}" data-tab="open">${$t("Open {value}", { value: openThreads().length || "" })}</button><button role="tab" aria-selected="${showResolved}" data-tab="resolved">${$t("Resolved")}</button></div><button class="btn" data-new-note-thread title="${$t("Comment on the whole note")}">+</button><button class="btn" data-close aria-label="${$t("Close comments")}">×</button></header>${
       draft
-        ? `<article class="comment-thread comment-draft"><header><span class="comment-anchor">${draft.quote ? `“${esc(draft.quote)}”` : draft.blockId ? esc(blockLabel(draft.blockId)) : $t("On the note")}</span></header>${composer("new")}</article>`
+        ? `<article class="comment-thread comment-draft"><header><span class="comment-anchor">${draft.quote ? `“${esc(plainQuote(draft.quote))}”` : draft.blockId ? esc(blockLabel(draft.blockId)) : $t("On the note")}</span></header>${composer("new")}</article>`
         : ""
     }${shown.map(threadHTML).join("") || `<p class="comments-empty">${showResolved ? $t("No resolved threads.") : $t("No comments yet. Select text or hover a block and choose 💬 to start one.")}</p>`}`;
     bind(el);
@@ -235,7 +313,7 @@ export function createComments(deps) {
       (b) =>
         (b.onclick = () =>
           act(
-            deps.api(`notes/${noteId}/comments/${b.dataset.resolve}`, "PATCH", {
+            deps.api(`${path()}/${b.dataset.resolve}`, "PATCH", {
               resolved: b.dataset.value === "true",
             }),
             b.dataset.value === "true"
@@ -248,9 +326,45 @@ export function createComments(deps) {
         (b.onclick = () => {
           const [tid, cid] = b.dataset.delete.split(":");
           act(
-            deps.api(`notes/${noteId}/comments/${tid}/${cid}`, "DELETE"),
+            deps.api(`${path()}/${tid}/${cid}`, "DELETE"),
             $t("Comment deleted"),
           );
+        }),
+    );
+    // Editing one's own comment, in place.
+    el.querySelectorAll("[data-edit]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const [tid, cid] = b.dataset.edit.split(":");
+          const c = threads
+            .find((t) => t.id === tid)
+            ?.comments.find((x) => x.id === cid);
+          const box = b.closest(".comment")?.querySelector(".comment-text");
+          if (!c || !box) return;
+          box.innerHTML = `<form class="comment-compose comment-editing"><textarea rows="2" maxlength="4000" aria-label="${$t("Edit comment")}"></textarea><div class="comment-actions"><button type="button" class="btn" data-cancel-edit>${$t("Cancel")}</button><button class="btn primary">${$t("Save")}</button></div></form>`;
+          const form = box.querySelector("form"),
+            ta = form.querySelector("textarea");
+          ta.value = c.text;
+          ta.focus();
+          ta.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              form.requestSubmit();
+            } else if (e.key === "Escape") {
+              e.stopPropagation();
+              draw();
+            }
+          });
+          form.querySelector("[data-cancel-edit]").onclick = () => draw();
+          form.onsubmit = (e) => {
+            e.preventDefault();
+            const text = ta.value.trim();
+            if (!text || text === c.text) return draw();
+            act(
+              deps.api(`${path()}/${tid}/${cid}`, "PATCH", { text }),
+              $t("Comment updated"),
+            );
+          };
         }),
     );
     el.querySelectorAll("form.comment-compose").forEach((form) => {
@@ -273,16 +387,14 @@ export function createComments(deps) {
         if (!text) return;
         const body =
           form.dataset.compose === "new"
-            ? deps.api(`notes/${noteId}/comments`, "POST", {
+            ? deps.api(path(), "POST", {
                 block_id: draft?.blockId,
                 quote: draft?.quote,
                 text,
               })
-            : deps.api(
-                `notes/${noteId}/comments/${form.dataset.thread}/replies`,
-                "POST",
-                { text },
-              );
+            : deps.api(`${path()}/${form.dataset.thread}/replies`, "POST", {
+                text,
+              });
         if (form.dataset.compose === "new") draft = null;
         act(body, $t("Comment added"));
       };

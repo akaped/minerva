@@ -9,7 +9,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Follow-ups from the last round
 
-- [ ] **Comments**: in desktop offline copies (they are not replicated yet) and for share-link guests with edit access; editing a comment; comments in the Mentions dashboard widget; highlighting the quoted text in the block.
+- [ ] **Comments**: in desktop offline copies (they are not replicated yet).
 - [ ] **Folding and cards**: fold state shared with the note (as Logseq's `collapsed::`) as an option; link cards on published pages and for share-link guests; choosing between a card and a plain link.
 - [ ] **Live signals for the desktop app and share links**: `minerva://` pages cannot open the WebSocket, and guests are not signed in. Relay signals through the desktop gateway, and give guests a share-scoped socket; until then both poll.
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).

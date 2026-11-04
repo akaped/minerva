@@ -433,7 +433,12 @@ pub(crate) fn comment(d: &mut Data, by: &User, to: &User, note: &Note, text: &st
 }
 /// `GET notes/{id}/people`: the members who can open a note, for the `@`
 /// picker; `GET mentions`: notes that mention you, newest first.
-pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<Value>, ApiError> {
+pub(crate) fn people_route(
+    db: &rusqlite::Connection,
+    d: &Data,
+    u: &User,
+    parts: &[&str],
+) -> Result<Option<Value>, ApiError> {
     match parts {
         ["notes", nid, "people"] => {
             let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
@@ -460,6 +465,8 @@ pub(crate) fn people_route(d: &Data, u: &User, parts: &[&str]) -> Result<Option<
                     Some((n.updated_at, json!({"id": n.id, "title": n.title, "icon": n.icon, "updated_at": n.updated_at, "excerpt": excerpt})))
                 })
                 .collect();
+            // And comments that mention them.
+            found.extend(crate::comments::mentioning(db, d, u));
             found.sort_by(|a, b| b.0.cmp(&a.0));
             Ok(Some(json!(found
                 .into_iter()

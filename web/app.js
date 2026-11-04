@@ -2427,7 +2427,9 @@ function renderEditor() {
       : `<button class="btn icon-btn" id="undo" aria-label="${$t("Undo")}" title="${$t("Undo (Ctrl+Z)")}" ${!can ? "disabled" : ""}>↶</button><button class="btn icon-btn" id="redo" aria-label="${$t("Redo")}" title="${$t("Redo (Ctrl+Shift+Z)")}" ${!can ? "disabled" : ""}>↷</button>`
   }${
     shareMode
-      ? ""
+      ? guestComments()
+        ? `<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="${$t("Comments")}" title="${$t("Comments on this note")}">💬<span class="toolbar-label"> ${$t("Comments")}</span> <span class="comments-count"></span></button>`
+        : ""
       : `<button class="btn icon-btn" id="favorite" aria-label="${$t("Favorite")}" aria-pressed="${!!note.favorite}" title="${$t("Favorite")}" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${!editor || note.trashed ? `disabled title="${$t("Folder editors can share this note")}"` : ""}>${$t("Share")}${sharing.published || sharing.links ? `<span class="share-badge public">${$t("Public")}</span>` : ""}</button>`}<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="${$t("Comments")}" title="${$t("Comments on this note")}">💬<span class="toolbar-label"> ${$t("Comments")}</span> <span class="comments-count"></span></button><button class="btn" id="ask-note" aria-label="${$t("Ask AI")}" title="${$t("Chat with AI about this note, side by side")}">${icon("brain")}<span class="toolbar-label">${$t("Ask AI")}</span></button>`
   }<div class="toolbar-more"><button class="btn icon-btn" id="note-more" aria-haspopup="menu" aria-expanded="false" aria-controls="note-menu" aria-label="${$t("More note tools")}" title="${$t("More")}">${icon("more")}</button><div class="row-menu note-menu" id="note-menu" role="menu" aria-label="${$t("Note tools")}" hidden>${menu}</div></div>`;
   $("#content").innerHTML =
@@ -3342,7 +3344,7 @@ function emptyBlockHTML() {
 }
 function blockHTML(b, i) {
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? `<div class="block-controls"><button class="block-handle" title="${$t("Drag to move · click for options · ↑/↓ to move with the keyboard")}" aria-label="${$t("Block options (drag, or press the up and down arrows, to move)")}" aria-haspopup="menu" aria-expanded="false">⠿</button><button data-remove title="${$t("Delete block")}" aria-label="${$t("Delete block")}">×</button></div>` : shareMode ? "" : `<div class="block-controls"><button class="block-handle readonly" title="${$t("Block options")}" aria-label="${$t("Block options")}" aria-haspopup="menu" aria-expanded="false">⠿</button></div>`}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="${$t("Toggle task")}" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="${$t("Comment on this block")}" aria-label="${$t("Comment on this block")}">💬</button>`}</div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? `<div class="block-controls"><button class="block-handle" title="${$t("Drag to move · click for options · ↑/↓ to move with the keyboard")}" aria-label="${$t("Block options (drag, or press the up and down arrows, to move)")}" aria-haspopup="menu" aria-expanded="false">⠿</button><button data-remove title="${$t("Delete block")}" aria-label="${$t("Delete block")}">×</button></div>` : shareMode ? "" : `<div class="block-controls"><button class="block-handle readonly" title="${$t("Block options")}" aria-label="${$t("Block options")}" aria-haspopup="menu" aria-expanded="false">⠿</button></div>`}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="${$t("Toggle task")}" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode && !guestComments() ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="${$t("Comment on this block")}" aria-label="${$t("Comment on this block")}">💬</button>`}</div>`;
 }
 /** Moves the block at `i` to index `j` and saves. */
 async function moveBlock(i, j) {
@@ -4016,7 +4018,7 @@ function handleMenu(handle, id) {
  */
 function blocksChanged() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
-  setTimeout(() => !shareMode && comments.drawBadges(), 0);
+  setTimeout(() => (!shareMode || guestComments()) && comments.drawBadges(), 0);
   drawPeers();
   drawFolding();
   fillContents();
@@ -4045,7 +4047,7 @@ function removeBlockElement(id) {
 }
 function renderBlocks() {
   setTimeout(() => $("#find-bar") && runFind(), 0);
-  setTimeout(() => !shareMode && comments.drawBadges(), 0);
+  setTimeout(() => (!shareMode || guestComments()) && comments.drawBadges(), 0);
   const root = $("#blocks");
   bindMediaDrop(root);
   root.innerHTML = note.blocks
@@ -4121,17 +4123,28 @@ function applyFormat(ta, format) {
         );
   replaceRange(ta, change);
 }
-// Comments on the open note (not on share links, whose guests are not members).
+// Comments on the open note; on a share link, only for guests who may edit.
 var comments = createComments({
   api,
   esc,
   error,
   announce,
-  me: () => data?.user?.id,
-  canResolveAll: () => !!note && data.roles?.[note.folder_id] === "editor",
+  canResolveAll: () =>
+    !!note &&
+    (guestComments() || data.roles?.[note.folder_id] === "editor"),
   note: () => note,
-  watch: watchNote,
+  watch: (id, onChange) => (shareMode ? () => {} : watchNote(id, onChange)),
+  get path() {
+    return shareMode ? "shared/comments" : undefined;
+  },
+  get guest() {
+    return shareMode;
+  },
 });
+/** A share-link guest who may edit, and so comment. */
+function guestComments() {
+  return shareMode && note?.role === "editor";
+}
 const writingAssist = createWritingAssist({
   api,
   esc,
@@ -4180,7 +4193,7 @@ function updateFormatBar(ta) {
   block.append(bar);
 }
 function formatButtons() {
-  return `<button data-format="bold" title="${$t("Bold (Ctrl+B)")}"><b>B</b></button><button data-format="italic" title="${$t("Italic (Ctrl+I)")}"><i>I</i></button><button data-format="strike" title="${$t("Strikethrough (Ctrl+Shift+X)")}"><s>S</s></button><button data-format="code" title="${$t("Inline code (Ctrl+E)")}"><code>&lt;/&gt;</code></button><button data-format="link" title="${$t("Link (Ctrl+K)")}">🔗</button><button data-format="highlight" class="format-highlight" title="${$t("Highlight (Ctrl+Shift+H)")}">🖍</button>${shareMode ? "" : `<button data-ai class="format-ai" title="${$t("AI: improve, translate, continue (Ctrl+J)")}">${$t("✦ AI")}</button><button data-comment-selection title="${$t("Comment on the selected text")}">💬</button>`}`;
+  return `<button data-format="bold" title="${$t("Bold (Ctrl+B)")}"><b>B</b></button><button data-format="italic" title="${$t("Italic (Ctrl+I)")}"><i>I</i></button><button data-format="strike" title="${$t("Strikethrough (Ctrl+Shift+X)")}"><s>S</s></button><button data-format="code" title="${$t("Inline code (Ctrl+E)")}"><code>&lt;/&gt;</code></button><button data-format="link" title="${$t("Link (Ctrl+K)")}">🔗</button><button data-format="highlight" class="format-highlight" title="${$t("Highlight (Ctrl+Shift+H)")}">🖍</button>${shareMode ? "" : `<button data-ai class="format-ai" title="${$t("AI: improve, translate, continue (Ctrl+J)")}">${$t("✦ AI")}</button>`}${shareMode && !guestComments() ? "" : `<button data-comment-selection title="${$t("Comment on the selected text")}">💬</button>`}`;
 }
 /** What a format bar button (or its shortcut) does to the selection in `ta`. */
 function formatAction(ta, { format, ai, commentSelection }) {
@@ -9755,6 +9768,7 @@ async function startShared() {
   );
   live.presence = blockPresence;
   await live.start();
+  if (guestComments()) comments.attach(note.id);
   $("#app").innerHTML =
     `<a class="skip-link" href="#content">${$t("Skip to content")}</a><div class="shared-shell"><header class="shared-top"><div class="brand"><span class="brand-mark">✳</span>minerva</div><span class="badge">${note.role === "editor" ? $t("Anyone with this link can edit") : $t("View only")}</span><span class="spacer"></span>${themeSelect()}</header><main class="main"><span id="breadcrumb" hidden></span><div id="content" tabindex="-1"></div></main></div>`;
   bindThemeSelect();

@@ -362,7 +362,12 @@ export async function renderDashboard(root, app) {
       .querySelectorAll("[data-note]")
       .forEach((b) =>
         b.addEventListener("click", () =>
-          app.openNote(b.dataset.note).catch(app.error),
+          app
+            .openNote(
+              b.dataset.note,
+              b.dataset.block ? { block: b.dataset.block } : undefined,
+            )
+            .catch(app.error),
         ),
       );
   }
@@ -371,7 +376,7 @@ export async function renderDashboard(root, app) {
       ? `<div class="widget-notes">${notes
           .map(
             (n) =>
-              `<button class="widget-note" data-note="${n.id}"><span>${esc(n.icon || "▤")}</span><strong>${esc(n.title)}</strong><small>${esc(new Date(n.updated_at * 1000).toLocaleDateString())}</small></button>`,
+              `<button class="widget-note" data-note="${n.id}" ${n.block ? `data-block="${esc(n.block)}"` : ""} ${n.comment ? `title="${esc(n.excerpt || "")}"` : ""}><span>${n.comment ? "💬" : esc(n.icon || "▤")}</span><strong>${esc(n.title)}${n.comment ? `<small class="widget-comment"> · ${esc($t("in a comment"))}</small>` : ""}</strong><small>${esc(new Date(n.updated_at * 1000).toLocaleDateString())}</small></button>`,
           )
           .join("")}</div>`
       : `<p class="widget-empty">${empty}</p>`;

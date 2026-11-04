@@ -324,12 +324,15 @@ Administrators see `two_factor` in `GET /admin` users and can reset it with `PAT
 
 ## Comments
 
-`GET /notes/{id}/comments` lists a note's threads: `{id, note_id, block_id, quote, resolved, resolved_by, resolved_by_name, created_at, comments: [{id, author, author_name, text, created_at}]}`. Anyone who can read the note reads and writes comments.
+`GET /notes/{id}/comments` lists a note's threads: `{id, note_id, block_id, quote, resolved, resolved_by, resolved_by_name, created_at, comments: [{id, author, author_name, mine, text, created_at, edited_at?}]}`. Anyone who can read the note reads and writes comments.
 
 - `POST /notes/{id}/comments` with `{text, block_id?, quote?}` starts a thread on a block of the note (quoting up to 500 characters of it) or on the note. Text has 1–4,000 characters; a note has up to 500 threads.
 - `POST /notes/{id}/comments/{thread}/replies` with `{text}` replies (up to 200 per thread), reopening a resolved thread.
 - `PATCH /notes/{id}/comments/{thread}` with `{resolved}`: editors of the note, and the thread's author.
+- `PATCH /notes/{id}/comments/{thread}/{comment}` with `{text}`: the comment's author changes it (`edited_at` is set); only people it newly mentions are emailed.
 - `DELETE /notes/{id}/comments/{thread}/{comment}`: the comment's author; deleting the first comment deletes the thread.
+
+Guests with an edit link use the same calls under `/api/v1/shared/comments…` (with the share cookie): they comment as "Guest", see members only as "Member" (`author` is `someone` but for their own comments), and their mentions email no one. View links get 403. `GET /mentions` lists comments mentioning the caller too (`comment: true`, with `thread` and `block`), beside notes whose text does.
 
 People mentioned as `@person@example.com` who can open the note, and the thread's earlier participants, are emailed (when email is set up), never the author. Comments are deleted with their note, and a change signals open pages through `/api/v1/live`.
 

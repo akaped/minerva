@@ -2211,5 +2211,10 @@
   "Your folder permissions always apply. You can revoke the connection under MCP connections.": "I permessi delle tue cartelle valgono sempre. Puoi revocare il collegamento in Connessioni MCP.",
   "Deny": "Rifiuta",
   "Allow": "Consenti",
-  "Invalid state vector": "Vettore di stato non valido"
+  "Invalid state vector": "Vettore di stato non valido",
+  "Commented: open the thread": "Commentato: apri la discussione",
+  "edited": "modificato",
+  "Edit comment": "Modifica il commento",
+  "Comment updated": "Commento aggiornato",
+  "in a comment": "in un commento"
 }

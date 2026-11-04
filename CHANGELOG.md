@@ -25,6 +25,7 @@ turns that section into the next version.
 - **OAuth for MCP clients** that cannot take a pasted credential (`MINERVA_MCP_OAUTH=1`): they register themselves, you approve them for one workspace on a consent page, read only or read and write, and they get hour-long credentials that renew themselves and show in **MCP connections**, where revoking ends them.
 - **`minerva-cli` in every release**, for Linux and Windows. `minerva-cli backup` run again fetches only what changed since the last backup (and moves renamed or moved notes' files); `--full` fetches everything.
 - **Lighter live editing:** an open note now receives only the changes it lacks instead of the whole note on every sync, which keeps long notes quick on slow connections.
+- **Comments:** edit your own comments (marked “edited”); the text a thread is about is highlighted in its block, and a click on it opens the thread; comments that mention you appear in the Mentions widget; and guests with an edit link can comment and reply too, as “Guest”, seeing members only as “Member”.
 
 ## [0.6.0] - 2026-11-03
 
