@@ -38,12 +38,19 @@ Configuration wrappers and transport-name fields differ by MCP client. The endpo
 
 Credentials with write access also list these tools; read-only credentials neither list nor may call them:
 
-| Tool              | Purpose                                                                                                                       |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `create_document` | `{folder_id, title, markdown?}`: a note in a folder of the workspace. Markdown becomes blocks (a paragraph or list item each) |
-| `append_blocks`   | `{document_id, markdown, after_block_id?}`: adds blocks at the end of a note or after a block; returns the new block IDs      |
-| `add_record`      | `{database_id, cells}`: a database record                                                                                      |
-| `update_record`   | `{database_id, record_id, cells}`: changes some values of a record (`null` clears one); the others stay                        |
+| Tool              | Purpose                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_document` | `{folder_id, title, markdown?}`: a note in a folder of the workspace. Markdown becomes blocks (a paragraph or list item each)                                   |
+| `append_blocks`   | `{document_id, markdown, after_block_id?}`: adds blocks at the end of a note or after a block; returns the new block IDs                                        |
+| `update_block`    | `{document_id, block_id, markdown}`: replaces one block's Markdown                                                                                              |
+| `move_block`      | `{document_id, block_id, after_block_id?}`: moves a block after another, or to the top without `after_block_id`; returns the new order                          |
+| `attach_file`     | `{document_id, filename, content_base64, after_block_id?}`: stores a file (up to 10 MB) on the note and adds a block showing a picture or linking anything else |
+| `add_record`      | `{database_id, cells}`: a database record                                                                                                                       |
+| `update_record`   | `{database_id, record_id, cells}`: changes some values of a record (`null` clears one); the others stay                                                         |
+
+Changes to notes keep the previous version in the note's history and reach open editors, as edits in the app do.
+
+The credentials list (`GET /api/v1/mcp-credentials`) includes `last_used_at`, recorded at most once a minute.
 
 `cells` are keyed by property ID or name and checked like the app's: text, URL, select and dates (`YYYY-MM-DD`) are strings, numbers numbers, checkboxes booleans, multi-select and relation lists of options or record IDs, person a user ID. Created and last-edited times are kept by the server.
 

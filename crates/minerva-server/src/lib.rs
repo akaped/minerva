@@ -267,6 +267,7 @@ impl Store {
         server_plugins::initialize(&db)?;
         flashcards::initialize(&db)?;
         graph::initialize(&db)?;
+        tokens::initialize(&db)?;
         let (data, saved) = storage::open(&db, initial, |data| {
             ensure_personal(data);
             // Databases from before replication get a change-log row and field clocks
@@ -1080,7 +1081,8 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/ai/{*path}", any(ai::endpoint).layer(DefaultBodyLimit::max(30 * 1024 * 1024)))
         .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
         .route("/api/v1/{*path}", any(api))
-        .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint))
+        // attach_file carries files of up to 10 MB, base64-encoded.
+        .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint).layer(DefaultBodyLimit::max(15 * 1024 * 1024)))
         // Public sites (`/blog/...`); paths the server uses are reserved and win.
         .route("/{site}", get(sharing::public))
         .route("/{site}/", get(sharing::public))
@@ -1094,6 +1096,8 @@ pub fn app(store: Shared) -> Router {
             h.entry("cache-control").or_insert("no-store".parse().unwrap()); r
         }))
         .layer(axum::middleware::from_fn_with_state(store.clone(), administration::restrict))
+        // Tokens: their last use, and read-only ones kept to reading.
+        .layer(axum::middleware::from_fn_with_state(store.clone(), tokens::guard))
         .with_state(store)
 }
 async fn api(
@@ -1286,7 +1290,7 @@ fn dispatch(
         return Ok((embeds::route(d, &u, &v)?, None));
     }
     if parts.first() == Some(&"api-tokens") {
-        return Ok((tokens::route(d, &u, method, &parts, &v)?, None));
+        return Ok((tokens::route(db, d, &u, method, &parts, &v)?, None));
     }
     if let Some(result) = administration::route(d, &u, method, &parts, &v)? {
         return Ok((result, None));
@@ -1316,7 +1320,7 @@ fn dispatch(
         return Ok((sites::route(d, &u, method, &parts, &v)?, None));
     }
     if parts.first() == Some(&"mcp-credentials") {
-        return Ok((mcp::credentials(d, &u, method, &parts, v)?, None));
+        return Ok((mcp::credentials(db, d, &u, method, &parts, v)?, None));
     }
     if parts.first() == Some(&"account") {
         let current = session_token(headers).map(String::from);

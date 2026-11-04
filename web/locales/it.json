@@ -2187,5 +2187,12 @@
   "“{name}” combines a property of the related database (not a relation)": "“{name}” combina una proprietà del database collegato (non una relazione)",
   "Invalid number format": "Formato numerico non valido",
   "Invalid record position": "Posizione del record non valida",
-  "Invalid record page": "Pagina del record non valida"
+  "Invalid record page": "Pagina del record non valida",
+  "LAST USED": "ULTIMO USO",
+  "Never": "Mai",
+  "Read only (for backups and reports)": "Sola lettura (per backup e report)",
+  "content_base64 is not valid base64": "content_base64 non è base64 valido",
+  "Files must contain 1 byte to 10 MB": "I file devono contenere da 1 byte a 10 MB",
+  "A block cannot move after itself": "Un blocco non può spostarsi dopo se stesso",
+  "This token is read only. Create one with write access to change anything.": "Questo token è di sola lettura. Creane uno con accesso in scrittura per modificare qualcosa."
 }

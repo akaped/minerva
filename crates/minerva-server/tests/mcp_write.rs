@@ -135,7 +135,7 @@ async fn write_tools_need_write_access_and_edit_rights() {
     };
     assert_eq!(tools(reader.clone()).await.len(), 5);
     let all = tools(writer.clone()).await;
-    assert!(all.contains(&"create_document".to_string()) && all.len() == 9);
+    assert!(all.contains(&"create_document".to_string()) && all.len() == 12);
 
     // A read-only credential cannot write, nor can a viewer's write credential.
     let create = json!({"folder_id":folder,"title":"Meeting notes","markdown":"# Agenda\n\nBudget review\n\n- Item one\n- Item two"});
