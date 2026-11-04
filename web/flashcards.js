@@ -49,6 +49,8 @@ export async function renderFlashcards({ api, esc, data, error }) {
       .join(" · ");
   const setDeck = (result) => {
     deck = result.deck;
+    // On a shared deck, people who cannot edit the workspace only study.
+    deck.can_edit = result.can_edit !== false;
     serverNow = result.now;
     receivedAt = Date.now();
   };
@@ -64,7 +66,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     const result = await api("flashcards/decks");
     if (!live()) return;
     shell(
-      `<div class="fc-intro"><p>${$t("Your decks and study history are private to your account on this server.")}</p><div class="fc-actions">${button($t("Create a deck"), "fc-create", true)}${button($t("Import from Anki"), "fc-import")}${button($t("Statistics"), "fc-stats")}${button($t("Scheduling"), "fc-settings")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong><p>${esc(d.description)}</p><span>${$t("{count} cards ·", { count: d.count })} <b>${$t("{count} due", { count: d.due })}</b></span></button>`).join("")}</div>${!result.decks.length ? `<div class="empty"><h3>${$t("Make your first deck.")}</h3>${$t("Add your own questions, or turn a note, folder, or researched topic into cards with AI.")}</div>` : ""}`,
+      `<div class="fc-intro"><p>${$t("Your decks and study history are private to your account on this server.")}</p><div class="fc-actions">${button($t("Create a deck"), "fc-create", true)}${button($t("Import from Anki"), "fc-import")}${button($t("Statistics"), "fc-stats")}${button($t("Scheduling"), "fc-settings")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong>${d.workspace ? `<small class="fc-shared">${esc($t("Shared · {name}", { name: d.workspace_name || "" }))}</small>` : ""}<p>${esc(d.description)}</p><span>${$t("{count} cards ·", { count: d.count })} <b>${$t("{count} due", { count: d.due })}</b></span></button>`).join("")}</div>${!result.decks.length ? `<div class="empty"><h3>${$t("Make your first deck.")}</h3>${$t("Add your own questions, or turn a note, folder, or researched topic into cards with AI.")}</div>` : ""}`,
     );
     bind("fc-create", () => deckForm());
     bind("fc-import", importForm);
@@ -139,13 +141,20 @@ export async function renderFlashcards({ api, esc, data, error }) {
   // subfolders.
   const noteSources = () =>
     data.workspaces.flatMap((w) => [
-      { kind: "workspace", id: w.id, label: `Workspace · ${w.name}` },
+      {
+        kind: "workspace",
+        id: w.id,
+        label: $t("Workspace · {name}", { name: w.name }),
+      },
       ...data.folders
         .filter((f) => f.workspace_id === w.id)
         .map((f) => ({
           kind: "folder",
           id: f.id,
-          label: `Folder · ${w.name} / ${f.name}`,
+          label: $t("Folder · {workspace} / {folder}", {
+            workspace: w.name,
+            folder: f.name,
+          }),
         })),
     ]);
   function deckForm() {
@@ -153,8 +162,17 @@ export async function renderFlashcards({ api, esc, data, error }) {
     const follow = sources.length
       ? `<fieldset class="fc-source"><legend>${$t("Cards")}</legend><label><input type="radio" name="origin" value="own" checked> ${$t("I’ll write or generate them here")}</label><label><input type="radio" name="origin" value="notes"> ${$t("Follow the cards written in my notes")}</label><select name="source" aria-label="${$t("Notes to follow")}" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select><p class="hint">${$t("In a note, tag a question")} <code>#card</code> ${$t("and indent its answer below it, or write")} <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> ${$t("become cards too. The deck keeps up with your notes each time you open it.")}</p></fieldset>`
       : "";
+    // A deck can be shared with a workspace where you can edit (not your own).
+    const shareable = data.workspaces.filter(
+      (w) => !w.personal && (w.can_edit || w.owner_id === data.user.id),
+    );
+    const share = shareable.length
+      ? `<label>${$t("Shared with")}<select name="workspace_id"><option value="">${$t("Only me")}</option>${shareable.map((w) => `<option value="${esc(w.id)}" ${deck?.workspace === w.id ? "selected" : ""}>${esc($t("Everyone in {name}", { name: w.name }))}</option>`).join("")}</select></label><p class="hint">${$t("Everyone in the workspace can study a shared deck, each with their own progress; people who can edit there can change its cards.")}</p>`
+      : "";
+    const percents = [70, 75, 80, 85, 90, 93, 95, 97];
+    const retention = `<label>${$t("Desired retention for this deck")}<select name="retention"><option value="">${$t("My own setting (Scheduling)")}</option>${percents.map((p) => `<option value="${p}" ${Math.round((deck?.retention || 0) * 100) === p ? "selected" : ""}>${p}%</option>`).join("")}</select></label>`;
     shell(
-      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? $t("Edit deck") : $t("Create a deck")}</h2>${field($t("Deck name"), "name", deck?.name || "")}${field($t("Description"), "description", deck?.description || "", true, false)}${follow}<div class="fc-actions"><button class="btn primary">${$t("Save deck")}</button>${button($t("Cancel"), "fc-cancel")}</div></form>`,
+      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? $t("Edit deck") : $t("Create a deck")}</h2>${field($t("Deck name"), "name", deck?.name || "")}${field($t("Description"), "description", deck?.description || "", true, false)}${share}${retention}${follow}<div class="fc-actions"><button class="btn primary">${$t("Save deck")}</button>${button($t("Cancel"), "fc-cancel")}</div></form>`,
     );
     root
       .querySelectorAll('[name="origin"]')
@@ -177,6 +195,12 @@ export async function renderFlashcards({ api, esc, data, error }) {
           name: form.get("name"),
           description: form.get("description"),
           revision: deck?.revision,
+          retention: form.get("retention")
+            ? Number(form.get("retention")) / 100
+            : null,
+          ...(form.has("workspace_id")
+            ? { workspace_id: form.get("workspace_id") }
+            : {}),
           ...(source ? { source: { kind: source.kind, id: source.id } } : {}),
         };
         const result = await api(
@@ -197,7 +221,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
       (c) => !c.suspended && c.due <= dueNow(),
     ).length;
     shell(
-      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${$t("{count} cards ·", { count: deck.cards.length })} <strong>${$t("{due} due now", { due })}</strong></p>${deck.source ? `<p class="hint">${$t("Follows the cards written in {value}: tag a question", { value: esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || $t("notes you can no longer open")) })} <code>#card</code>${$t(", or write a cloze such as")} <code>{{c1::Rome}}</code>.</p>` : ""}</div><div class="fc-actions">${button($t("Study due cards"), "fc-study", true)}${button($t("Add card"), "fc-add")}${button($t("Statistics"), "fc-deck-stats")}${button($t("Create with AI"), "fc-ai")}${button($t("Edit deck"), "fc-edit")}${button($t("Export JSON"), "fc-export")}${button($t("Delete deck"), "fc-delete")}</div></div><p class="subtitle">${$t("Reveal the answer before rating your recall. Cards return when their next review is due.")}</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${$t("{value} · {reviews} reviews{value2}", { value: c.suspended ? $t("Paused") : c.due <= dueNow() ? $t("Ready to study") : $t("Next review: {date}", { date: new Date(c.due * 1000).toLocaleString() }), reviews: c.reviews, value2: c.origin ? $t(" · from a note") : "" })}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">${$t("Edit")}</button></article>`).join("")}</div>${!deck.cards.length ? `<div class="empty">${$t("This deck is ready for its first question.")}</div>` : ""}`,
+      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${$t("{count} cards ·", { count: deck.cards.length })} <strong>${$t("{due} due now", { due })}</strong></p>${deck.source ? `<p class="hint">${$t("Follows the cards written in {value}: tag a question", { value: esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || $t("notes you can no longer open")) })} <code>#card</code>${$t(", or write a cloze such as")} <code>{{c1::Rome}}</code>.</p>` : ""}</div>${deck.workspace ? `<p class="hint">${esc($t("Shared with {name}: your progress is your own.", { name: data.workspaces.find((w) => w.id === deck.workspace)?.name || "" }))}</p>` : ""}</div><div class="fc-actions">${button($t("Study due cards"), "fc-study", true)}${deck.can_edit ? button($t("Add card"), "fc-add") : ""}${button($t("Statistics"), "fc-deck-stats")}${deck.can_edit ? button($t("Create with AI"), "fc-ai") + button($t("Edit deck"), "fc-edit") : ""}${button($t("Export JSON"), "fc-export")}${deck.can_edit ? button($t("Delete deck"), "fc-delete") : ""}</div></div><p class="subtitle">${$t("Reveal the answer before rating your recall. Cards return when their next review is due.")}</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${$t("{value} · {reviews} reviews{value2}", { value: c.suspended ? $t("Paused") : c.due <= dueNow() ? $t("Ready to study") : $t("Next review: {date}", { date: new Date(c.due * 1000).toLocaleString() }), reviews: c.reviews, value2: c.origin ? $t(" · from a note") : "" })}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">${$t("Edit")}</button></article>`).join("")}</div>${!deck.cards.length ? `<div class="empty">${$t("This deck is ready for its first question.")}</div>` : ""}`,
     );
     root.querySelector("#fc-study").disabled = !due;
     bind("fc-study", () => {
@@ -250,50 +274,88 @@ export async function renderFlashcards({ api, esc, data, error }) {
   function cardForm(card) {
     // A card written in a note changes there; here it can only be paused.
     const fromNote = !!card?.origin;
+    // A shared deck's cards change only for those who can edit its workspace.
+    const locked = fromNote || !deck.can_edit;
     shell(
-      `<form class="fc-form" id="fc-card-form"><h2>${card ? $t("Edit card") : $t("Add a card")}</h2>${fromNote ? `<p class="hint">${$t("This card comes from a note:")} <a href="${esc(card.sources[0] || "#")}">${$t("open the note")}</a> ${$t("to change it.")}</p>` : ""}${field($t("Question / front"), "front", card?.front || "", true)}${fromNote ? "" : attach("front")}${field($t("Answer / back"), "back", card?.back || "", true)}${fromNote ? "" : attach("back")}${fromNote ? "" : field($t("Sources (one HTTP(S) URL or #note/id per line)"), "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> ${$t("Pause reviews for this card")}</label>` : ""}<div class="fc-actions"><button class="btn primary">${$t("Save card")}</button>${button($t("Cancel"), "fc-cancel")}${card && !fromNote ? button($t("Delete card"), "fc-remove") : ""}</div></form>`,
+      `<form class="fc-form" id="fc-card-form"><h2>${card ? $t("Edit card") : $t("Add a card")}</h2>${fromNote ? `<p class="hint">${$t("This card comes from a note:")} <a href="${esc(card.sources[0] || "#")}">${$t("open the note")}</a> ${$t("to change it.")}</p>` : !deck.can_edit ? `<p class="hint">${$t("Only people who can edit this shared deck’s workspace change its cards; you can pause one for yourself.")}</p>` : ""}${field($t("Question / front"), "front", card?.front || "", true)}${locked ? "" : attach("front")}${field($t("Answer / back"), "back", card?.back || "", true)}${locked ? "" : attach("back")}${locked ? "" : field($t("Sources (one HTTP(S) URL or #note/id per line)"), "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> ${$t("Pause reviews for this card")}</label>` : ""}<div class="fc-actions"><button class="btn primary">${$t("Save card")}</button>${button($t("Cancel"), "fc-cancel")}${card && !locked ? button($t("Delete card"), "fc-remove") : ""}</div></form>`,
     );
-    if (fromNote)
+    if (locked)
       root
         .querySelectorAll("#fc-card-form textarea")
         .forEach((el) => (el.readOnly = true));
     bind("fc-cancel", detail);
     // A picture or sound goes where the cursor is, in its side's text.
+    const insertMedia = async (side, file, name) => {
+      const status = root.querySelector("#fc-status");
+      status.textContent = $t("Uploading {name}…", { name });
+      try {
+        const r = await fetch(`/api/v1/flashcards/decks/${deck.id}/media`, {
+          method: "POST",
+          headers: { "X-Minerva-Client": "1" },
+          body: file,
+        });
+        const v = await r.json().catch(() => ({}));
+        if (!r.ok)
+          throw new Error(
+            v.error ? serverMessage(v.error) : $t("Upload failed"),
+          );
+        const area = root.querySelector(
+          `#fc-card-form textarea[name="${side}"]`,
+        );
+        const at = area.selectionStart ?? area.value.length;
+        const gap = at && !/\s$/.test(area.value.slice(0, at)) ? "\n" : "";
+        area.setRangeText(gap + v.markdown, at, area.selectionEnd ?? at, "end");
+        area.focus();
+        status.textContent = "";
+      } catch (err) {
+        status.textContent = "";
+        error(err);
+      }
+    };
     root.querySelectorAll("[data-attach]").forEach((input) => {
-      input.onchange = async () => {
+      input.onchange = () => {
         const file = input.files[0];
         input.value = "";
-        if (!file) return;
-        const status = root.querySelector("#fc-status");
-        status.textContent = $t("Uploading {name}…", { name: file.name });
+        if (file) insertMedia(input.dataset.attach, file, file.name);
+      };
+    });
+    // Recording a sound straight into the card, such as a pronunciation.
+    root.querySelectorAll("[data-record]").forEach((button) => {
+      let recorder = null;
+      button.onclick = async () => {
+        if (recorder?.state === "recording") return recorder.stop();
+        const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
+          (t) => globalThis.MediaRecorder?.isTypeSupported(t),
+        );
+        if (!navigator.mediaDevices?.getUserMedia || !type)
+          return error(new Error($t("This browser cannot record audio.")));
+        let stream;
         try {
-          const r = await fetch(`/api/v1/flashcards/decks/${deck.id}/media`, {
-            method: "POST",
-            headers: { "X-Minerva-Client": "1" },
-            body: file,
-          });
-          const v = await r.json().catch(() => ({}));
-          if (!r.ok)
-            throw new Error(
-              v.error ? serverMessage(v.error) : $t("Upload failed"),
-            );
-          const area = root.querySelector(
-            `#fc-card-form textarea[name="${input.dataset.attach}"]`,
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+          return error(
+            new Error(
+              $t(
+                "Minerva cannot use the microphone. Allow it in your browser's site settings.",
+              ),
+            ),
           );
-          const at = area.selectionStart ?? area.value.length;
-          const gap = at && !/\s$/.test(area.value.slice(0, at)) ? "\n" : "";
-          area.setRangeText(
-            gap + v.markdown,
-            at,
-            area.selectionEnd ?? at,
-            "end",
-          );
-          area.focus();
-          status.textContent = "";
-        } catch (err) {
-          status.textContent = "";
-          error(err);
         }
+        const chunks = [];
+        recorder = new MediaRecorder(stream, {
+          mimeType: type,
+          audioBitsPerSecond: 32000,
+        });
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        recorder.onstop = () => {
+          stream.getTracks().forEach((t) => t.stop());
+          button.textContent = $t("● Record sound");
+          const blob = new Blob(chunks, { type: type.split(";")[0] });
+          if (blob.size)
+            insertMedia(button.dataset.record, blob, $t("the recording"));
+        };
+        recorder.start();
+        button.textContent = $t("■ Stop");
       };
     });
     bind("fc-remove", async () => {
@@ -332,7 +394,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
     );
   }
   const attach = (side) =>
-    `<label class="btn fc-attach">${$t("Add picture or sound")}<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,audio/*" data-attach="${side}" hidden></label>`;
+    `<span class="fc-media-actions"><label class="btn fc-attach">${$t("Add picture or sound")}<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,audio/*" data-attach="${side}" hidden></label><button type="button" class="btn fc-attach" data-record="${side}">${$t("● Record sound")}</button></span>`;
   /** Statistics of one deck, or of all decks. */
   async function statistics(of = null) {
     const shown = of;
@@ -443,8 +505,10 @@ export async function renderFlashcards({ api, esc, data, error }) {
     }
     const c = deck.cards.find((c) => c.id === queue[0]);
     shell(
-      `<div class="fc-review-meta">${$t("{reviewed} reviewed · {count} left in this session {value}", { reviewed, count: queue.length, value: button($t("Finish for now"), "fc-back") })}</div><article class="fc-study"><div class="eyebrow">${$t("QUESTION")}</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button($t("Reveal answer"), "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">${$t("ANSWER")}</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>${$t("How well did you remember?")}</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${r[0].toUpperCase() + r.slice(1)}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
+      `<div class="fc-review-meta">${$t("{reviewed} reviewed · {count} left in this session {value}", { reviewed, count: queue.length, value: button($t("Finish for now"), "fc-back") })}</div><article class="fc-study"><div class="eyebrow">${$t("QUESTION")}</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button($t("Reveal answer"), "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">${$t("ANSWER")}</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>${$t("How well did you remember?")}</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${RATINGS[r]}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
     );
+    // How long the card took, from the question to the rating.
+    const shownAt = performance.now();
     bind("fc-back", () => load(deck.id));
     bind("fc-reveal", () => {
       root.querySelector("#fc-answer").hidden = false;
@@ -462,7 +526,14 @@ export async function renderFlashcards({ api, esc, data, error }) {
               await api(
                 `flashcards/decks/${deck.id}/cards/${c.id}/review`,
                 "POST",
-                { rating: el.dataset.rate, revision: c.revision },
+                {
+                  rating: el.dataset.rate,
+                  revision: c.revision,
+                  seconds: Math.min(
+                    3600,
+                    Math.round((performance.now() - shownAt) / 100) / 10,
+                  ),
+                },
               ),
             );
             queue.shift();
@@ -600,9 +671,23 @@ export function rich(text, esc) {
 export function intervalLabel(seconds) {
   const day = 86400;
   if (!Number.isFinite(seconds)) return "";
-  if (seconds < day) return `${Math.max(1, Math.round(seconds / 60))} minutes`;
+  if (seconds < day) {
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    return $tn(minutes, "{count} minute", "{count} minutes");
+  }
   const days = Math.round(seconds / day);
-  if (days < 31) return days === 1 ? "1 day" : `${days} days`;
-  if (days < 365) return `${Math.round((days / 30.4) * 10) / 10} months`;
-  return `${Math.round((days / 365) * 10) / 10} years`;
+  if (days < 31) return $tn(days, "{count} day", "{count} days");
+  if (days < 365) {
+    const months = Math.round((days / 30.4) * 10) / 10;
+    return $tn(months, "{count} month", "{count} months");
+  }
+  const years = Math.round((days / 365) * 10) / 10;
+  return $tn(years, "{count} year", "{count} years");
 }
+/** The four ratings, as the buttons say them. */
+const RATINGS = {
+  again: $t("Again"),
+  hard: $t("Hard"),
+  good: $t("Good"),
+  easy: $t("Easy"),
+};

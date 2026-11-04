@@ -14,7 +14,8 @@ turns that section into the next version.
 
 - **Flashcard statistics:** reviews per day, your true retention against your target, your study streak, the recall expected now, new, learning, mature and paused cards, and what comes due in the next 30 days, for one deck or all of them.
 - **Your own scheduling:** choose the desired retention (70–97%), and **Optimize for my memory** fits the FSRS scheduler's weights to your review history, keeping them only if they predict your recall better than the defaults. Every review is now logged for this.
-- **Pictures and sounds on cards:** **Add picture or sound** in the card editor; Anki imports keep their sounds, and with review progress, their review history, which rebuilds each card's memory.
+- **Pictures and sounds on cards:** **Add picture or sound** and **Record sound** in the card editor; Anki imports keep their sounds, and with review progress, their review history, which rebuilds each card's memory.
+- **Shared flashcard decks:** share a deck with a workspace; everyone in it studies with their own progress, and those who can edit there change its cards. A deck can also aim for its own desired retention, and statistics show the time spent studying.
 
 ## [0.6.0] - 2026-11-03
 

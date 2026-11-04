@@ -813,6 +813,7 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
                 "ai_chats",
                 "flashcard_decks",
                 "flashcard_media",
+                "flashcard_progress",
                 "flashcard_reviews",
                 "flashcard_settings",
                 "plugin_jobs",
@@ -822,6 +823,23 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
                     [&gone.user.id],
                 )
                 .map_err(|_| internal())?;
+            }
+        }
+        // A deleted workspace's shared flashcard decks go with it.
+        let workspaces: HashSet<&str> = d.workspaces.iter().map(|w| w.id.as_str()).collect();
+        for gone in s
+            .data
+            .workspaces
+            .iter()
+            .filter(|w| !workspaces.contains(w.id.as_str()))
+        {
+            let owner = format!("workspace:{}", gone.id);
+            for sql in [
+                "DELETE FROM flashcard_progress WHERE deck_id IN (SELECT id FROM flashcard_decks WHERE user_id=?1)",
+                "DELETE FROM flashcard_media WHERE user_id=?1",
+                "DELETE FROM flashcard_decks WHERE user_id=?1",
+            ] {
+                tx.execute(sql, [&owner]).map_err(|_| internal())?;
             }
         }
         tx.commit().map_err(|_| internal())?;

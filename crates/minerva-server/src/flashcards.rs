@@ -6,6 +6,11 @@
 //! Every review is logged (`flashcard_reviews`): for statistics, and so the
 //! scheduler can be fitted to the person's own memory. Each person also
 //! chooses the recall to aim for (`flashcard_settings`).
+//!
+//! A deck can belong to a workspace instead of a person: everyone who can open
+//! the workspace studies it, those who can edit there change its cards, and
+//! each keeps their own progress (`flashcard_progress`). Its rows are stored
+//! under `workspace:<id>`, so it outlives whoever made it.
 use super::*;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -42,6 +47,12 @@ struct Deck {
     /// The workspace or folder whose notes the deck's cards come from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source: Option<NoteSource>,
+    /// The workspace that shares the deck, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace: Option<String>,
+    /// The recall this deck aims for, instead of each person's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    retention: Option<f64>,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct NoteSource {
@@ -55,7 +66,17 @@ pub(super) fn initialize(db: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS flashcard_reviews(user_id TEXT NOT NULL,deck_id TEXT NOT NULL,card_id TEXT NOT NULL,at INTEGER NOT NULL,grade INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS flashcard_reviews_user ON flashcard_reviews(user_id,at);
         CREATE INDEX IF NOT EXISTS flashcard_reviews_card ON flashcard_reviews(deck_id,card_id);
-        CREATE TABLE IF NOT EXISTS flashcard_settings(user_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")
+        CREATE TABLE IF NOT EXISTS flashcard_settings(user_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS flashcard_progress(user_id TEXT NOT NULL,deck_id TEXT NOT NULL,card_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(user_id,deck_id,card_id));
+        CREATE INDEX IF NOT EXISTS flashcard_progress_deck ON flashcard_progress(deck_id);")?;
+    // Seconds spent on each review, logged since it was added.
+    let has_seconds = db
+        .prepare("SELECT 1 FROM pragma_table_info('flashcard_reviews') WHERE name='seconds'")?
+        .exists([])?;
+    if !has_seconds {
+        db.execute("ALTER TABLE flashcard_reviews ADD COLUMN seconds REAL", [])?;
+    }
+    Ok(())
 }
 /// A person's scheduling: the recall to aim for, and weights fitted to their
 /// reviews (FSRS's defaults until then).
@@ -195,7 +216,14 @@ async fn optimize(store: Shared, headers: HeaderMap) -> Result<Response, ApiErro
 
 /// `GET flashcards/stats?deck=<id>&offset=<minutes east of UTC>`: study
 /// statistics for one deck or all of them, by the reader's local days.
-fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value, ApiError> {
+fn stats(
+    s: &Store,
+    data: &Data,
+    u: &User,
+    deck: Option<&str>,
+    offset: i64,
+) -> Result<Value, ApiError> {
+    let user = u.id.as_str();
     let st = settings(s, user);
     let at = now();
     let local_day = |t: u64| (t as i64 + offset * 60).div_euclid(86400);
@@ -204,7 +232,7 @@ fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value
     // after the previous one, recalled).
     let mut stmt = s
         .db
-        .prepare("SELECT deck_id,card_id,at,grade FROM flashcard_reviews WHERE user_id=?1 ORDER BY deck_id,card_id,at")
+        .prepare("SELECT deck_id,card_id,at,grade,seconds FROM flashcard_reviews WHERE user_id=?1 ORDER BY deck_id,card_id,at")
         .map_err(|_| internal())?;
     let rows = stmt
         .query_map(params![user], |r| {
@@ -213,16 +241,19 @@ fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value
                 r.get::<_, String>(1)?,
                 r.get::<_, i64>(2)?,
                 r.get::<_, i64>(3)?,
+                r.get::<_, Option<f64>>(4)?,
             ))
         })
         .map_err(|_| internal())?;
     let mut days = vec![[0u32; 4]; 30];
     let (mut recalled, mut checked) = (0u32, 0u32);
     let mut total = 0u32;
+    // Time spent, over the reviews of 30 days that measured it.
+    let (mut seconds, mut timed) = (0.0, 0u32);
     let mut studied: HashSet<i64> = HashSet::new();
     let mut previous: Option<(String, String, i64)> = None;
     for row in rows {
-        let (d, card, when, grade) = row.map_err(|_| internal())?;
+        let (d, card, when, grade, spent) = row.map_err(|_| internal())?;
         if deck.is_some_and(|id| id != d) {
             continue;
         }
@@ -232,6 +263,10 @@ fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value
         let back = today - day;
         if (0..30).contains(&back) {
             days[(29 - back) as usize][(grade.clamp(1, 4) - 1) as usize] += 1;
+            if let Some(spent) = spent {
+                seconds += spent;
+                timed += 1;
+            }
             if let Some((pd, pc, pt)) = &previous {
                 if *pd == d && *pc == card && when - pt >= 86400 {
                     checked += 1;
@@ -256,14 +291,11 @@ fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value
         day -= 1;
     }
     // Cards: their state now, recall expected today, and when they are due.
-    let mut stmt =
-        s.db.prepare("SELECT payload FROM flashcard_decks WHERE user_id=?1")
-            .map_err(|_| internal())?;
-    let decks: Vec<Deck> = stmt
-        .query_map(params![user], |r| r.get::<_, String>(0))
-        .map_err(|_| internal())?
-        .filter_map(|r| r.ok().and_then(|raw| serde_json::from_str(&raw).ok()))
-        .filter(|d: &Deck| deck.is_none_or(|id| id == d.id))
+    // Shared decks count with this person's own progress.
+    let decks: Vec<Deck> = visible_decks(s, data, u)?
+        .into_iter()
+        .map(|(d, _)| d)
+        .filter(|d| deck.is_none_or(|id| id == d.id))
         .collect();
     let (mut new, mut learning, mut mature, mut paused, mut due_now) = (0, 0, 0, 0, 0);
     let mut forecast = vec![0u32; 30];
@@ -308,6 +340,8 @@ fn stats(s: &Store, user: &str, deck: Option<&str>, offset: i64) -> Result<Value
         "cards": {"new": new, "learning": learning, "mature": mature, "paused": paused, "due": due_now},
         "expected_recall": (recall_n > 0).then(|| recall_sum / recall_n as f64),
         "forecast": forecast,
+        "seconds_30_days": seconds.round(),
+        "seconds_per_review": (timed > 0).then(|| (seconds / timed as f64 * 10.0).round() / 10.0),
     }))
 }
 
@@ -328,7 +362,10 @@ pub(super) async fn upload_media(
     }
     let s = store.lock().map_err(|_| internal())?;
     let u = authenticate(&s.data, &headers)?;
-    let d = load(&s, &u.id, &deck)?;
+    let (d, access) = open(&s, &s.data, &u, &deck)?;
+    if access != Access::Edit {
+        return Err(forbidden());
+    }
     let (kind, limit) = match media_kind(&body) {
         Some(k) if k.starts_with("image/") => (k, 10 * 1024 * 1024),
         Some(k) => (k, 20 * 1024 * 1024),
@@ -354,7 +391,7 @@ pub(super) async fn upload_media(
     let media_id = id();
     s.db.execute(
         "INSERT INTO flashcard_media(id,user_id,deck_id,media_type,content) VALUES(?1,?2,?3,?4,?5)",
-        params![media_id, u.id, d.id, kind, body.to_vec()],
+        params![media_id, owner_key(&u.id, &d), d.id, kind, body.to_vec()],
     )
     .map_err(|_| internal())?;
     let markdown = if kind.starts_with("audio/") {
@@ -392,22 +429,157 @@ pub(super) fn media_kind(bytes: &[u8]) -> Option<&'static str> {
     })
 }
 
-fn load(s: &Store, user: &str, id: &str) -> Result<Deck, ApiError> {
-    let raw: Option<String> =
+/// Who a deck's rows belong to: its person, or its workspace.
+fn owner_key(user: &str, deck: &Deck) -> String {
+    match &deck.workspace {
+        Some(w) => format!("workspace:{w}"),
+        None => user.to_string(),
+    }
+}
+/// What someone may do with a deck.
+#[derive(Clone, Copy, PartialEq)]
+enum Access {
+    /// Their own deck, or a shared one in a workspace they can edit in.
+    Edit,
+    /// A shared deck they can only study.
+    Study,
+}
+/// A deck someone can open, with their own progress on a shared deck.
+fn open(s: &Store, d: &Data, u: &User, id: &str) -> Result<(Deck, Access), ApiError> {
+    let row: Option<(String, String)> =
         s.db.query_row(
-            "SELECT payload FROM flashcard_decks WHERE id=?1 AND user_id=?2",
-            params![id, user],
-            |r| r.get(0),
+            "SELECT user_id,payload FROM flashcard_decks WHERE id=?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .map_err(|_| internal())?;
-    serde_json::from_str(&raw.ok_or_else(missing)?).map_err(|_| internal())
+    let (owner, raw) = row.ok_or_else(missing)?;
+    let mut deck: Deck = serde_json::from_str(&raw).map_err(|_| internal())?;
+    let access = match (&deck.workspace, owner == u.id) {
+        (None, true) => Access::Edit,
+        (Some(w), _) if edits_workspace(d, u, w) => Access::Edit,
+        (Some(w), _) if sees(d, u, w) => Access::Study,
+        _ => return Err(missing()),
+    };
+    if deck.workspace.is_some() {
+        with_progress(s, &u.id, &mut deck)?;
+    }
+    Ok((deck, access))
+}
+/// True when `u` can open at least one folder of workspace `w`.
+fn sees(d: &Data, u: &User, w: &str) -> bool {
+    d.folders
+        .iter()
+        .any(|f| f.workspace_id == w && role(d, u, &f.id).is_some())
+}
+/// A card's study state, which on a shared deck is each person's own.
+#[derive(Serialize, Deserialize, Default)]
+struct Progress {
+    due: u64,
+    interval: u64,
+    reviews: u32,
+    lapses: u32,
+    suspended: bool,
+    #[serde(default)]
+    stability: Option<f64>,
+    #[serde(default)]
+    difficulty: Option<f64>,
+    #[serde(default)]
+    last_review: u64,
+}
+impl Progress {
+    fn of(c: &Card) -> Self {
+        Progress {
+            due: c.due,
+            interval: c.interval,
+            reviews: c.reviews,
+            lapses: c.lapses,
+            suspended: c.suspended,
+            stability: c.stability,
+            difficulty: c.difficulty,
+            last_review: c.last_review,
+        }
+    }
+    fn apply(self, c: &mut Card) {
+        c.due = self.due;
+        c.interval = self.interval;
+        c.reviews = self.reviews;
+        c.lapses = self.lapses;
+        c.suspended = self.suspended;
+        c.stability = self.stability;
+        c.difficulty = self.difficulty;
+        c.last_review = self.last_review;
+    }
+}
+/// Puts `user`'s progress on a shared deck's cards; cards they have not
+/// studied are new to them.
+fn with_progress(s: &Store, user: &str, deck: &mut Deck) -> Result<(), ApiError> {
+    let mut stmt = s
+        .db
+        .prepare("SELECT card_id,payload FROM flashcard_progress WHERE user_id=?1 AND deck_id=?2")
+        .map_err(|_| internal())?;
+    let mut mine: HashMap<String, Progress> = stmt
+        .query_map(params![user, deck.id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|_| internal())?
+        .filter_map(|r| r.ok())
+        .filter_map(|(id, raw)| Some((id, serde_json::from_str(&raw).ok()?)))
+        .collect();
+    let created = deck.updated_at;
+    for c in &mut deck.cards {
+        mine.remove(&c.id)
+            .unwrap_or(Progress {
+                due: created.min(now()),
+                ..Default::default()
+            })
+            .apply(c);
+    }
+    Ok(())
+}
+fn save_progress(s: &Store, user: &str, deck: &Deck, c: &Card) -> Result<(), ApiError> {
+    s.db.execute(
+        "INSERT INTO flashcard_progress(user_id,deck_id,card_id,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(user_id,deck_id,card_id) DO UPDATE SET payload=excluded.payload",
+        params![user, deck.id, c.id, serde_json::to_string(&Progress::of(c)).map_err(|_| internal())?],
+    )
+    .map_err(|_| internal())?;
+    Ok(())
+}
+/// Every deck someone can open: their own, and those of their workspaces.
+fn visible_decks(s: &Store, d: &Data, u: &User) -> Result<Vec<(Deck, Access)>, ApiError> {
+    let mut stmt = s
+        .db
+        .prepare("SELECT id FROM flashcard_decks WHERE user_id=?1 OR user_id LIKE 'workspace:%'")
+        .map_err(|_| internal())?;
+    let ids: Vec<String> = stmt
+        .query_map(params![u.id], |r| r.get(0))
+        .map_err(|_| internal())?
+        .filter_map(|r| r.ok())
+        .collect();
+    drop(stmt);
+    Ok(ids.iter().filter_map(|id| open(s, d, u, id).ok()).collect())
 }
 fn save(s: &Store, user: &str, deck: &mut Deck) -> Result<(), ApiError> {
     deck.updated_at = now();
     deck.revision += 1;
-    s.db.execute("INSERT INTO flashcard_decks(id,user_id,payload) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",params![deck.id,user,serde_json::to_string(deck).map_err(|_|internal())?]).map_err(|_|internal())?;
+    // A shared deck keeps only its cards; each person's progress is kept apart.
+    let mut stored = deck.clone();
+    if stored.workspace.is_some() {
+        for c in &mut stored.cards {
+            Progress::default().apply(c);
+        }
+    }
+    s.db.execute("INSERT INTO flashcard_decks(id,user_id,payload) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,payload=excluded.payload",params![deck.id,owner_key(user, deck),serde_json::to_string(&stored).map_err(|_|internal())?]).map_err(|_|internal())?;
     Ok(())
+}
+/// The scheduling for a deck: the person's own, aiming for the deck's recall
+/// when it has one.
+fn deck_scheduling(p: &fsrs::Params, deck: &Deck) -> fsrs::Params {
+    fsrs::Params {
+        retention: deck.retention.unwrap_or(p.retention),
+        ..*p
+    }
 }
 fn field(v: &Value, key: &str, max: usize, empty: bool) -> Result<String, ApiError> {
     let value = v[key].as_str().unwrap_or("").trim();
@@ -642,6 +814,36 @@ fn follow_notes(d: &Data, u: &User, deck: &mut Deck) -> bool {
     changed
 }
 /// The workspace or folder a new deck follows, if any; `u` must be able to read it.
+/// `workspace_id` in a request: a workspace the person can edit in, to share
+/// the deck with; empty for a personal deck.
+fn shared_workspace(d: &Data, u: &User, v: &Value) -> Result<Option<String>, ApiError> {
+    match v["workspace_id"].as_str().filter(|w| !w.is_empty()) {
+        None => Ok(None),
+        Some(w)
+            if edits_workspace(d, u, w)
+                && !d.workspaces.iter().any(|x| x.id == w && x.personal) =>
+        {
+            Ok(Some(w.to_string()))
+        }
+        Some(_) => Err(bad(
+            "Share decks with a workspace you can edit in, other than My Workspace",
+        )),
+    }
+}
+/// `retention` in a request: the recall a deck aims for, or none for each
+/// person's own.
+fn deck_retention(v: &Value) -> Result<Option<f64>, ApiError> {
+    match &v["retention"] {
+        Value::Null => Ok(None),
+        r => {
+            let (lo, hi) = fsrs::RETENTION_RANGE;
+            r.as_f64()
+                .filter(|r| (lo..=hi).contains(r))
+                .map(|r| Some((r * 100.0).round() / 100.0))
+                .ok_or_else(|| bad("Choose a desired retention between 70% and 97%"))
+        }
+    }
+}
 fn note_source(d: &Data, u: &User, v: &Value) -> Result<Option<NoteSource>, ApiError> {
     if v["source"].is_null() {
         return Ok(None);
@@ -744,33 +946,29 @@ pub(super) async fn endpoint(
                 .map(String::as_str)
                 .filter(|d| !d.is_empty());
             if let Some(id) = deck {
-                load(&s, &u.id, id)?;
+                open(&s, &s.data, &u, id)?;
             }
-            return Ok(axum::Json(stats(&s, &u.id, deck, offset)?).into_response());
+            return Ok(axum::Json(stats(&s, &s.data, &u, deck, offset)?).into_response());
         }
         _ => {}
     }
     let p = scheduling(&settings(&s, &u.id));
     if parts == ["decks"] {
         if method == Method::GET {
-            let mut stmt =
-                s.db.prepare("SELECT payload FROM flashcard_decks WHERE user_id=?1")
-                    .map_err(|_| internal())?;
-            let mut decks = stmt
-                .query_map(params![u.id], |r| r.get::<_, String>(0))
-                .map_err(|_| internal())?
-                .map(|r| {
-                    r.map_err(|_| internal())
-                        .and_then(|raw| serde_json::from_str::<Deck>(&raw).map_err(|_| internal()))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            drop(stmt);
-            for deck in &mut decks {
-                if follow_notes(&s.data, &u, deck) {
+            let mut decks = visible_decks(&s, &s.data, &u)?;
+            for (deck, _) in &mut decks {
+                if deck.workspace.is_none() && follow_notes(&s.data, &u, deck) {
                     save(&s, &u.id, deck)?;
                 }
             }
-            let rows:Vec<_>=decks.iter().map(|d|json!({"id":d.id,"name":d.name,"description":d.description,"count":d.cards.len(),"due":d.cards.iter().filter(|c|!c.suspended && c.due<=now()).count(),"updated_at":d.updated_at})).collect();
+            let workspace_name = |w: &str| {
+                s.data
+                    .workspaces
+                    .iter()
+                    .find(|x| x.id == w)
+                    .map(|x| x.name.clone())
+            };
+            let rows:Vec<_>=decks.iter().map(|(d, access)|json!({"id":d.id,"name":d.name,"description":d.description,"count":d.cards.len(),"due":d.cards.iter().filter(|c|!c.suspended && c.due<=now()).count(),"updated_at":d.updated_at,"workspace":d.workspace,"workspace_name":d.workspace.as_deref().and_then(workspace_name),"can_edit":*access == Access::Edit})).collect();
             return Ok(axum::Json(json!({"decks":rows,"now":now()})).into_response());
         }
         if method == Method::POST {
@@ -784,6 +982,13 @@ pub(super) async fn endpoint(
             if count >= 100 {
                 return Err(bad("Limit of 100 decks reached"));
             }
+            let workspace = shared_workspace(&s.data, &u, &v)?;
+            let source = note_source(&s.data, &u, &v)?;
+            if workspace.is_some() && source.is_some() {
+                return Err(bad(
+                    "A shared deck cannot follow notes: each person sees different notes",
+                ));
+            }
             let mut d = Deck {
                 id: id(),
                 name: field(&v, "name", 120, false)?,
@@ -791,7 +996,9 @@ pub(super) async fn endpoint(
                 cards: vec![],
                 updated_at: now(),
                 revision: 0,
-                source: note_source(&s.data, &u, &v)?,
+                source,
+                workspace,
+                retention: deck_retention(&v)?,
             };
             follow_notes(&s.data, &u, &mut d);
             save(&s, &u.id, &mut d)?;
@@ -800,15 +1007,17 @@ pub(super) async fn endpoint(
     }
     // Pictures imported with a deck, for their owner only.
     if let (true, ["media", media_id]) = (method == Method::GET, parts.as_slice()) {
-        let row: Option<(String, Vec<u8>)> =
+        let row: Option<(String, Vec<u8>, String)> =
             s.db.query_row(
-                "SELECT media_type, content FROM flashcard_media WHERE id=?1 AND user_id=?2",
-                params![media_id, u.id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                "SELECT media_type, content, deck_id FROM flashcard_media WHERE id=?1",
+                params![media_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(|_| internal())?;
-        let (kind, content) = row.ok_or_else(missing)?;
+        let (kind, content, deck_id) = row.ok_or_else(missing)?;
+        // Whoever can open the deck sees its pictures and sounds.
+        open(&s, &s.data, &u, &deck_id)?;
         return Ok((
             [
                 ("content-type", kind),
@@ -822,36 +1031,53 @@ pub(super) async fn endpoint(
     if parts.len() < 2 || parts[0] != "decks" {
         return Err(missing());
     }
-    let mut d = load(&s, &u.id, parts[1])?;
-    if follow_notes(&s.data, &u, &mut d) {
+    let (mut d, access) = open(&s, &s.data, &u, parts[1])?;
+    let base = p;
+    let p = deck_scheduling(&base, &d);
+    let shared = d.workspace.is_some();
+    if !shared && follow_notes(&s.data, &u, &mut d) {
         save(&s, &u.id, &mut d)?;
+    }
+    // Studying is everyone's; changing the deck, only editors'.
+    let studying = (parts.len() == 5 && parts[4] == "review")
+        || (parts.len() == 4 && method == Method::PUT && shared);
+    if method != Method::GET && access != Access::Edit && !studying {
+        return Err(forbidden());
     }
     if parts.len() == 2 {
         if method == Method::GET {
-            return Ok(axum::Json(deck_view(&p, &d)).into_response());
+            return Ok(axum::Json(with_access(deck_view(&p, &d), access)).into_response());
         }
         check_revision(&v["revision"], d.revision)?;
         if method == Method::DELETE {
-            s.db.execute(
-                "DELETE FROM flashcard_decks WHERE id=?1 AND user_id=?2",
-                params![d.id, u.id],
-            )
-            .map_err(|_| internal())?;
-            s.db.execute(
-                "DELETE FROM flashcard_media WHERE deck_id=?1 AND user_id=?2",
-                params![d.id, u.id],
-            )
-            .map_err(|_| internal())?;
-            s.db.execute(
-                "DELETE FROM flashcard_reviews WHERE deck_id=?1 AND user_id=?2",
-                params![d.id, u.id],
-            )
-            .map_err(|_| internal())?;
+            for table in [
+                "flashcard_decks WHERE id",
+                "flashcard_media WHERE deck_id",
+                "flashcard_progress WHERE deck_id",
+                "flashcard_reviews WHERE deck_id",
+            ] {
+                s.db.execute(&format!("DELETE FROM {table}=?1"), params![d.id])
+                    .map_err(|_| internal())?;
+            }
             return Ok(axum::Json(json!({"ok":true})).into_response());
         }
         if method == Method::PUT {
             d.name = field(&v, "name", 120, false)?;
             d.description = field(&v, "description", 1000, true)?;
+            if v.get("retention").is_some() {
+                d.retention = deck_retention(&v)?;
+            }
+            if v.get("workspace_id").is_some() {
+                let target = shared_workspace(&s.data, &u, &v)?;
+                if target != d.workspace {
+                    if d.source.is_some() && target.is_some() {
+                        return Err(bad(
+                            "A shared deck cannot follow notes: each person sees different notes",
+                        ));
+                    }
+                    reshare(&s, &u, &mut d, target)?;
+                }
+            }
         } else {
             return Err(missing());
         }
@@ -870,7 +1096,10 @@ pub(super) async fn endpoint(
             .position(|c| c.id == parts[3])
             .ok_or_else(missing)?;
         let c = &mut d.cards[index];
-        check_revision(&v["revision"], c.revision)?;
+        if !(shared && parts.len() == 5) {
+            check_revision(&v["revision"], c.revision)?;
+        }
+        // On a shared deck, a card's revision counts edits, not anyone's reviews.
         if parts.len() == 5 && parts[4] == "review" && method == Method::POST {
             if c.suspended || c.due > now() {
                 return Err(bad("This card is not due yet"));
@@ -882,9 +1111,10 @@ pub(super) async fn endpoint(
             c.stability = Some(m.stability);
             c.difficulty = Some(m.difficulty);
             c.interval = fsrs::interval(&p, m, g);
+            let seconds = v["seconds"].as_f64().filter(|x| (0.0..=3600.0).contains(x));
             s.db.execute(
-                "INSERT INTO flashcard_reviews(user_id,deck_id,card_id,at,grade) VALUES(?1,?2,?3,?4,?5)",
-                params![u.id, d.id, c.id, at as i64, g as i64],
+                "INSERT INTO flashcard_reviews(user_id,deck_id,card_id,at,grade,seconds) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![u.id, d.id, c.id, at as i64, g as i64, seconds],
             )
             .map_err(|_| internal())?;
             c.due = at + c.interval;
@@ -893,7 +1123,19 @@ pub(super) async fn endpoint(
             if g == 1 {
                 c.lapses += 1;
             }
+            // A shared deck keeps this person's progress apart; its cards stay.
+            if shared {
+                let c = c.clone();
+                save_progress(&s, &u.id, &d, &c)?;
+                return Ok(axum::Json(with_access(deck_view(&p, &d), access)).into_response());
+            }
             c.revision += 1;
+        } else if parts.len() == 4 && method == Method::PUT && access == Access::Study {
+            // Someone studying a shared deck can only pause a card, for themselves.
+            c.suspended = v["suspended"].as_bool().unwrap_or(c.suspended);
+            let c = c.clone();
+            save_progress(&s, &u.id, &d, &c)?;
+            return Ok(axum::Json(with_access(deck_view(&p, &d), access)).into_response());
         } else if parts.len() == 4 && method == Method::PUT {
             let front = field(&v, "front", 4000, false)?;
             let back = field(&v, "back", 8000, false)?;
@@ -908,6 +1150,10 @@ pub(super) async fn endpoint(
             }
             c.suspended = v["suspended"].as_bool().unwrap_or(c.suspended);
             c.revision += 1;
+            if shared {
+                let c = c.clone();
+                save_progress(&s, &u.id, &d, &c)?;
+            }
         } else if parts.len() == 4 && method == Method::DELETE {
             if c.origin.is_some() {
                 return Err(bad(
@@ -915,11 +1161,13 @@ pub(super) async fn endpoint(
                 ));
             }
             let removed = d.cards.remove(index);
-            s.db.execute(
-                "DELETE FROM flashcard_reviews WHERE deck_id=?1 AND card_id=?2",
-                params![d.id, removed.id],
-            )
-            .map_err(|_| internal())?;
+            for table in ["flashcard_reviews", "flashcard_progress"] {
+                s.db.execute(
+                    &format!("DELETE FROM {table} WHERE deck_id=?1 AND card_id=?2"),
+                    params![d.id, removed.id],
+                )
+                .map_err(|_| internal())?;
+            }
         } else {
             return Err(missing());
         }
@@ -927,7 +1175,43 @@ pub(super) async fn endpoint(
         return Err(missing());
     }
     save(&s, &u.id, &mut d)?;
-    Ok(axum::Json(deck_view(&p, &d)).into_response())
+    // The deck's retention may have just changed.
+    let p = deck_scheduling(&base, &d);
+    Ok(axum::Json(with_access(deck_view(&p, &d), access)).into_response())
+}
+/// A deck's view, saying whether this person can change it.
+fn with_access(mut view: Value, access: Access) -> Value {
+    view["can_edit"] = json!(access == Access::Edit);
+    view
+}
+/// Moves a deck into a workspace or back to its person. The person's
+/// progress follows; others' progress on a deck no longer shared goes.
+fn reshare(s: &Store, u: &User, d: &mut Deck, target: Option<String>) -> Result<(), ApiError> {
+    match (&d.workspace, &target) {
+        // Sharing: the person's progress becomes their own progress rows.
+        (None, Some(_)) => {
+            for c in &d.cards {
+                save_progress(s, &u.id, d, c)?;
+            }
+        }
+        // Back to the person: their progress returns into the deck.
+        (Some(_), None) => {
+            s.db.execute(
+                "DELETE FROM flashcard_progress WHERE deck_id=?1",
+                params![d.id],
+            )
+            .map_err(|_| internal())?;
+        }
+        _ => {}
+    }
+    d.workspace = target;
+    let owner = owner_key(&u.id, d);
+    s.db.execute(
+        "UPDATE flashcard_media SET user_id=?1 WHERE deck_id=?2",
+        params![owner, d.id],
+    )
+    .map_err(|_| internal())?;
+    Ok(())
 }
 
 /// `POST /api/v1/flashcards/import?name=<file>&progress=1`: an Anki package or
@@ -1107,6 +1391,8 @@ pub(super) async fn import(
             updated_at: now(),
             revision: 0,
             source: None,
+            workspace: None,
+            retention: None,
         };
         save(&s, &u.id, &mut deck)?;
         for (card, history) in histories {

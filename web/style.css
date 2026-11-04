@@ -8169,3 +8169,14 @@ body.comments-open .note-pane {
   max-width: 100%;
   margin: 6px 0;
 }
+.fc-shared {
+  display: block;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.fc-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

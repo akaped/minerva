@@ -4,7 +4,7 @@ Open **Flashcards** in the sidebar. Make a deck for a subject, book, course, or 
 
 ## Make your own cards
 
-Choose **Create a deck**, give it a name, then **Add card**. You can edit both sides, add source links, pause a card, or delete it. **Add picture or sound**, under each side, puts a picture (PNG, JPEG, GIF or WebP, up to 10 MB) or a sound (MP3, M4A, Ogg, WAV, WebM or FLAC, up to 20 MB) where the cursor is; a sound plays with a player, for pronunciation or music. A deck holds up to 200 MB of them, private to you like the deck. Decks and progress are private to your account on this Minerva instance. They are not shared with a workspace or synchronized through workspace replication. Personal desktop decks are stored locally; manual study works offline there.
+Choose **Create a deck**, give it a name, then **Add card**. You can edit both sides, add source links, pause a card, or delete it. **Add picture or sound**, under each side, puts a picture (PNG, JPEG, GIF or WebP, up to 10 MB) or a sound (MP3, M4A, Ogg, WAV, WebM or FLAC, up to 20 MB) where the cursor is, and **Record sound** records one from your microphone; a sound plays with a player, for pronunciation or music. A deck holds up to 200 MB of them, private to you like the deck. Decks and progress are private to your account on this Minerva instance. They are not shared with a workspace or synchronized through workspace replication. Personal desktop decks are stored locally; manual study works offline there.
 
 **Export JSON** downloads the deck, its cards, sources, and scheduling state. JSON exports cannot be imported back yet. Back up the Minerva database to preserve all decks.
 
@@ -65,7 +65,13 @@ Minerva schedules reviews with [FSRS](https://github.com/open-spaced-repetition/
 
 Cards reviewed before FSRS keep their schedule: on their next review, their last interval stands for their stability. Cards imported from Anki with their progress do the same.
 
-Each session reviews the cards due when it starts, once each; return later for cards scheduled again. Cards keep review and lapse counts, and pausing a card excludes it from sessions. Shared decks are not implemented yet.
+Each session reviews the cards due when it starts, once each; return later for cards scheduled again. Cards keep review and lapse counts, and pausing a card excludes it from sessions. The statistics also count the time you spend on each card, from the question to your rating.
+
+## Shared decks
+
+When you create or edit a deck, **Shared with** can give it to a workspace where you can edit (not My Workspace). Everyone who can open the workspace finds it among their decks and studies it **with their own progress**: their reviews, due dates, statistics and paused cards are theirs alone. People who can edit in the workspace add, change and delete its cards and pictures; the others only study, and can pause a card for themselves. A shared deck belongs to the workspace: it stays when the person who made it leaves, does not count towards anyone's 100 decks, and is deleted with the workspace. Moving a personal deck into a workspace keeps your progress; moving it back keeps only yours. A shared deck cannot follow notes, since each person may see different ones.
+
+**Desired retention for this deck**, in the deck's settings, overrides each person's own retention for that deck: useful for an exam deck to aim higher, or a large vocabulary deck to aim lower.
 
 ## Limits and privacy
 

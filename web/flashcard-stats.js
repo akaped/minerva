@@ -37,6 +37,16 @@ function tile(label, value, note = "") {
   return `<div class="fc-tile"><span>${label}</span><strong>${value}</strong>${note ? `<small>${note}</small>` : ""}</div>`;
 }
 
+/** Seconds as "45 seconds", "12 minutes" or "3.5 hours". */
+export function duration(seconds) {
+  if (seconds < 90)
+    return $tn(Math.round(seconds), "{count} second", "{count} seconds");
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return $tn(minutes, "{count} minute", "{count} minutes");
+  const hours = Math.round((seconds / 3600) * 10) / 10;
+  return $tn(hours, "{count} hour", "{count} hours");
+}
+
 /** The statistics page's content. */
 export function statsHTML(s, esc) {
   const reviewDays = s.days.map((d) => d.again + d.hard + d.good + d.easy);
@@ -76,5 +86,15 @@ export function statsHTML(s, esc) {
     $t("Expected recall now"),
     s.expected_recall == null ? "—" : percent(s.expected_recall),
     esc($t("Across the cards you have studied")),
+  )}${tile(
+    $t("Time studied in 30 days"),
+    duration(s.seconds_30_days || 0),
+    s.seconds_per_review == null
+      ? ""
+      : esc(
+          $t("{time} per card on average", {
+            time: duration(s.seconds_per_review),
+          }),
+        ),
   )}</div><div class="fc-tiles fc-states">${tile($t("Due now"), c.due)}${tile($t("New"), c.new)}${tile($t("Learning"), c.learning, esc($t("Intervals under 21 days")))}${tile($t("Mature"), c.mature, esc($t("Intervals of 21 days or more")))}${tile($t("Paused"), c.paused)}</div>${barChart($t("Reviews per day"), reviewDays, reviewLabels, esc)}${barChart($t("Cards coming due"), s.forecast, ahead, esc)}`;
 }

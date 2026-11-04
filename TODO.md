@@ -4,7 +4,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Flashcards**: shared decks for a workspace; a retention or weights per deck; time spent per review in the statistics; recording a sound straight into a card.
 - [ ] **Archive** for notes: out of search and the sidebar without being in the trash.
 - [ ] **Presentation mode**: a note as slides, split at dividers or headings.
 
