@@ -100,6 +100,10 @@ fn read(name: &str, bytes: &[u8]) -> Result<Export, ApiError> {
     if name.to_lowercase().ends_with(".enex") || text.contains("<en-export") {
         return evernote(&text);
     }
+    let lower = name.to_lowercase();
+    if lower.ends_with(".mht") || lower.ends_with(".mhtml") {
+        return mhtml(name, bytes);
+    }
     let mut export = Export::default();
     let stem = name.rsplit('/').next().unwrap_or(name);
     let stem = stem.rsplit_once('.').map_or(stem, |(s, _)| s);
@@ -138,8 +142,10 @@ fn unzip(
         if *total > UNPACKED_LIMIT {
             return Err(bad("The archive unpacks to more than 1 GB"));
         }
-        // Notion splits large exports into zips inside the zip.
-        if path.to_lowercase().ends_with(".zip") && depth == 0 {
+        // Notion splits large exports into zips inside the zip; a Bear
+        // `.textpack` is a zipped TextBundle.
+        let lower = path.to_lowercase();
+        if (lower.ends_with(".zip") || lower.ends_with(".textpack")) && depth == 0 {
             unzip(&data, out, 1, total)?;
         } else {
             out.push((path, data));
@@ -186,7 +192,8 @@ fn from_files(entries: Vec<(String, Vec<u8>)>) -> Export {
         .first()
         .and_then(|(p, _)| p.split_once('/'))
         .map(|(r, _)| format!("{r}/"));
-    if let Some(root) = root {
+    // A TextBundle is a note, not a folder around the export.
+    if let Some(root) = root.filter(|r| !r.to_lowercase().ends_with(".textbundle/")) {
         if entries.iter().all(|(p, _)| p.starts_with(&root)) {
             for (p, _) in &mut entries {
                 *p = p[root.len()..].to_string();
@@ -214,7 +221,18 @@ fn from_files(entries: Vec<(String, Vec<u8>)>) -> Export {
                     continue;
                 }
                 let text = String::from_utf8_lossy(&data);
-                export.pages.push(page(dir, &path, stem, &text));
+                // A TextBundle (Bear): `Title.textbundle/text.md`.
+                let bundle = dir
+                    .last()
+                    .and_then(|d| d.strip_suffix(".textbundle"))
+                    .map(String::from);
+                match bundle {
+                    Some(title) if stem == "text" => {
+                        let outer = dir[..dir.len() - 1].to_vec();
+                        export.pages.push(page(outer, &path, &title, &text));
+                    }
+                    _ => export.pages.push(page(dir, &path, stem, &text)),
+                }
             }
             "csv" => {
                 // Notion writes a table twice; the `_all` file has every row.
@@ -291,9 +309,7 @@ fn page(dir: Vec<String>, path: &str, stem: &str, text: &str) -> Page {
             _ => break,
         }
     }
-    let mut body = body[skip.min(body.len())..]
-        .trim_start_matches('\n')
-        .to_string();
+    let mut body = bear_tags(body[skip.min(body.len())..].trim_start_matches('\n'));
     // A first heading repeating the title is the title.
     if let Some(first) = body.lines().next() {
         if let Some(heading) = first.strip_prefix("# ") {
@@ -937,13 +953,19 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
         notes += 1;
     }
     let mut databases = 0;
+    let mut pending = vec![];
+    let mut created = vec![];
     for t in &export.tables {
         let folder = folder_for(&mut d, &t.dir);
-        if let Some(db) = database(t, &folder, &mut export.warnings) {
+        let mut mine = vec![];
+        if let Some(db) = database(t, &folder, &mut export.warnings, &mut mine) {
+            created.push(db.id.clone());
             d.databases.push(db);
+            pending.append(&mut mine);
             databases += 1;
         }
     }
+    link_relations(&mut d, &created, pending);
     persist(s, d)?;
     if !failed_files.is_empty() {
         export.warnings.push(format!(
@@ -980,7 +1002,12 @@ fn truncate(text: &str, bytes: usize) -> String {
 
 /// A Notion table as a database: the first column is the name; other columns
 /// become checkboxes, numbers, dates, links or choices when all their values fit.
-fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Database> {
+fn database(
+    t: &Table,
+    folder: &str,
+    warnings: &mut Vec<String>,
+    pending: &mut Vec<PendingRelation>,
+) -> Option<Database> {
     let header = t.rows.first()?;
     if header.len() > 32 {
         warnings.push(format!(
@@ -1033,25 +1060,55 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
             format: String::new(),
         });
     }
+    let db_id = id();
+    // Relations are linked once every table exists; until then, text.
+    let mut relations: Vec<PendingRelation> = columns
+        .iter()
+        .filter(|c| c.kind == ColumnKind::Relation)
+        .map(|c| PendingRelation {
+            database: db_id.clone(),
+            column: c.id.clone(),
+            cells: vec![],
+        })
+        .collect();
+    for c in columns
+        .iter_mut()
+        .filter(|c| c.kind == ColumnKind::Relation)
+    {
+        c.kind = ColumnKind::Text;
+    }
+    let relation_ids: Vec<String> = relations.iter().map(|r| r.column.clone()).collect();
     let records = rows
         .iter()
         .map(|row| {
+            let record = id();
             let mut cells = BTreeMap::new();
             for (c, value) in columns.iter().zip(row.iter()) {
                 let value = value.trim();
                 if value.is_empty() {
                     continue;
                 }
+                if relation_ids.contains(&c.id) {
+                    if let Some(p) = relations.iter_mut().find(|p| p.column == c.id) {
+                        p.cells.push((record.clone(), related_items(value)));
+                    }
+                    continue;
+                }
                 let cell = match c.kind {
                     ColumnKind::Checkbox => json!(value == "Yes"),
                     ColumnKind::Number => json!(value.parse::<f64>().unwrap_or(0.0)),
                     ColumnKind::Date => json!(date(value).unwrap_or_default()),
+                    ColumnKind::MultiSelect => json!(value
+                        .split(", ")
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()),
                     _ => json!(truncate(value, 10_000)),
                 };
                 cells.insert(c.id.clone(), cell);
             }
             Record {
-                id: id(),
+                id: record,
                 cells,
                 revision: 1,
                 updated_at: now(),
@@ -1062,8 +1119,9 @@ fn database(t: &Table, folder: &str, warnings: &mut Vec<String>) -> Option<Datab
             }
         })
         .collect();
+    pending.append(&mut relations);
     let db = Database {
-        id: id(),
+        id: db_id,
         folder_id: folder.into(),
         name: if t.title.trim().is_empty() {
             "Imported table".into()
@@ -1101,6 +1159,26 @@ fn column_kind(values: &[&str]) -> (ColumnKind, Vec<String>) {
     }) {
         return (ColumnKind::Url, vec![]);
     }
+    // Notion's relations: `Title (path/Title id.md)`, several joined by ", ".
+    if values.iter().all(|v| !related_items(v).is_empty()) {
+        return (ColumnKind::Relation, vec![]);
+    }
+    // Notion's multi-select: options joined by ", ", some used more than once.
+    if values.iter().any(|v| v.contains(", ")) {
+        let mut options: Vec<String> = vec![];
+        let mut used = 0;
+        for v in values {
+            for part in v.split(", ").map(str::trim).filter(|p| !p.is_empty()) {
+                used += 1;
+                if !options.iter().any(|o| o == part) {
+                    options.push(part.to_string());
+                }
+            }
+        }
+        if options.len() <= 50 && options.len() < used && options.iter().all(|o| o.len() <= 100) {
+            return (ColumnKind::MultiSelect, options);
+        }
+    }
     let mut options: Vec<String> = vec![];
     for v in values {
         if !options.iter().any(|o| o == v) {
@@ -1114,6 +1192,111 @@ fn column_kind(values: &[&str]) -> (ColumnKind, Vec<String>) {
         (ColumnKind::Select, options)
     } else {
         (ColumnKind::Text, vec![])
+    }
+}
+/// The items of a Notion relation cell: each page's title and the folder its
+/// file is in (the related table's name). Empty when it is not one.
+fn related_items(value: &str) -> Vec<(String, String)> {
+    let mut out = vec![];
+    let mut rest = value.trim();
+    while !rest.is_empty() {
+        // `Title (path.md)`, the path percent-encoded.
+        let Some(open) = rest.find(" (") else {
+            return vec![];
+        };
+        let Some(close) = rest[open..].find(".md)").map(|i| open + i + 4) else {
+            return vec![];
+        };
+        let title = rest[..open].trim().to_string();
+        let path = percent_decode(&rest[open + 2..close - 1]);
+        let folder = path
+            .rsplit_once('/')
+            .map(|(dir, _)| dir.rsplit('/').next().unwrap_or(dir))
+            .map(|f| without_notion_id(f).to_string())
+            .unwrap_or_default();
+        if title.is_empty() || folder.is_empty() {
+            return vec![];
+        }
+        out.push((title, folder));
+        rest = rest[close..].trim_start_matches(',').trim_start();
+    }
+    out
+}
+/// A relation column waiting for the other tables: by record, the titles of the
+/// related records and the table they are in.
+struct PendingRelation {
+    database: String,
+    column: String,
+    cells: Vec<(String, Vec<(String, String)>)>,
+}
+/// Links relation columns to the tables imported with them; a column whose
+/// table is not there stays text.
+fn link_relations(d: &mut Data, created: &[String], pending: Vec<PendingRelation>) {
+    for p in pending {
+        let target_name = p
+            .cells
+            .iter()
+            .flat_map(|(_, items)| items)
+            .map(|(_, t)| t.clone())
+            .next();
+        let target = target_name.and_then(|name| {
+            d.databases
+                .iter()
+                .find(|db| created.contains(&db.id) && db.name.eq_ignore_ascii_case(&name))
+                .map(|db| {
+                    (
+                        db.id.clone(),
+                        db.rows
+                            .iter()
+                            .map(|r| (databases::record_title(db, r), r.id.clone()))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+        });
+        let Some(db) = d.databases.iter_mut().find(|db| db.id == p.database) else {
+            continue;
+        };
+        let Some(col) = db.columns.iter_mut().find(|c| c.id == p.column) else {
+            continue;
+        };
+        match target {
+            Some((target, titles)) => {
+                col.kind = ColumnKind::Relation;
+                col.target = Some(target);
+                for (rid, items) in &p.cells {
+                    let ids: Vec<Value> = items
+                        .iter()
+                        .filter_map(|(title, _)| {
+                            titles
+                                .iter()
+                                .find(|(t, _)| t == title)
+                                .map(|(_, id)| json!(id))
+                        })
+                        .collect();
+                    if let Some(r) = db.rows.iter_mut().find(|r| &r.id == rid) {
+                        if ids.is_empty() {
+                            r.cells.remove(&p.column);
+                        } else {
+                            r.cells.insert(p.column.clone(), json!(ids));
+                        }
+                    }
+                }
+            }
+            None => {
+                // The titles, as text.
+                col.kind = ColumnKind::Text;
+                for (rid, items) in &p.cells {
+                    if let Some(r) = db.rows.iter_mut().find(|r| &r.id == rid) {
+                        let text = items
+                            .iter()
+                            .map(|(t, _)| t.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        r.cells.insert(p.column.clone(), json!(text));
+                    }
+                }
+            }
+        }
     }
 }
 /// A date as `YYYY-MM-DD`, from `2026-11-01`, `2026/11/01`, or Notion's
@@ -1221,6 +1404,206 @@ fn evernote(xml: &str) -> Result<Export, ApiError> {
         });
     }
     Ok(export)
+}
+/// Bear's tags: `#multi word tag#` (and `#tag#`) become `#multi-word-tag`, as
+/// Minerva writes tags. A `#` must start the tag after a space or a line's
+/// start, and end it right after a word, so headings and `C#` are left alone.
+fn bear_tags(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut fenced = false;
+    for line in text.split_inclusive('\n') {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+        }
+        if fenced || !line.contains('#') {
+            out.push_str(line);
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let starts = chars[i] == '#'
+                && (i == 0 || chars[i - 1].is_whitespace())
+                && chars
+                    .get(i + 1)
+                    .is_some_and(|c| !c.is_whitespace() && *c != '#');
+            if starts {
+                // The closing `#`, on the same line, right after a word.
+                let close = (i + 2..chars.len()).find(|&j| chars[j] == '#');
+                if let Some(j) = close {
+                    let inner: String = chars[i + 1..j].iter().collect();
+                    let ends_word = !chars[j - 1].is_whitespace();
+                    let after_ok = chars
+                        .get(j + 1)
+                        .is_none_or(|c| c.is_whitespace() || ",.;:!?)".contains(*c));
+                    if ends_word
+                        && after_ok
+                        && inner.len() <= 60
+                        && !inner.contains(['[', ']', '(', ')'])
+                    {
+                        let tag: String = inner.split_whitespace().collect::<Vec<_>>().join("-");
+                        out.push('#');
+                        out.push_str(&tag);
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// OneNote's "Single File Web Page" (`.mht`): the page as HTML, with its
+/// pictures as parts. They become a note, and its files.
+fn mhtml(name: &str, bytes: &[u8]) -> Result<Export, ApiError> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let text = String::from_utf8_lossy(bytes);
+    let boundary = text
+        .lines()
+        .take(60)
+        .find_map(|l| {
+            let at = l.to_lowercase().find("boundary=")?;
+            Some(
+                l[at + 9..]
+                    .trim()
+                    .trim_matches(';')
+                    .trim_matches('"')
+                    .to_string(),
+            )
+        })
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| bad("This web archive cannot be read"))?;
+    let marker = format!("--{boundary}");
+    let mut html = None;
+    let mut images: Vec<(Vec<String>, Vec<u8>, String)> = vec![];
+    for part in text.split(&marker).skip(1) {
+        let part = part.trim_start_matches(['\r', '\n']);
+        let Some(split) = part
+            .find("\r\n\r\n")
+            .map(|i| (i, 4))
+            .or_else(|| part.find("\n\n").map(|i| (i, 2)))
+        else {
+            continue;
+        };
+        let (head, body) = (&part[..split.0], &part[split.0 + split.1..]);
+        let header = |name: &str| -> String {
+            head.lines()
+                .find_map(|l| {
+                    let (k, v) = l.split_once(':')?;
+                    k.trim()
+                        .eq_ignore_ascii_case(name)
+                        .then(|| v.trim().to_string())
+                })
+                .unwrap_or_default()
+        };
+        let kind = header("Content-Type").to_lowercase();
+        let encoding = header("Content-Transfer-Encoding").to_lowercase();
+        let raw: Vec<u8> = if encoding.contains("base64") {
+            let clean: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+            STANDARD
+                .decode(clean.trim_end_matches('-'))
+                .unwrap_or_default()
+        } else if encoding.contains("quoted-printable") {
+            quoted_printable(body)
+        } else {
+            body.as_bytes().to_vec()
+        };
+        if kind.starts_with("text/html") && html.is_none() {
+            // OneNote writes Windows-1252 at times: those bytes are read as Latin-1.
+            html = Some(if kind.contains("1252") || kind.contains("8859-1") {
+                raw.iter().map(|&b| b as char).collect::<String>()
+            } else {
+                String::from_utf8_lossy(&raw).into_owned()
+            });
+        } else if kind.starts_with("image/") && !raw.is_empty() {
+            let mut names = vec![];
+            let location = header("Content-Location");
+            if !location.is_empty() {
+                names.push(location.clone());
+            }
+            let cid = header("Content-ID");
+            if !cid.is_empty() {
+                names.push(format!("cid:{}", cid.trim_matches(['<', '>'])));
+            }
+            let file = location
+                .rsplit(['/', '\\'])
+                .next()
+                .filter(|f| !f.is_empty())
+                .unwrap_or("picture")
+                .to_string();
+            images.push((names, raw, file));
+        }
+    }
+    let mut html = html.ok_or_else(|| bad("This web archive has no page"))?;
+    let mut export = Export::default();
+    for (i, (names, raw, file)) in images.into_iter().enumerate() {
+        let key = format!("mht{i}");
+        for n in names {
+            for quote in ['"', '\''] {
+                html = html.replace(
+                    &format!("src={quote}{n}{quote}"),
+                    &format!("src=\"mht:{key}\""),
+                );
+            }
+        }
+        export.names.insert(format!("evernote:{key}"), file);
+        export.files.insert(format!("evernote:{key}"), raw);
+    }
+    let title = sections(&html, "title")
+        .first()
+        .map(|t| entities(t).trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| {
+            let stem = name.rsplit('/').next().unwrap_or(name);
+            stem.rsplit_once('.').map_or(stem, |(s, _)| s).to_string()
+        });
+    let body = sections(&html, "body")
+        .first()
+        .copied()
+        .unwrap_or(&html)
+        .to_string();
+    export.pages.push(Page {
+        dir: vec![],
+        path: String::new(),
+        title: title.chars().take(200).collect(),
+        markdown: html_to_markdown(&body),
+        tags: vec![],
+        metadata: BTreeMap::new(),
+    });
+    Ok(export)
+}
+/// Quoted-printable text as bytes: `=XX` and soft line breaks.
+fn quoted_printable(text: &str) -> Vec<u8> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'=' {
+            if bytes.get(i + 1) == Some(&b'\r') && bytes.get(i + 2) == Some(&b'\n') {
+                i += 3;
+                continue;
+            }
+            if bytes.get(i + 1) == Some(&b'\n') {
+                i += 2;
+                continue;
+            }
+            if let Some(b) = text
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    out
 }
 /// The contents of every `<name …>…</name>` in `xml`, not nested in one another.
 fn sections<'a>(xml: &'a str, name: &str) -> Vec<&'a str> {
@@ -1494,7 +1877,11 @@ impl Writer {
                 }
             }
             ("img", _) => {
-                if let Some(src) = attribute(body, "src").filter(|s| s.starts_with("http")) {
+                let src = attribute(body, "src").unwrap_or_default();
+                // A picture kept in the import (a web archive's).
+                if let Some(key) = src.strip_prefix("mht:") {
+                    self.push(&format!("\u{1}media:{key}\u{1}"));
+                } else if src.starts_with("http") {
                     self.push(&format!("![]({src})"));
                 }
             }
@@ -1642,6 +2029,15 @@ mod tests {
             column_kind(&["Done", "Done", "To do"]),
             (ColumnKind::Select, vec!["Done".into(), "To do".into()])
         );
-        assert_eq!(column_kind(&["a, b", "a, b"]).0, ColumnKind::Text);
+        // Options joined by commas, used again: Notion's multi-select.
+        assert_eq!(
+            column_kind(&["a, b", "a, b"]),
+            (ColumnKind::MultiSelect, vec!["a".into(), "b".into()])
+        );
+        // Prose with commas and no repeats stays text.
+        assert_eq!(
+            column_kind(&["one, two", "three, four"]).0,
+            ColumnKind::Text
+        );
     }
 }

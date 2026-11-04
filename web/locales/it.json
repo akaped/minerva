@@ -199,7 +199,6 @@
   "Subfolders": "Sottocartelle",
   "Rename folder": "Rinomina cartella",
   "Delete folder": "Elimina cartella",
-  "Import notes from Markdown, Notion, Obsidian, Logseq or Evernote": "Importa note da Markdown, Notion, Obsidian, Logseq o Evernote",
   "Grid view": "Vista a griglia",
   "List view": "Vista a elenco",
   "A little clarity. A little possibility. Your Minerva.": "Un po’ di chiarezza. Un po’ di possibilità. La tua Minerva.",
@@ -2234,5 +2233,14 @@
   "Keep folding in the note": "Conserva la piegatura nella nota",
   "Folding is kept in the note, for everyone": "La piegatura è conservata nella nota, per tutti",
   "Folding is kept on each device again": "La piegatura torna a essere conservata su ogni dispositivo",
-  "Say whether folding is shared": "Indica se la piegatura è condivisa"
+  "Say whether folding is shared": "Indica se la piegatura è condivisa",
+  "Import notes from Markdown, Notion, Obsidian, Logseq, Evernote, Bear or OneNote": "Importa note da Markdown, Notion, Obsidian, Logseq, Evernote, Bear o OneNote",
+  "Bear:": "Bear:",
+  "File → Export Notes, as": "File → Esporta note, come",
+  "(or Markdown), and choose the files or a zip of them.": "(o Markdown), e scegli i file o uno zip che li contiene.",
+  "OneNote:": "OneNote:",
+  "File → Export, a page or section as": "File → Esporta, una pagina o una sezione come",
+  "Single File Web Page (.mht)": "Pagina Web in file unico (.mht)",
+  "This web archive cannot be read": "Questo archivio web non può essere letto",
+  "This web archive has no page": "Questo archivio web non contiene una pagina"
 }

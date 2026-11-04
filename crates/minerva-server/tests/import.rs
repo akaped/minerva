@@ -303,3 +303,171 @@ fn base64_png() -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
     STANDARD.encode(PNG)
 }
+
+#[tokio::test]
+async fn notion_multi_select_and_relations_become_real_columns() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let root = api(
+        &router,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let token = common::member(&router, &root, "owner@test.local").await;
+    let boot = api(&router, "GET", "bootstrap", &token, json!({})).await;
+    let target = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let id1 = "0123456789abcdef0123456789abcdef";
+    let id2 = "fedcba9876543210fedcba9876543210";
+    let people = "Name,Team\nAda,\"Design, Research\"\nBo,Research\nCy,\"Design, Ops\"\n";
+    let projects = format!(
+        "Name,Owners\nLaunch,\"Ada (People%20{id1}/Ada%20{id2}.md), Bo (People%20{id1}/Bo%20{id2}.md)\"\nAudit,\"Cy (People%20{id1}/Cy%20{id2}.md)\"\nOrphan,\"Zed (Elsewhere%20{id1}/Zed%20{id2}.md)\"\n"
+    );
+    let export = zip(&[
+        (&format!("People {id1}.csv"), people.as_bytes()),
+        (&format!("Projects {id2}.csv"), projects.as_bytes()),
+    ]);
+    let (status, report) = import(&router, &token, &target, "notion.zip", export).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["databases"], 2, "{report}");
+    let boot = api(&router, "GET", "bootstrap", &token, json!({})).await;
+    let find = |name: &str| {
+        boot["databases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["name"] == name)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let people = api(
+        &router,
+        "GET",
+        &format!("databases/{}", find("People")),
+        &token,
+        json!({}),
+    )
+    .await;
+    let team = &people["columns"][1];
+    assert_eq!(team["kind"], "multi_select", "{people}");
+    assert_eq!(team["options"], json!(["Design", "Research", "Ops"]));
+    let ada = people["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["cells"][people["columns"][0]["id"].as_str().unwrap()] == "Ada")
+        .unwrap();
+    assert_eq!(
+        ada["cells"][team["id"].as_str().unwrap()],
+        json!(["Design", "Research"])
+    );
+
+    let projects = api(
+        &router,
+        "GET",
+        &format!("databases/{}", find("Projects")),
+        &token,
+        json!({}),
+    )
+    .await;
+    let owners = &projects["columns"][1];
+    assert_eq!(owners["kind"], "relation", "{projects}");
+    assert_eq!(owners["target"], people["id"]);
+    let title = projects["columns"][0]["id"].as_str().unwrap();
+    let launch = projects["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["cells"][title] == "Launch")
+        .unwrap();
+    let linked = launch["cells"][owners["id"].as_str().unwrap()]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(linked, 2, "Ada and Bo are linked");
+    let orphan = projects["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["cells"][title] == "Orphan")
+        .unwrap();
+    assert!(
+        orphan["cells"]
+            .get(owners["id"].as_str().unwrap())
+            .is_none(),
+        "a record of another table links nothing"
+    );
+}
+
+#[tokio::test]
+async fn imports_bear_textbundles_and_onenote_web_archives() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let root = api(
+        &router,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let token = common::member(&router, &root, "owner@test.local").await;
+    let boot = api(&router, "GET", "bootstrap", &token, json!({})).await;
+    let target = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Bear: a TextBundle, with its picture and tags with spaces; C# stays.
+    let pack = zip(&[
+        ("Garden ideas.textbundle/text.md", b"# Garden ideas\n\nTomatoes #home/garden #summer plans# and C# code.\n\n![](assets/bed.png)"),
+        ("Garden ideas.textbundle/info.json", b"{}"),
+        ("Garden ideas.textbundle/assets/bed.png", PNG),
+    ]);
+    let (status, report) = import(
+        &router,
+        &token,
+        &target,
+        "bear.zip",
+        zip(&[("Garden ideas.textpack", &pack)]),
+    )
+    .await;
+    assert_eq!(status, 200, "{report}");
+    let all = notes(&router, &token).await;
+    let (_, garden) = &all["Garden ideas"];
+    let body = text(garden);
+    assert!(
+        body.starts_with("Tomatoes #home/garden #summer-plans and C# code."),
+        "{body}"
+    );
+    assert!(body.contains("![bed.png](/api/v1/attachments/"), "{body}");
+
+    // OneNote: a single-file web page, with quoted-printable HTML and a picture.
+    use base64::Engine;
+    let png = base64::engine::general_purpose::STANDARD.encode(PNG);
+    let mht = format!(
+        "MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=\"----=_NextPart_01\"\r\n\r\n------=_NextPart_01\r\nContent-Location: file:///C:/page.htm\r\nContent-Transfer-Encoding: quoted-printable\r\nContent-Type: text/html; charset=\"utf-8\"\r\n\r\n<html><head><title>Meeting =E2=80=93 Monday</title></head><body><p>Agenda for the=\r\n week</p><ul><li>Budget</li></ul><p><img src=3D\"page_files/image001.png\"></p></body></html>\r\n------=_NextPart_01\r\nContent-Location: page_files/image001.png\r\nContent-Transfer-Encoding: base64\r\nContent-Type: image/png\r\n\r\n{png}\r\n------=_NextPart_01--\r\n"
+    );
+    let (status, report) = import(&router, &token, &target, "meeting.mht", mht.into_bytes()).await;
+    assert_eq!(status, 200, "{report}");
+    let all = notes(&router, &token).await;
+    let (_, meeting) = &all["Meeting – Monday"];
+    let body = text(meeting);
+    assert!(body.contains("Agenda for the week"), "{body}");
+    assert!(body.contains("Budget"), "{body}");
+    assert!(
+        body.contains("/api/v1/attachments/"),
+        "the picture is kept: {body}"
+    );
+}

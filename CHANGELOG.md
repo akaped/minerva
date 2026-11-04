@@ -28,6 +28,7 @@ turns that section into the next version.
 - **Comments:** edit your own comments (marked “edited”); the text a thread is about is highlighted in its block, and a click on it opens the thread; comments that mention you appear in the Mentions widget; and guests with an edit link can comment and reply too, as “Guest”, seeing members only as “Member”.
 - **Blocks across notes:** type `[[Note name#words` to link (or with `![[`, embed) one block of another note; edit an embedded block right where it is shown with ✎, and the change lands in its own note; embedded notes update as soon as their note changes; links to a block on published pages go to that block; and Logseq imports keep block references and `{{embed …}}` pointing at the block or page.
 - **Folding and link cards:** ⋯ → **Keep folding in the note** folds and unfolds for everyone who opens it, as Logseq does (otherwise folding stays on each device); link cards show for share-link guests and on published pages too; and **Link** / **Card** on a link block switches between a card and a plain link.
+- **More imports:** Bear (TextBundles, with pictures, and its tags with spaces) and OneNote (pages or sections exported as a single-file web page, with pictures); Notion tables keep multi-select columns, and relation columns link to the imported table's records.
 
 ## [0.6.0] - 2026-11-03
 
