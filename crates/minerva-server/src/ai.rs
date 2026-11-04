@@ -1389,7 +1389,14 @@ pub(super) fn transcription_as(
     }
     let boundary = format!("minerva-{}", id());
     let mut body = Vec::new();
-    let fields: &[(&str, &str)] = if segments {
+    // A diarizing model says who speaks each segment.
+    let fields: &[(&str, &str)] = if model.contains("diarize") {
+        &[
+            ("model", model.as_str()),
+            ("response_format", "diarized_json"),
+            ("chunking_strategy", "auto"),
+        ]
+    } else if segments {
         &[
             ("model", model.as_str()),
             ("response_format", "verbose_json"),

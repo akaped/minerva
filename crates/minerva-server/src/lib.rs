@@ -2,6 +2,7 @@ mod administration;
 mod ai;
 mod anki;
 mod attachments;
+mod audio;
 mod calendar;
 mod collaboration;
 mod comments;

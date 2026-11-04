@@ -5356,7 +5356,7 @@ async function recordingDialog(attachmentId, afterId) {
       const started = Date.now();
       while (["transcribing", "summarizing"].includes(job.state) && !stopped) {
         const seconds = Math.round((Date.now() - started) / 1000);
-        status.textContent = `${job.state === "transcribing" ? "Transcribing the recording" : "Writing the notes"}… ${timestamp(seconds)}`;
+        status.textContent = `${job.state === "transcribing" ? (job.parts > 1 ? $t("Transcribing part {part} of {parts}", { part: job.part, parts: job.parts }) : $t("Transcribing the recording")) : $t("Writing the notes")}… ${timestamp(seconds)}`;
         await new Promise((r) => setTimeout(r, 1500));
         job = await api(`ai/recordings/${job.id}`);
       }
@@ -5394,12 +5394,20 @@ async function recordingDialog(attachmentId, afterId) {
     $("#recording-insert").hidden = false;
     $("#recording-close").textContent = $t("Close");
     $("#recording-insert").onclick = async () => {
-      const blocks = recordingBlocks(job, {
-        summary: !!form.summary?.checked,
-        decisions: !!form.decisions?.checked,
-        transcript: !!form.transcript?.checked,
-        actions: $$("[name=action]:checked", form).map((c) => Number(c.value)),
-      });
+      // Owners who are members become @mentions.
+      const people = await loadPeople().catch(() => []);
+      const blocks = recordingBlocks(
+        job,
+        {
+          summary: !!form.summary?.checked,
+          decisions: !!form.decisions?.checked,
+          transcript: !!form.transcript?.checked,
+          actions: $$("[name=action]:checked", form).map((c) =>
+            Number(c.value),
+          ),
+        },
+        people,
+      );
       if (!blocks.length) return fail(new Error($t("Choose something to insert.")));
       if (note?.id !== targetId)
         return fail(new Error($t("Open the note with the recording to insert.")));

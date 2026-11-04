@@ -2247,5 +2247,9 @@
   "Which calendar": "Quale calendario",
   "All my workspaces, for me": "Tutti i miei spazi di lavoro, per me",
   "This workspace, to share": "Questo spazio di lavoro, da condividere",
-  "Anyone with the address can see this workspace's reminders, without signing in. Share it with care; make a new one or turn it off to stop it.": "Chiunque abbia l'indirizzo può vedere i promemoria di questo spazio di lavoro senza accedere. Condividilo con cura; creane uno nuovo o disattivalo per fermarlo."
+  "Anyone with the address can see this workspace's reminders, without signing in. Share it with care; make a new one or turn it off to stop it.": "Chiunque abbia l'indirizzo può vedere i promemoria di questo spazio di lavoro senza accedere. Condividilo con cura; creane uno nuovo o disattivalo per fermarlo.",
+  "Transcribing part {part} of {parts}": "Trascrizione della parte {part} di {parts}",
+  "Transcribing the recording": "Trascrizione della registrazione",
+  "Writing the notes": "Scrittura degli appunti",
+  "This recording is too long to send at once, and its format cannot be split: use WebM, Ogg, WAV or MP3": "Questa registrazione è troppo lunga per essere inviata in una volta e il suo formato non si può dividere: usa WebM, Ogg, WAV o MP3"
 }

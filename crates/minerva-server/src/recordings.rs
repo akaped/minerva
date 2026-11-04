@@ -27,8 +27,14 @@ pub(super) struct Job {
     state: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
-    /// `[{start?, end?, text}]`; times in seconds when the model gives them.
+    /// `[{start?, end?, text, speaker?}]`; times in seconds when the model
+    /// gives them, and who spoke when it can tell.
     transcript: Vec<Value>,
+    /// The part being transcribed, of how many (a long recording goes in parts).
+    #[serde(default)]
+    part: usize,
+    #[serde(default)]
+    parts: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     summary: Option<Value>,
     #[serde(skip)]
@@ -109,8 +115,16 @@ pub(super) fn start(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Va
         if !media.starts_with("audio/") && !media.starts_with("video/") {
             return Err(bad("Choose a recording (an audio file)"));
         }
-        let segments = ai::transcription_model().contains("whisper");
-        let request = ai::transcription_as(&s, bytes, segments)?;
+        let model = ai::transcription_model();
+        let segments = model.contains("whisper") || model.contains("diarize");
+        // A long recording goes in parts, each a file of its own.
+        let parts = audio::split(&bytes, ai::MAX_AUDIO).ok_or_else(|| {
+            bad("This recording is too long to send at once, and its format cannot be split: use WebM, Ogg, WAV or MP3")
+        })?;
+        let request = parts
+            .into_iter()
+            .map(|part| ai::transcription_as(&s, part, segments))
+            .collect::<Result<Vec<_>, _>>()?;
         let job = Job {
             user_id: u.id.clone(),
             id: id(),
@@ -119,6 +133,8 @@ pub(super) fn start(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Va
             state: "transcribing".into(),
             error: None,
             transcript: vec![],
+            part: 0,
+            parts: 0,
             summary: None,
             updated: now(),
             task: None,
@@ -156,11 +172,37 @@ pub(super) fn start(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Va
 async fn run(
     store: &Shared,
     id: &str,
-    request: reqwest::RequestBuilder,
+    requests: Vec<reqwest::RequestBuilder>,
     completion_for: Option<(String, String)>,
 ) -> Result<(), ApiError> {
-    let answer = ai::read_transcription(request).await?;
-    let transcript = segments(&answer)?;
+    // Part after part, each one's times after the earlier parts'.
+    let total = requests.len();
+    let mut transcript = vec![];
+    let mut offset = 0.0;
+    for (i, request) in requests.into_iter().enumerate() {
+        update(id, |job| {
+            job.part = i + 1;
+            job.parts = total;
+        });
+        let answer = ai::read_transcription(request).await?;
+        let mut part = segments(&answer)?;
+        for s in &mut part {
+            for key in ["start", "end"] {
+                if let Some(t) = s[key].as_f64() {
+                    s[key] = json!(t + offset);
+                }
+            }
+        }
+        offset += answer["duration"]
+            .as_f64()
+            .or_else(|| {
+                part.last()
+                    .and_then(|s| s["end"].as_f64())
+                    .map(|end| end - offset)
+            })
+            .unwrap_or(0.0);
+        transcript.extend(part);
+    }
     update(id, |job| {
         job.transcript = transcript.clone();
         if completion_for.is_some() {
@@ -198,9 +240,18 @@ fn segments(v: &Value) -> Result<Vec<Value>, ApiError> {
         .flatten()
         .filter_map(|s| {
             let text = s["text"].as_str()?.trim();
-            (!text.is_empty()).then(
-                || json!({"start": s["start"].as_f64(), "end": s["end"].as_f64(), "text": text}),
-            )
+            (!text.is_empty()).then(|| {
+                let mut segment =
+                    json!({"start": s["start"].as_f64(), "end": s["end"].as_f64(), "text": text});
+                // Who spoke, when the model tells (`A`, `B`… or a name).
+                if let Some(who) = s["speaker"]
+                    .as_str()
+                    .filter(|w| !w.is_empty() && w.len() <= 40)
+                {
+                    segment["speaker"] = json!(who);
+                }
+                segment
+            })
         })
         .collect();
     let out = if timed.is_empty() {
@@ -230,7 +281,13 @@ fn segments(v: &Value) -> Result<Vec<Value>, ApiError> {
 fn transcript_text(segments: &[Value]) -> String {
     segments
         .iter()
-        .map(|s| s["text"].as_str().unwrap_or(""))
+        .map(|s| {
+            let text = s["text"].as_str().unwrap_or("");
+            match s["speaker"].as_str() {
+                Some(who) => format!("{who}: {text}"),
+                None => text.to_string(),
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

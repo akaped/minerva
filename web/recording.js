@@ -15,14 +15,34 @@ export function timestamp(seconds) {
 
 const clean = (text) => String(text).replace(/\s+/g, " ").trim();
 
-/** An action item as a task, with its owner and a `⏰` time when one was said. */
-export function actionTask({ task, owner, due }) {
+/**
+ * The member an owner said aloud is: their full name, or a first name only one
+ * member has. `people` are `{name, email}`; returns an email or null.
+ */
+export function ownerEmail(owner, people = []) {
+  const said = clean(owner || "").toLowerCase();
+  if (!said) return null;
+  const full = people.filter((p) => p.name?.toLowerCase() === said);
+  if (full.length === 1) return full[0].email;
+  const first = people.filter(
+    (p) => p.name?.toLowerCase().split(/\s+/)[0] === said,
+  );
+  return first.length === 1 ? first[0].email : null;
+}
+
+/**
+ * An action item as a task, with its owner (as an `@mention` when they are a
+ * member) and a `⏰` time when one was said.
+ */
+export function actionTask({ task, owner, due }, people = []) {
   const when = /^\d{4}-\d{2}-\d{2}$/.test(due || "")
     ? `${due} 09:00`
     : /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(due || "")
       ? due
       : "";
-  return `- [ ] ${clean(task)}${owner ? ` — ${clean(owner)}` : ""}${when ? ` ⏰${when}` : ""}`;
+  const email = ownerEmail(owner, people);
+  const who = email ? `@${email}` : owner ? clean(owner) : "";
+  return `- [ ] ${clean(task)}${who ? ` — ${who}` : ""}${when ? ` ⏰${when}` : ""}`;
 }
 
 /**
@@ -40,10 +60,18 @@ export function transcriptBlocks(segments, size = 700) {
     current = "";
     start = null;
   };
+  // A new speaker starts a new paragraph, named.
+  let speaker = null;
   for (const s of segments) {
-    if (current && current.length + s.text.length > size) push();
+    const changed = s.speaker && s.speaker !== speaker;
+    if (current && (changed || current.length + s.text.length > size)) push();
     if (!current) start = s.start ?? null;
-    current = current ? `${current} ${clean(s.text)}` : clean(s.text);
+    const text =
+      changed || (!current && s.speaker)
+        ? `**${clean(s.speaker)}:** ${clean(s.text)}`
+        : clean(s.text);
+    if (s.speaker) speaker = s.speaker;
+    current = current ? `${current} ${text}` : text;
   }
   push();
   return out;
@@ -53,7 +81,7 @@ export function transcriptBlocks(segments, size = 700) {
  * The blocks to insert. `keep` says what to include: `summary`, `decisions`,
  * `transcript` (booleans) and `actions` (the indices of the action items).
  */
-export function recordingBlocks(job, keep) {
+export function recordingBlocks(job, keep, people = []) {
   const notes = job.summary || {};
   const blocks = [];
   const section = (title, items) => {
@@ -76,7 +104,7 @@ export function recordingBlocks(job, keep) {
     $t("Action items"),
     (notes.action_items || [])
       .filter((_, i) => keep.actions?.includes(i))
-      .map(actionTask),
+      .map((item) => actionTask(item, people)),
   );
   if (keep.transcript && job.transcript?.length)
     section($t("Transcript"), transcriptBlocks(job.transcript));

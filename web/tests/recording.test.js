@@ -75,3 +75,36 @@ test("only what was kept is inserted", () => {
     ["### Transcript", "  Hello."],
   );
 });
+
+test("owners who are members become mentions; speakers start paragraphs", async () => {
+  const { actionTask, ownerEmail, transcriptBlocks } =
+    await import("../recording.js");
+  const people = [
+    { name: "Ada Lovelace", email: "ada@test.local" },
+    { name: "Bo Chen", email: "bo@test.local" },
+    { name: "Bo Smith", email: "bosmith@test.local" },
+  ];
+  assert.equal(ownerEmail("Ada", people), "ada@test.local");
+  assert.equal(ownerEmail("bo chen", people), "bo@test.local");
+  assert.equal(ownerEmail("Bo", people), null, "two Bos: as said");
+  assert.equal(
+    actionTask(
+      { task: "Send the deck", owner: "Ada", due: "2026-11-09" },
+      people,
+    ),
+    "- [ ] Send the deck — @ada@test.local ⏰2026-11-09 09:00",
+  );
+  assert.equal(
+    actionTask({ task: "Call", owner: "Bo" }, people),
+    "- [ ] Call — Bo",
+  );
+  const blocks = transcriptBlocks([
+    { start: 0, text: "Hello.", speaker: "A" },
+    { start: 2, text: "How are you?", speaker: "A" },
+    { start: 4, text: "Fine.", speaker: "B" },
+  ]);
+  assert.deepEqual(blocks, [
+    "  `0:00` **A:** Hello. How are you?",
+    "  `0:04` **B:** Fine.",
+  ]);
+});

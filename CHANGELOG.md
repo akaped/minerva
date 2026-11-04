@@ -30,6 +30,7 @@ turns that section into the next version.
 - **Folding and link cards:** ⋯ → **Keep folding in the note** folds and unfolds for everyone who opens it, as Logseq does (otherwise folding stays on each device); link cards show for share-link guests and on published pages too; and **Link** / **Card** on a link block switches between a card and a plain link.
 - **More imports:** Bear (TextBundles, with pictures, and its tags with spaces) and OneNote (pages or sections exported as a single-file web page, with pictures); Notion tables keep multi-select columns, and relation columns link to the imported table's records.
 - **Calendar feeds:** a workspace can have its own calendar address, with only its reminders and ⏰ times, to share with people outside it (📅 Add to your calendar → This workspace, to share); and repeating reminders stay at their local time in calendar apps across daylight-saving changes.
+- **Recordings:** long recordings (beyond about 90 minutes) are transcribed in parts, with times running on; with a diarizing transcription model the transcript says who spoke; and action items whose owner is a member mention them.
 
 ## [0.6.0] - 2026-11-03
 
