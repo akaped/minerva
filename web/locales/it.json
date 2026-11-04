@@ -2210,5 +2210,6 @@
   "It will return to {host}. Signed in as {email}.": "Tornerà a {host}. Accesso come {email}.",
   "Your folder permissions always apply. You can revoke the connection under MCP connections.": "I permessi delle tue cartelle valgono sempre. Puoi revocare il collegamento in Connessioni MCP.",
   "Deny": "Rifiuta",
-  "Allow": "Consenti"
+  "Allow": "Consenti",
+  "Invalid state vector": "Vettore di stato non valido"
 }

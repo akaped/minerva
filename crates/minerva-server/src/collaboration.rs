@@ -226,6 +226,20 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         doc.transact()
             .encode_state_as_update_v1(&StateVector::default()),
     );
+    // A client that says what it has (its state vector) gets only the rest.
+    let reply = match v["state_vector"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() < 200_000)
+    {
+        Some(sv) => {
+            let bytes = STANDARD
+                .decode(sv)
+                .map_err(|_| bad("Invalid state vector"))?;
+            let sv = StateVector::decode_v1(&bytes).map_err(|_| bad("Invalid state vector"))?;
+            STANDARD.encode(doc.transact().encode_state_as_update_v1(&sv))
+        }
+        None => encoded.clone(),
+    };
     if encoded.len() > 2_500_000 {
         return Err(bad("Collaborative document reached its storage limit"));
     }
@@ -308,6 +322,6 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         view
     };
     Ok(
-        json!({"update":encoded,"note":note,"peers":visible,"can_edit":can_edit,"denied_block":denied_block}),
+        json!({"update":reply,"note":note,"peers":visible,"can_edit":can_edit,"denied_block":denied_block}),
     )
 }

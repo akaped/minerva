@@ -260,6 +260,8 @@ export class Collaboration {
         this.sentPresence = JSON.stringify(presence);
         const result = await this.api(this.syncPath, "POST", {
           update: updates.length ? encode(Y.mergeUpdates(updates)) : "",
+          // What this copy has: the server sends back only what it lacks.
+          state_vector: encode(Y.encodeStateVector(this.doc)),
           client_id: this.clientId,
           ...presence,
         });
