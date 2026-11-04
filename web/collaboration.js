@@ -192,6 +192,7 @@ export class Collaboration {
       icon: this.doc.getMap("meta").get("icon"),
       favorite: this.doc.getMap("meta").get("favorite"),
       trashed: this.doc.getMap("meta").get("trashed"),
+      archived: this.doc.getMap("meta").get("archived") ?? false,
       cover: this.doc.getMap("meta").get("cover") ?? "",
       tags: this.doc.getMap("meta").get("tags") ?? [],
       blocks: [...new Set(this.doc.getArray("order").toArray())].map((id) => ({
@@ -213,7 +214,7 @@ export class Collaboration {
     this.doc.transact(() => {
       replaceText(this.doc.getText("title"), note.title);
       const meta = this.doc.getMap("meta");
-      for (const key of ["icon", "favorite", "trashed", "cover"])
+      for (const key of ["icon", "favorite", "trashed", "archived", "cover"])
         if (note[key] !== undefined && meta.get(key) !== note[key])
           meta.set(key, note[key]);
       if (

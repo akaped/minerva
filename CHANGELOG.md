@@ -16,6 +16,7 @@ turns that section into the next version.
 - **Your own scheduling:** choose the desired retention (70–97%), and **Optimize for my memory** fits the FSRS scheduler's weights to your review history, keeping them only if they predict your recall better than the defaults. Every review is now logged for this.
 - **Pictures and sounds on cards:** **Add picture or sound** and **Record sound** in the card editor; Anki imports keep their sounds, and with review progress, their review history, which rebuilds each card's memory.
 - **Shared flashcard decks:** share a deck with a workspace; everyone in it studies with their own progress, and those who can edit there change its cards. A deck can also aim for its own desired retention, and statistics show the time spent studying.
+- **Archive:** put a note away from its ⋯ menu without trashing it. Archived notes leave the sidebar, search, link suggestions, the graph and AI answers about a folder or workspace; **Archived** in the sidebar lists them, and **Unarchive** brings one back.
 
 ## [0.6.0] - 2026-11-03
 

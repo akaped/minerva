@@ -298,6 +298,7 @@ fn write_call(
                 updated_at: now(),
                 favorite: false,
                 trashed: false,
+                archived: false,
                 cover: String::new(),
                 tags: vec![],
                 journal: None,
@@ -427,7 +428,7 @@ fn call(
                 db,
                 d,
                 &q,
-                |n| !n.trashed && allowed(d, u, wid, &n.folder_id),
+                |n| !n.trashed && !n.archived && allowed(d, u, wid, &n.folder_id),
                 limit,
             )?;
             let matches:Vec<_>=found.into_iter().map(|(n,_)|{

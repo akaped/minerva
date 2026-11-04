@@ -215,6 +215,7 @@ async fn gateway_authenticates_with_stored_tokens_and_isolates_origins() {
         revision: note.revision,
         favorite: note.favorite,
         trashed: false,
+        archived: None,
         cover: note.cover.clone(),
         tags: note.tags.clone(),
     };

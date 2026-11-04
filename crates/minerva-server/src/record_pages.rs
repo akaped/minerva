@@ -49,6 +49,7 @@ pub(super) fn open(d: &mut Data, u: &User, did: &str, rid: &str) -> Result<Value
         updated_at: now(),
         favorite: false,
         trashed: false,
+        archived: false,
         cover: String::new(),
         tags: vec![],
         journal: None,

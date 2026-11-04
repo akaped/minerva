@@ -854,6 +854,7 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
             updated_at: now(),
             favorite: false,
             trashed: false,
+            archived: false,
             cover: String::new(),
             tags: p.tags.clone(),
             journal: None,

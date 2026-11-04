@@ -42,7 +42,10 @@ pub(super) fn route(d: &Data, u: &User, wid: &str) -> Result<Value, ApiError> {
         .notes
         .iter()
         .filter(|n| {
-            !n.trashed && folders.contains(n.folder_id.as_str()) && note_role(d, u, n).is_some()
+            !n.trashed
+                && !n.archived
+                && folders.contains(n.folder_id.as_str())
+                && note_role(d, u, n).is_some()
         })
         .collect();
     if notes.is_empty() && !folders.iter().any(|f| role(d, u, f).is_some()) {

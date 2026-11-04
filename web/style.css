@@ -3412,6 +3412,26 @@ body.focus-mode #blocks:focus-within .block:not(:focus-within) {
   padding: 4px 10px;
   font-size: 12px;
 }
+.archived-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 14px;
+}
+.archived-banner span {
+  flex: 1;
+}
+.archived-banner svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
 .template-badge {
   display: inline-block;
   margin-bottom: 6px;

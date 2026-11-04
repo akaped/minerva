@@ -4,7 +4,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Archive** for notes: out of search and the sidebar without being in the trash.
 - [ ] **Presentation mode**: a note as slides, split at dividers or headings.
 
 

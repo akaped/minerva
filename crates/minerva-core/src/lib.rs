@@ -70,6 +70,9 @@ pub struct Note {
     pub updated_at: u64,
     pub favorite: bool,
     pub trashed: bool,
+    /// Kept, but out of search, the sidebar and lists, without being in the trash.
+    #[serde(default)]
+    pub archived: bool,
     /// Cover image: empty, a preset (`gradient:1`–`gradient:8`), an attachment URL
     /// (`/api/v1/attachments/{id}`), or an HTTPS image URL.
     #[serde(default)]
@@ -107,6 +110,9 @@ pub struct SaveNote {
     pub revision: u64,
     pub favorite: bool,
     pub trashed: bool,
+    /// Omitted (as by clients older than archiving) keeps the note's current state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
     #[serde(default)]
     pub cover: String,
     #[serde(default)]

@@ -286,6 +286,7 @@ fn source_allowed(d: &Data, u: &User, scope: &Scope, source: &Source) -> bool {
         d.notes.iter().any(|n| {
             n.id == source.id
                 && !n.trashed
+                && (!n.archived || scope.kind == "note")
                 && folders.contains(&n.folder_id)
                 && (scope.kind != "note" || n.id == scope.id)
         })
@@ -500,7 +501,11 @@ fn context(
         context.sources.push(source);
     };
     let in_scope = |n: &Note| {
-        !n.trashed && folders.contains(&n.folder_id) && (scope.kind != "note" || n.id == scope.id)
+        // Archived notes are out of search, so out of a folder's or workspace's answers.
+        !n.trashed
+            && (!n.archived || scope.kind == "note")
+            && folders.contains(&n.folder_id)
+            && (scope.kind != "note" || n.id == scope.id)
     };
     let mut notes: Vec<&Note> = match question {
         Some(q) if scope.kind != "note" => search::related(db, d, q, in_scope, 40)?,

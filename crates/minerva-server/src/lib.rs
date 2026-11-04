@@ -373,6 +373,7 @@ fn getting_started(folder_id: &str, lang: &str) -> Note {
         updated_at: now(),
         favorite: true,
         trashed: false,
+        archived: false,
         cover: "gradient:3".into(),
         tags: vec!["guide".into()],
         journal: None,
@@ -481,6 +482,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         updated_at: now(),
         favorite: true,
         trashed: false,
+        archived: false,
         cover: String::new(),
         tags: vec![],
         journal: None,
@@ -753,6 +755,7 @@ fn note_summary(n: &Note) -> Value {
         "updated_at": n.updated_at,
         "favorite": n.favorite,
         "trashed": n.trashed,
+        "archived": n.archived,
         "cover": n.cover,
         "tags": n.tags,
         "journal": n.journal,
@@ -1405,8 +1408,11 @@ fn dispatch(
             // `#tag` searches tags (note tags and inline tags) by prefix; anything
             // else searches titles, text and tags, best matches first.
             let workspace = v["workspace_id"].as_str();
+            // Archived notes stay out, unless the archive is what is searched.
+            let archive = v["archived"].as_bool().unwrap_or(false);
             let keep = |n: &Note| {
                 !n.trashed
+                    && n.archived == archive
                     && note_role(d, &u, n).is_some()
                     && workspace.is_none_or(|w| {
                         d.folders
@@ -1570,6 +1576,7 @@ fn dispatch(
                 updated_at: now(),
                 favorite: false,
                 trashed: false,
+                archived: false,
                 cover: String::new(),
                 tags: vec![],
                 journal: None,
@@ -1653,6 +1660,9 @@ fn dispatch(
             n.blocks = save.blocks;
             n.favorite = save.favorite;
             n.trashed = save.trashed;
+            if let Some(archived) = save.archived {
+                n.archived = archived;
+            }
             n.cover = save.cover;
             n.tags = tags;
             n.revision += 1;

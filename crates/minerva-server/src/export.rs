@@ -895,6 +895,7 @@ mod tests {
             updated_at: 0,
             favorite: false,
             trashed: false,
+            archived: false,
             cover: String::new(),
             tags: vec![],
             journal: None,

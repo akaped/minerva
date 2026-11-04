@@ -227,6 +227,7 @@ const paths = {
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
   copy: "M9 9h11v11H9z M5 15H4V4h11v1",
   star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z",
+  archive: "M3 4h18v4H3z M5 8v12h14V8 M10 12h4",
   trash: "M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7",
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M20 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8",
@@ -340,6 +341,7 @@ function paneState() {
       note.icon,
       note.favorite,
       note.trashed,
+      note.archived,
       note.tags,
     ]);
     if (
@@ -946,6 +948,9 @@ async function refresh() {
   // Records' pages are listed with their records, not with the folder's notes.
   data.record_notes = data.notes.filter((n) => n.record);
   data.notes = data.notes.filter((n) => !n.record);
+  // Archived notes leave the sidebar, search and overviews: only Archive lists them.
+  data.archived_notes = data.notes.filter((n) => n.archived);
+  data.notes = data.notes.filter((n) => !n.archived);
   // The account's default workspace first, then any other.
   if (!data.workspaces.some((w) => w.id === workspaceId)) {
     // The workspace open last time on this device, else the account's default.
@@ -959,7 +964,12 @@ async function refresh() {
     // Tabs of deleted or trashed notes close.
     noteTabs.prune(
       new Set(
-        [...data.notes, ...data.record_notes, ...(data.shared_notes || [])]
+        [
+          ...data.notes,
+          ...data.record_notes,
+          ...data.archived_notes,
+          ...(data.shared_notes || []),
+        ]
           .filter((n) => !n.trashed)
           .map((n) => n.id),
       ),
@@ -1055,6 +1065,7 @@ function changesSidebar(path, method, body, result) {
       n?.icon,
       n?.favorite,
       n?.trashed,
+      n?.archived,
       n?.tags,
       n?.folder_id,
     ]);
@@ -1755,9 +1766,15 @@ function dashboard() {
 }
 function overview() {
   if (view === "home") return dashboard();
-  let notes = workspaceNotes().filter((n) =>
-    view === "trash" ? n.trashed : !n.trashed,
-  );
+  const inWorkspace = new Set(folders().map((f) => f.id));
+  let notes =
+    view === "archive"
+      ? data.archived_notes.filter(
+          (n) => !n.trashed && inWorkspace.has(n.folder_id),
+        )
+      : workspaceNotes().filter((n) =>
+          view === "trash" ? n.trashed : !n.trashed,
+        );
   if (view === "favorites") notes = notes.filter((n) => n.favorite);
   if (view === "folder") notes = notes.filter((n) => n.folder_id === folderId);
   if (view === "tag")
@@ -1767,16 +1784,19 @@ function overview() {
   notes.sort((a, b) => b.updated_at - a.updated_at);
   const title =
     view === "home"
-      ? "A place for your ideas"
+      ? $t("A place for your ideas")
       : view === "all"
-        ? "All notes"
+        ? $t("All notes")
         : view === "favorites"
-          ? "Your favorites"
+          ? $t("Your favorites")
           : view === "trash"
-            ? "Trash"
-            : view === "tag"
-              ? "#" + tagFilter
-              : folders().find((f) => f.id === folderId)?.name || "Folder";
+            ? $t("Trash")
+            : view === "archive"
+              ? $t("Archived")
+              : view === "tag"
+                ? "#" + tagFilter
+                : folders().find((f) => f.id === folderId)?.name ||
+                  $t("Folder");
   $("#breadcrumb").textContent =
     view === "home"
       ? $t("Overview")
@@ -1786,7 +1806,7 @@ function overview() {
             .join(" / ")
         : title;
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${view === "home" ? $t("YOUR WORKSPACE, AT A GLANCE") : $t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "home" ? $t("Collect your thoughts. Connect the dots. Make something great.") : view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : $tn(notes.length, "{count} note · Space to think, write, and explore.", "{count} notes · Space to think, write, and explore.")}</p></div>${view !== "trash" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
+    `<section class="page"><div class="eyebrow">${view === "home" ? $t("YOUR WORKSPACE, AT A GLANCE") : $t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "home" ? $t("Collect your thoughts. Connect the dots. Make something great.") : view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : view === "archive" ? $t("Notes put away: out of the sidebar and search, never deleted. Open one to bring it back.") : $tn(notes.length, "{count} note · Space to think, write, and explore.", "{count} notes · Space to think, write, and explore.")}</p></div>${view !== "trash" && view !== "archive" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
       view === "home"
         ? `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("A FRESH START")}</div><h2>${$t("Good ideas start with a little space.")}</h2><p>${$t("A quick thought, a detailed plan, your next big thing.")}<br>${$t("Bring it all together in your workspace.")}</p><button class="text-link" id="start-writing">${$t("Start writing")} <span>↗</span></button></div>${art()}</div><div class="section-title"><h2>${$t("Your folders")}</h2><span>${$t("{count} spaces to keep things together", { count: folderChildren(treeFolders(), null).length })}</span></div><div class="folder-grid">${
             folderChildren(treeFolders(), null).map(folderCard).join("") ||
@@ -1795,7 +1815,7 @@ function overview() {
         : view === "folder" && folderChildren(treeFolders(), folderId).length
           ? `<div class="section-title"><h2>${$t("Subfolders")}</h2></div><div class="folder-grid">${folderChildren(treeFolders(), folderId).map(folderCard).join("")}</div>`
           : ""
-    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? $t("Recently updated") : view === "trash" ? $t("Deleted notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && data.roles[folderId] === "editor" ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq or Evernote")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
+    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? $t("Recently updated") : view === "trash" ? $t("Deleted notes") : view === "archive" ? $t("Archived notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && data.roles[folderId] === "editor" ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view === "archive" ? "" : view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq or Evernote")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : view === "archive" ? $t("Nothing archived.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : view === "archive" ? $t("Archive a note from its ⋯ menu to put it away without deleting it.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
   action($("#ask-folder"), "click", () =>
     askAI({ kind: "folder", id: folderId }),
   );
@@ -2016,7 +2036,15 @@ function receiveLive(snapshot, result) {
     Object.assign(target, b);
     return target;
   });
-  for (const key of ["title", "icon", "favorite", "trashed", "cover", "tags"])
+  for (const key of [
+    "title",
+    "icon",
+    "favorite",
+    "trashed",
+    "archived",
+    "cover",
+    "tags",
+  ])
     note[key] = snapshot[key];
   if (
     result.note.inline_tags &&
@@ -2346,6 +2374,14 @@ function renderEditor() {
     shareMode
       ? []
       : [
+          note.trashed || note.record || note.journal
+            ? ""
+            : item(
+                "archive-note",
+                "archive",
+                note.archived ? $t("Unarchive") : $t("Archive"),
+                `title="${note.archived ? $t("Bring this note back to the sidebar and search") : $t("Put this note away: out of the sidebar and search, not deleted")}" ${!editable() ? 'aria-disabled="true"' : ""}`,
+              ),
           item(
             "trash-note",
             note.trashed ? "check" : "trash",
@@ -2370,7 +2406,7 @@ function renderEditor() {
       : `<button class="btn icon-btn" id="favorite" aria-label="${$t("Favorite")}" aria-pressed="${!!note.favorite}" title="${$t("Favorite")}" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${!editor || note.trashed ? `disabled title="${$t("Folder editors can share this note")}"` : ""}>${$t("Share")}${sharing.published || sharing.links ? `<span class="share-badge public">${$t("Public")}</span>` : ""}</button>`}<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="${$t("Comments")}" title="${$t("Comments on this note")}">💬<span class="toolbar-label"> ${$t("Comments")}</span> <span class="comments-count"></span></button><button class="btn" id="ask-note" aria-label="${$t("Ask AI")}" title="${$t("Chat with AI about this note, side by side")}">${icon("brain")}<span class="toolbar-label">${$t("Ask AI")}</span></button>`
   }<div class="toolbar-more"><button class="btn icon-btn" id="note-more" aria-haspopup="menu" aria-expanded="false" aria-controls="note-menu" aria-label="${$t("More note tools")}" title="${$t("More")}">${icon("more")}</button><div class="row-menu note-menu" id="note-menu" role="menu" aria-label="${$t("Note tools")}" hidden>${menu}</div></div>`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || $t("Shared with you"))}</span>`}<span>${$t("Updated {date}", { date: date(note.updated_at) })}</span><span>${$t("Revision {revision}", { revision: note.revision })}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && note.archived && !note.trashed ? `<div class="archived-banner" role="note">${icon("archive")}<span>${$t("Archived · out of the sidebar and search")}</span>${editable() ? `<button class="btn" id="unarchive-banner">${$t("Unarchive")}</button>` : ""}</div>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || $t("Shared with you"))}</span>`}<span>${$t("Updated {date}", { date: date(note.updated_at) })}</span><span>${$t("Revision {revision}", { revision: note.revision })}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2445,6 +2481,18 @@ function renderEditor() {
       "Delete forever",
     ),
   );
+  const toggleArchive = async () => {
+    if (!editable()) return;
+    note.archived = !note.archived;
+    markDirty();
+    await queueSave();
+    const id = note.id;
+    await refresh();
+    toast(note.archived ? $t("Note archived") : $t("Note back from the archive"));
+    await openNote(id);
+  };
+  action($("#archive-note"), "click", toggleArchive);
+  action($("#unarchive-banner"), "click", toggleArchive);
   action($("#trash-note"), "click", () =>
     formDialog(
       note.trashed ? $t("Restore note?") : $t("Move note to trash?"),
@@ -6474,6 +6522,7 @@ function sidebarSections() {
   const others = [
     // Sharing spans every workspace, so it is not with this workspace's views.
     ...(localMode ? [] : [["sharing", "users", $t("Sharing")]]),
+    ["archive", "archive", $t("Archived")],
     ["trash", "trash", $t("Trash")],
     ["providers", "users", $t("AI providers")],
     // A desktop app's own server has no other accounts and no network clients.

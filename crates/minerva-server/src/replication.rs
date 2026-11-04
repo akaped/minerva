@@ -801,6 +801,7 @@ fn apply_note(
             updated_at: now(),
             favorite: false,
             trashed: false,
+            archived: false,
             cover: String::new(),
             tags: vec![],
             journal: string(fields, "journal").filter(|j| databases::valid_date(j)),

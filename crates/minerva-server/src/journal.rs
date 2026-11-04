@@ -222,6 +222,7 @@ pub(super) fn route(
                 updated_at: now(),
                 favorite: false,
                 trashed: false,
+                archived: false,
                 cover: String::new(),
                 tags: vec![],
                 journal: None,
@@ -375,6 +376,7 @@ fn open_day(d: &mut Data, u: &User, v: &Value) -> Result<Value, ApiError> {
         updated_at: now(),
         favorite: false,
         trashed: false,
+        archived: false,
         cover: template
             .as_ref()
             .map(|t| t.cover.clone())

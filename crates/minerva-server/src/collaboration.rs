@@ -61,6 +61,7 @@ fn replace(doc: &Doc, note: &Note) {
     meta.insert(&mut txn, "icon", note.icon.as_str());
     meta.insert(&mut txn, "favorite", note.favorite);
     meta.insert(&mut txn, "trashed", note.trashed);
+    meta.insert(&mut txn, "archived", note.archived);
     meta.insert(&mut txn, "cover", note.cover.as_str());
     meta.insert(
         &mut txn,
@@ -160,6 +161,12 @@ fn project(doc: &Doc, original: &Note) -> Result<Note, ApiError> {
         Some(Out::Any(Any::Bool(b))) => b,
         _ => return Err(bad("Invalid trash flag")),
     };
+    // Optional: documents made before the archive lack it.
+    note.archived = match meta.get(&txn, "archived") {
+        None => false,
+        Some(Out::Any(Any::Bool(b))) => b,
+        _ => return Err(bad("Invalid archive flag")),
+    };
     // Cover and tags are optional: documents created before they existed lack them.
     note.cover = match meta.get(&txn, "cover") {
         None => String::new(),
@@ -227,6 +234,7 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
             != serde_json::to_value(&original.blocks).unwrap()
         || merged.favorite != original.favorite
         || merged.trashed != original.trashed
+        || merged.archived != original.archived
         || merged.icon != original.icon
         || merged.cover != original.cover
         || merged.tags != original.tags;
