@@ -416,6 +416,13 @@ pub(super) fn guest_view(n: &Note, role: &Role) -> Value {
         "rendered": n.blocks.iter().map(|b| render_for(&b.markdown, Links::Shared)).collect::<Vec<_>>(),
     })
 }
+/// The note a share-link guest has open, for routes outside `shared`.
+pub(super) fn guest_note<'a>(
+    d: &'a Data,
+    headers: &HeaderMap,
+) -> Result<(&'a Share, &'a Note), ApiError> {
+    guest_share(d, headers)
+}
 fn guest_share<'a>(d: &'a Data, headers: &HeaderMap) -> Result<(&'a Share, &'a Note), ApiError> {
     let gone = || {
         ApiError(
@@ -785,7 +792,11 @@ fn public_links(markdown: &str, pages: &[(String, String)]) -> String {
 fn rendered(blocks: &[Block], links: Links, pages: &[(String, String)]) -> Vec<String> {
     blocks
         .iter()
-        .map(|b| render_for(&public_links(&b.markdown, pages), links))
+        .map(|b| {
+            // A block that is just a web address shows as a card, as in the app.
+            previews::public_card(&b.markdown)
+                .unwrap_or_else(|| render_for(&public_links(&b.markdown, pages), links))
+        })
         .collect()
 }
 fn article(

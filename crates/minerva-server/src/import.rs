@@ -931,6 +931,7 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
             metadata: p.metadata.clone(),
             print_template: String::new(),
             record: None,
+            folded: None,
         }));
         first.get_or_insert(id.clone());
         notes += 1;

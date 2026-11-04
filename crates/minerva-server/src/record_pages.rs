@@ -59,6 +59,7 @@ pub(super) fn open(d: &mut Data, u: &User, did: &str, rid: &str) -> Result<Value
             database_id: did.into(),
             record_id: rid.into(),
         }),
+        folded: None,
     };
     let result = json!({"id": n.id});
     d.notes.push(Arc::new(n));

@@ -902,6 +902,7 @@ mod tests {
             metadata: Default::default(),
             print_template: String::new(),
             record: None,
+            folded: None,
         }));
         let file = Uuid::new_v4();
         let md = format!("See [Old \\[name\\]](#note/{target}) and ![chart](/api/v1/attachments/{file}/preview) or [file](/api/v1/attachments/{file}) and [web](https://example.com).");

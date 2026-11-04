@@ -96,6 +96,11 @@ pub struct Note {
     /// title from the record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record: Option<RecordPage>,
+    /// Blocks folded for everyone who opens the note, when its folding is kept
+    /// in the note (as Logseq's `collapsed::`); `None` keeps folding on each
+    /// device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folded: Option<Vec<String>>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct RecordPage {

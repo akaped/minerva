@@ -2062,6 +2062,15 @@ function receiveLive(snapshot, result) {
     "tags",
   ])
     note[key] = snapshot[key];
+  // Folding kept in the note follows other people's changes.
+  if (
+    JSON.stringify(result.note.folded ?? null) !==
+    JSON.stringify(note.folded ?? null)
+  ) {
+    note.folded = result.note.folded ?? undefined;
+    foldedFor = null;
+    drawFolding();
+  }
   if (
     result.note.inline_tags &&
     JSON.stringify(result.note.inline_tags) !== JSON.stringify(note.inline_tags)
@@ -2359,6 +2368,9 @@ function renderEditor() {
           )
         : "",
       can ? item("save-note", "check", $t("Save now"), "", "Ctrl+S") : "",
+      can && !shareMode
+        ? `<button role="menuitemcheckbox" tabindex="-1" id="share-folding" aria-checked="${Array.isArray(note.folded)}" title="${$t("Fold and unfold for everyone who opens the note, as Logseq does")}">${icon("list")}<span>${$t("Keep folding in the note")}</span></button>`
+        : "",
     ],
     shareMode
       ? []
@@ -2453,6 +2465,11 @@ function renderEditor() {
   );
   action($("#focus-toggle"), "click", () => toggleFocus());
   action($("#present-note"), "click", presentNote);
+  action($("#share-folding"), "click", async (e) => {
+    const on = !Array.isArray(note.folded);
+    await shareFolding(on);
+    e.currentTarget?.setAttribute("aria-checked", String(on));
+  });
   renderRecordPanel().catch(error);
   action($("#doc-icon"), "click", (e) => iconPicker(e.currentTarget));
   action($("#add-icon"), "click", (e) => iconPicker(e.currentTarget));
@@ -3747,7 +3764,10 @@ let folded = new Set(),
 function drawFolding() {
   if (!note) return;
   if (foldedFor !== note.id) {
-    folded = loadFolded(note.id);
+    // Folding kept in the note, or else on this device.
+    folded = Array.isArray(note.folded)
+      ? new Set(note.folded)
+      : loadFolded(note.id);
     foldedFor = note.id;
   }
   foldHidden = hiddenBlocks(note.blocks, folded, indentLevel);
@@ -3800,7 +3820,7 @@ function toggleFold(id, fold = !folded.has(id)) {
   if (fold === folded.has(id)) return false;
   if (fold) folded.add(id);
   else folded.delete(id);
-  saveFolded(note.id, folded, note.blocks);
+  keepFolded();
   drawFolding();
   announce(fold ? $t("Nested blocks hidden") : $t("Nested blocks shown"));
   return true;
@@ -3810,8 +3830,48 @@ function revealBlock(id) {
   if (!foldHidden.has(id)) return;
   for (const above of foldedAbove(note.blocks, id, folded, indentLevel))
     folded.delete(above);
-  saveFolded(note.id, folded, note.blocks);
+  keepFolded();
   drawFolding();
+}
+/**
+ * Keeps what is folded: in the note for everyone when its folding is shared
+ * (and the reader may edit it), else on this device.
+ */
+let foldSave = 0;
+function keepFolded() {
+  if (!Array.isArray(note?.folded) || !editable()) {
+    if (!Array.isArray(note?.folded)) saveFolded(note.id, folded, note.blocks);
+    return;
+  }
+  const ids = new Set(note.blocks.map((b) => b.id));
+  note.folded = [...folded].filter((id) => ids.has(id));
+  const id = note.id,
+    list = note.folded;
+  clearTimeout(foldSave);
+  foldSave = setTimeout(
+    () =>
+      api(`notes/${id}/folding`, "PUT", { shared: true, folded: list }).catch(
+        error,
+      ),
+    400,
+  );
+}
+/** Shares the note's folding with everyone, or keeps it on each device again. */
+async function shareFolding(on) {
+  const ids = new Set(note.blocks.map((b) => b.id));
+  const result = await api(`notes/${note.id}/folding`, "PUT", {
+    shared: on,
+    folded: [...folded].filter((id) => ids.has(id)),
+  });
+  note.folded = result.folded ?? undefined;
+  if (!on) saveFolded(note.id, folded, note.blocks);
+  foldedFor = null;
+  drawFolding();
+  toast(
+    on
+      ? $t("Folding is kept in the note, for everyone")
+      : $t("Folding is kept on each device again"),
+  );
 }
 // Link previews by address: a promise of the page's details, or null.
 const previews = new Map();
@@ -3821,9 +3881,37 @@ const previews = new Map();
  * audio and the note's files keep their own display; without details, the
  * plain link stays.
  */
+/** Changes one block's Markdown from the page, and saves. */
+async function setBlockMarkdown(id, markdown) {
+  const i = note.blocks.findIndex((b) => b.id === id);
+  if (i < 0 || !editable()) return;
+  live?.boundary();
+  note.blocks[i].markdown = markdown;
+  note.rendered[i] = await renderMarkdown(markdown);
+  markDirty();
+  renderBlocks();
+  await queueSave();
+}
 function linkCards() {
-  if (!note || shareMode) return;
+  if (!note) return;
   for (const b of note.blocks) {
+    // `<address>` is the same link, chosen to show plainly.
+    const plain = b.markdown.trim().match(/^<(https?:\/\/\S+)>$/);
+    if (plain && editable()) {
+      const body = $(`#blocks [data-block="${CSS.escape(b.id)}"] .block-body`);
+      if (body && !body.querySelector(".link-card-switch"))
+        body.insertAdjacentHTML(
+          "beforeend",
+          `<button type="button" class="link-card-switch" data-card-switch="card" title="${$t("Show this link as a card")}">${$t("Card")}</button>`,
+        );
+      body
+        ?.querySelector("[data-card-switch]")
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          setBlockMarkdown(b.id, plain[1]).catch(error);
+        });
+      continue;
+    }
     const url = b.markdown.trim();
     if (!/^https?:\/\/\S+$/.test(url) || url.length > 2048) continue;
     if (
@@ -3838,16 +3926,26 @@ function linkCards() {
       body.querySelector(".link-card, .youtube-card, img, audio, iframe")
     )
       continue;
+    // Guests ask through their link, only for addresses the note shows.
     if (!previews.has(url))
       previews.set(
         url,
-        api("link-preview?url=" + encodeURIComponent(url)).catch(() => null),
+        api(
+          (shareMode ? "shared/link-preview?url=" : "link-preview?url=") +
+            encodeURIComponent(url),
+        ).catch(() => null),
       );
     previews.get(url).then((p) => {
       if (!p?.title || !body.isConnected || body.querySelector(".link-card"))
         return;
       if (b.markdown.trim() !== url) return;
-      body.innerHTML = `<a class="link-card" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span class="link-card-text"><strong>${esc(p.title)}</strong>${p.description ? `<span>${esc(p.description)}</span>` : ""}<small>${esc(p.site || "")}</small></span>${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</a>`;
+      body.innerHTML = `<span class="link-card-wrap"><a class="link-card" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span class="link-card-text"><strong>${esc(p.title)}</strong>${p.description ? `<span>${esc(p.description)}</span>` : ""}<small>${esc(p.site || "")}</small></span>${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</a>${editable() ? `<button type="button" class="link-card-switch" data-card-switch="link" title="${$t("Show this link as plain text")}">${$t("Link")}</button>` : ""}</span>`;
+      body
+        .querySelector("[data-card-switch]")
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          setBlockMarkdown(b.id, `<${url}>`).catch(error);
+        });
     });
   }
 }

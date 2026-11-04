@@ -6,6 +6,10 @@
 //! (so the name cannot be switched to another one meanwhile), checks every
 //! redirect the same way, and reads at most 1 MB of HTML within a few seconds.
 //! Answers are kept for a day.
+//!
+//! Share-link guests may ask only for addresses their note shows as a card
+//! (`/api/v1/shared/link-preview`), and published pages show a card for what is
+//! already kept, asking for the rest in the background for the next visitor.
 use super::*;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -207,6 +211,12 @@ async fn fetch(start: url::Url) -> Result<(url::Url, String), ApiError> {
     Err(bad("The page redirects too many times"))
 }
 
+fn asked(uri: &Uri) -> String {
+    url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+        .find(|(k, _)| k == "url")
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+}
 pub(super) async fn endpoint(
     State(store): State<Shared>,
     uri: Uri,
@@ -216,10 +226,34 @@ pub(super) async fn endpoint(
         let s = store.lock().map_err(|_| internal())?;
         authenticate(&s.data, &headers)?;
     }
-    let raw = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
-        .find(|(k, _)| k == "url")
-        .map(|(_, v)| v.into_owned())
-        .unwrap_or_default();
+    Ok(axum::Json(preview(&asked(&uri)).await?).into_response())
+}
+/// A guest's preview: only for an address that is a block of the shared note
+/// on its own (one the note shows as a card).
+pub(super) async fn guest_endpoint(
+    State(store): State<Shared>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let raw = asked(&uri);
+    {
+        let s = store.lock().map_err(|_| internal())?;
+        let (_, note) = sharing::guest_note(&s.data, &headers)?;
+        if !note.blocks.iter().any(|b| b.markdown.trim() == raw.trim()) {
+            return Err(forbidden());
+        }
+    }
+    Ok(axum::Json(preview(&raw).await?).into_response())
+}
+/// A kept answer for `raw`, if there is a fresh one.
+pub(crate) fn cached(raw: &str) -> Option<Value> {
+    let key = url::Url::parse(raw.trim()).ok()?.to_string();
+    let kept = cache().lock().ok()?;
+    let (at, value) = kept.get(&key)?;
+    (at + KEPT > now()).then(|| value.clone())
+}
+/// The page's details, from the cache or fetched (and kept).
+pub(crate) async fn preview(raw: &str) -> Result<Value, ApiError> {
     let url = url::Url::parse(raw.trim()).map_err(|_| bad("Give a web address"))?;
     if raw.len() > 2048 || !matches!(url.scheme(), "http" | "https") {
         return Err(bad("Give a web address"));
@@ -227,7 +261,7 @@ pub(super) async fn endpoint(
     let key = url.to_string();
     if let Some((at, value)) = cache().lock().map_err(|_| internal())?.get(&key) {
         if at + KEPT > now() {
-            return Ok(axum::Json(value.clone()).into_response());
+            return Ok(value.clone());
         }
     }
     let (final_url, html) = fetch(url).await?;
@@ -241,7 +275,81 @@ pub(super) async fn endpoint(
         }
     }
     kept.insert(key, (now(), details.clone()));
-    Ok(axum::Json(details).into_response())
+    Ok(details)
+}
+/// Card HTML for a published page: from kept details only; anything not kept
+/// yet is fetched in the background, for the next visitor.
+pub(crate) fn public_card(raw: &str) -> Option<String> {
+    let url = raw.trim();
+    if url.len() > 2048
+        || url.contains(char::is_whitespace)
+        || !(url.starts_with("http://") || url.starts_with("https://"))
+    {
+        return None;
+    }
+    // Pictures, sound, files and videos show as themselves.
+    let lower = url.to_lowercase();
+    let path = lower.split(['?', '#']).next().unwrap_or("");
+    if [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".mp3", ".wav", ".ogg",
+        ".oga", ".opus", ".m4a", ".aac", ".flac", ".weba", ".m3u8", ".m3u", ".pdf",
+    ]
+    .iter()
+    .any(|e| path.ends_with(e))
+        || lower.contains("/api/v1/attachments/")
+        || ["youtube.com/", "youtu.be/"]
+            .iter()
+            .any(|h| lower.contains(h))
+    {
+        return None;
+    }
+    let Some(p) = cached(url) else {
+        // One background try an hour per address, so pages that cannot be
+        // previewed are not asked for at every visit.
+        static TRIED: std::sync::OnceLock<Mutex<HashMap<String, u64>>> = std::sync::OnceLock::new();
+        let mut tried = TRIED.get_or_init(Default::default).lock().ok()?;
+        if tried.get(url).is_some_and(|at| at + 3600 > now()) {
+            return None;
+        }
+        if tried.len() > 2000 {
+            tried.clear();
+        }
+        tried.insert(url.to_string(), now());
+        drop(tried);
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let wanted = url.to_string();
+            handle.spawn(async move {
+                let _ = preview(&wanted).await;
+            });
+        }
+        return None;
+    };
+    let title = p["title"].as_str().filter(|t| !t.is_empty())?;
+    let text = |k: &str| p[k].as_str().unwrap_or("").to_string();
+    let image = p["image"]
+        .as_str()
+        .filter(|i| i.starts_with("https://") || i.starts_with("http://"))
+        .map_or(String::new(), |i| {
+            format!(
+                "<img src=\"{}\" alt=\"\" loading=\"lazy\" referrerpolicy=\"no-referrer\">",
+                escape(i)
+            )
+        });
+    let description = text("description");
+    Some(format!(
+        "<a class=\"link-card\" href=\"{}\" rel=\"noopener noreferrer\"><span class=\"link-card-text\"><strong>{}</strong>{}<small>{}</small></span>{image}</a>",
+        escape(url),
+        escape(title),
+        if description.is_empty() { String::new() } else { format!("<span>{}</span>", escape(&description)) },
+        escape(&text("site")),
+    ))
+}
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]

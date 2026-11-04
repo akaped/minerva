@@ -442,6 +442,7 @@ fn write_call(
                 metadata: Default::default(),
                 print_template: String::new(),
                 record: None,
+                folded: None,
             };
             let result = json!({"document_id":n.id,"title":n.title,"blocks":n.blocks.len()});
             d.notes.push(Arc::new(n));

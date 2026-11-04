@@ -384,6 +384,7 @@ fn getting_started(folder_id: &str, lang: &str) -> Note {
         metadata: Default::default(),
         print_template: String::new(),
         record: None,
+        folded: None,
     }
 }
 /// Every account has one personal workspace. Older data adopts an unshared
@@ -493,6 +494,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
         metadata: Default::default(),
         print_template: String::new(),
         record: None,
+        folded: None,
     };
     Ok(Data {
         server_id: id(),
@@ -1063,6 +1065,7 @@ pub fn app(store: Shared) -> Router {
         .route("/p/", get(sharing::moved))
         .route("/p/{*path}", get(sharing::moved))
         .route("/preview/{note_id}", get(sharing::preview))
+        .route("/api/v1/shared/link-preview", get(previews::guest_endpoint))
         .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
         .route("/api/v1/live", get(live::endpoint))
         .route("/api/v1/link-preview", get(previews::endpoint))
@@ -1697,9 +1700,45 @@ fn dispatch(
                 metadata: Default::default(),
                 print_template: String::new(),
                 record: None,
+                folded: None,
             };
             d.notes.push(Arc::new(n.clone()));
             note_view(&n)
+        }
+        // Folding kept in the note, for everyone (`shared`), or on each device.
+        ("PUT", ["notes", nid, "folding"]) => {
+            let n = d.notes.iter().find(|n| n.id == *nid).ok_or_else(missing)?;
+            note_access(d, &u, n, true)?;
+            let folded = match v["shared"].as_bool() {
+                Some(true) => {
+                    let list: Vec<String> = v["folded"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(String::from)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    // Only blocks of the note, once each.
+                    let mut kept: Vec<String> = vec![];
+                    for id in list {
+                        if n.blocks.iter().any(|b| b.id == id) && !kept.contains(&id) {
+                            kept.push(id);
+                        }
+                    }
+                    Some(kept)
+                }
+                Some(false) => None,
+                None => return Err(bad("Say whether folding is shared")),
+            };
+            let mut changed = Note::clone(n);
+            if changed.folded != folded {
+                changed.folded = folded;
+                changed.updated_at = now();
+                *d.notes.iter_mut().find(|n| n.id == *nid).unwrap() = Arc::new(changed.clone());
+            }
+            json!({"folded": changed.folded})
         }
         // One block, changed where it is shown (an embed): refused when it changed
         // since the caller read it (`base`), so no one's edit is lost.

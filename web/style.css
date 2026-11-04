@@ -8543,3 +8543,31 @@ mark.comment-quote {
   margin-right: auto;
   color: var(--muted);
 }
+/* A link card, and the switch between a card and a plain link. */
+.link-card-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.link-card-switch {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+}
+.link-card-wrap .link-card-switch {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin: 0;
+  background: var(--surface, #fff);
+}
+.block:hover .link-card-switch,
+.link-card-switch:focus-visible {
+  opacity: 1;
+}

@@ -139,8 +139,21 @@ fn note_entity(d: &Data, n: &Note) -> Option<Entity> {
             ("print_template".into(), json!(n.print_template)),
             // A record's page stays one in every copy.
             ("record".into(), json!(n.record)),
+            ("folded".into(), json!(n.folded)),
         ]),
     })
+}
+/// Folding kept in a pushed note, if it is.
+fn folded_blocks(fields: &Fields) -> Option<Vec<String>> {
+    let list = fields.get("folded")?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(Value::as_str)
+            .filter(|s| s.len() <= 80)
+            .take(2000)
+            .map(String::from)
+            .collect(),
+    )
 }
 /// The record a pushed note is the page of, when the field names one.
 fn record_page(fields: &Fields) -> Result<Option<RecordPage>, ApiError> {
@@ -828,6 +841,7 @@ fn apply_note(
             metadata: normalize_metadata(fields.get("metadata").unwrap_or(&Value::Null))?,
             print_template: template(fields, upstream)?,
             record: record_page(fields)?,
+            folded: folded_blocks(fields),
         }));
         d.collaboration.insert(id.into(), Arc::new(crdt.into()));
         if let Err(error) = sync_text(d, "") {
@@ -881,6 +895,9 @@ fn apply_note(
     }
     if record.is_some() {
         n.record = record;
+    }
+    if win.contains_key("folded") {
+        n.folded = folded_blocks(&win);
     }
     settle(d, "note", id, &win, clocks);
     Ok(outcome(lost))

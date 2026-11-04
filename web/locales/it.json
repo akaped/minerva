@@ -2226,5 +2226,13 @@
   "Edit the embedded block": "Modifica il blocco incorporato",
   "Ctrl+Enter to save · Escape to cancel": "Ctrl+Invio per salvare · Esc per annullare",
   "Saved in “{title}”": "Salvato in “{title}”",
-  "This block changed meanwhile. Open the note to see the latest text.": "Questo blocco è cambiato nel frattempo. Apri la nota per vedere il testo più recente."
+  "This block changed meanwhile. Open the note to see the latest text.": "Questo blocco è cambiato nel frattempo. Apri la nota per vedere il testo più recente.",
+  "Show this link as a card": "Mostra questo collegamento come scheda",
+  "Card": "Scheda",
+  "Show this link as plain text": "Mostra questo collegamento come testo",
+  "Fold and unfold for everyone who opens the note, as Logseq does": "Piega e apri per chiunque apra la nota, come fa Logseq",
+  "Keep folding in the note": "Conserva la piegatura nella nota",
+  "Folding is kept in the note, for everyone": "La piegatura è conservata nella nota, per tutti",
+  "Folding is kept on each device again": "La piegatura torna a essere conservata su ogni dispositivo",
+  "Say whether folding is shared": "Indica se la piegatura è condivisa"
 }
