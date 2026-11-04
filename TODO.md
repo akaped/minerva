@@ -16,7 +16,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.
 
 - [ ] **Recordings**: recordings longer than about 90 minutes (24 MB) need splitting before transcription; who said what (speaker labels); action items assigned to members as `@mentions` (now the owner is written as said); transcribing in the browser, so audio never leaves the device.
-- [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders; repeating reminders in the feed follow daylight-saving changes in the reader's calendar rather than the time zone they were set in; a feed per workspace to share with others.
+- [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders. It is a protocol of its own (discovery, ETags, `REPORT` queries, each client's quirks) and needs its own project.
 - [ ] **Installable app**: editing offline (now offline notes are read-only; it needs the CRDT updates queued and merged when back), keeping a whole workspace offline rather than the notes opened, files other than pictures offline, push notifications for reminders, and sharing files (not only text and links) to the app.
 
 ## MAYBE IN FUTURE. I will tell you when

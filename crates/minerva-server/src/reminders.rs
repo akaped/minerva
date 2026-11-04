@@ -67,6 +67,10 @@ pub(crate) struct Reminder {
     /// of day and the day of the month.
     #[serde(default)]
     pub(crate) offset: i32,
+    /// The time zone it was set in (`Europe/Rome`), so calendar apps keep a
+    /// repeat at its local time across daylight-saving changes.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) zone: String,
     /// The email for the current time went out; it waits to be marked done.
     #[serde(default)]
     pub(crate) sent: bool,
@@ -77,7 +81,7 @@ const LIMIT: usize = 500;
 const WORKSPACE_LIMIT: usize = 1000;
 
 /// True when `u` can open at least one folder of workspace `w`.
-fn sees_workspace(d: &Data, u: &User, w: &str) -> bool {
+pub(crate) fn sees_workspace(d: &Data, u: &User, w: &str) -> bool {
     d.folders
         .iter()
         .any(|f| f.workspace_id == w && role(d, u, &f.id).is_some())
@@ -187,7 +191,9 @@ fn view(d: &Data, u: &User, r: &Reminder) -> Value {
 }
 
 /// Title, category, time, repeat and offset of a reminder made on the page.
-fn details(v: &Value) -> Result<(String, String, u64, Option<Repeat>, i32), ApiError> {
+/// A reminder's title, category, time, repeat, offset and time zone.
+type Details = (String, String, u64, Option<Repeat>, i32, String);
+fn details(v: &Value) -> Result<Details, ApiError> {
     let title = v["title"].as_str().unwrap_or("").trim().to_string();
     if title.is_empty() || title.chars().count() > 200 {
         return Err(bad("Give the reminder a name of 1–200 characters"));
@@ -217,7 +223,17 @@ fn details(v: &Value) -> Result<(String, String, u64, Option<Repeat>, i32), ApiE
     if !(-900..=900).contains(&offset) {
         return Err(bad("Invalid time zone"));
     }
-    Ok((title, category, at, repeat, offset as i32))
+    // An IANA name, as browsers give it; anything else is left out.
+    let zone = v["zone"]
+        .as_str()
+        .filter(|z| {
+            (1..=64).contains(&z.len())
+                && z.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"/_+-".contains(&b))
+        })
+        .unwrap_or("")
+        .to_string();
+    Ok((title, category, at, repeat, offset as i32, zone))
 }
 
 /// The reminders someone sees: their note reminders, and the reminders of every
@@ -317,6 +333,7 @@ pub(crate) fn route(
                     category: String::new(),
                     repeat: None,
                     offset: 0,
+                    zone: String::new(),
                     sent: false,
                 }
             } else {
@@ -332,7 +349,7 @@ pub(crate) fn route(
                 {
                     return Err(bad("This workspace has too many reminders"));
                 }
-                let (title, category, at, repeat, offset) = details(v)?;
+                let (title, category, at, repeat, offset, zone) = details(v)?;
                 Reminder {
                     id: id(),
                     user_id: u.id.clone(),
@@ -344,6 +361,7 @@ pub(crate) fn route(
                     category,
                     repeat,
                     offset,
+                    zone,
                     sent: false,
                 }
             };
@@ -352,7 +370,7 @@ pub(crate) fn route(
             Ok(view(d, u, &r))
         }
         ("PUT", ["reminders", rid]) => {
-            let (title, category, at, repeat, offset) = details(v)?;
+            let (title, category, at, repeat, offset, zone) = details(v)?;
             let i = d
                 .reminders
                 .iter()
@@ -362,7 +380,8 @@ pub(crate) fn route(
             if at != r.at {
                 r.sent = false;
             }
-            (r.title, r.category, r.at, r.repeat, r.offset) = (title, category, at, repeat, offset);
+            (r.title, r.category, r.at, r.repeat, r.offset, r.zone) =
+                (title, category, at, repeat, offset, zone);
             let r = r.clone();
             mail::wake_sender();
             Ok(view(d, u, &r))

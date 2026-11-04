@@ -1294,8 +1294,16 @@ fn dispatch(
     if let ("PUT", ["workspaces", wid, "graph", "positions"]) = (method, parts.as_slice()) {
         return Ok((graph::save_positions(db, d, &u, wid, &v)?, None));
     }
-    if parts.as_slice() == ["calendar-feed"] {
-        return Ok((calendar::route(d, &u, method, &v, headers)?, None));
+    if let ["calendar-feed", rest @ ..] = parts.as_slice() {
+        let workspace = match rest {
+            [] => None,
+            [w] => Some(*w),
+            _ => return Err(missing()),
+        };
+        return Ok((
+            calendar::route(d, &u, method, workspace, &v, headers)?,
+            None,
+        ));
     }
     if let ("POST", ["embeds"]) = (method, parts.as_slice()) {
         return Ok((embeds::route(d, &u, &v)?, None));

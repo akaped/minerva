@@ -2242,5 +2242,10 @@
   "File → Export, a page or section as": "File → Esporta, una pagina o una sezione come",
   "Single File Web Page (.mht)": "Pagina Web in file unico (.mht)",
   "This web archive cannot be read": "Questo archivio web non può essere letto",
-  "This web archive has no page": "Questo archivio web non contiene una pagina"
+  "This web archive has no page": "Questo archivio web non contiene una pagina",
+  "Get an address with this workspace's reminders and ⏰ times only, to share with people who are not in it. It shows what you can see here, and updates as it changes.": "Ottieni un indirizzo con solo i promemoria e gli orari ⏰ di questo spazio di lavoro, da condividere con chi non ne fa parte. Mostra ciò che vedi qui e si aggiorna quando cambia.",
+  "Which calendar": "Quale calendario",
+  "All my workspaces, for me": "Tutti i miei spazi di lavoro, per me",
+  "This workspace, to share": "Questo spazio di lavoro, da condividere",
+  "Anyone with the address can see this workspace's reminders, without signing in. Share it with care; make a new one or turn it off to stop it.": "Chiunque abbia l'indirizzo può vedere i promemoria di questo spazio di lavoro senza accedere. Condividilo con cura; creane uno nuovo o disattivalo per fermarlo."
 }

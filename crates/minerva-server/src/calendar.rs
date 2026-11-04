@@ -12,6 +12,13 @@
 //!   `/remindme` reminders): at that local time, as written ("floating" times,
 //!   with no time zone).
 //! - Journal days, when chosen: all-day events linking to the entry.
+//!
+//! Besides one's own feed (every workspace), a feed can hold one workspace
+//! only, as an address to share with people outside it.
+//!
+//! A repeating reminder set in a known time zone is written at its local time
+//! in that zone (`TZID`), so calendar apps keep it there across
+//! daylight-saving changes; other times are in UTC.
 use super::*;
 use axum::extract::Path;
 
@@ -26,26 +33,38 @@ pub(super) struct Feed {
     created_at: u64,
     #[serde(default)]
     journal: bool,
+    /// One workspace only; none for all of the owner's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace_id: Option<String>,
 }
 
 fn view(f: Option<&Feed>) -> Value {
     match f {
-        Some(f) => json!({"enabled": true, "created_at": f.created_at, "journal": f.journal}),
+        Some(f) => {
+            json!({"enabled": true, "created_at": f.created_at, "journal": f.journal, "workspace_id": f.workspace_id})
+        }
         None => json!({"enabled": false, "journal": false}),
     }
 }
 
-/// `calendar-feed`: `GET` whether yours is on; `POST {journal?}` makes a new
-/// address (shown once; the old one stops working); `PUT {journal}` changes
-/// what it holds; `DELETE` turns it off.
+/// `calendar-feed` (all your workspaces) and `calendar-feed/{workspace}` (one,
+/// to share): `GET` whether it is on; `POST {journal?}` makes a new address
+/// (shown once; the old one stops working); `PUT {journal}` changes what it
+/// holds; `DELETE` turns it off.
 pub(super) fn route(
     d: &mut Data,
     u: &User,
     method: &str,
+    workspace: Option<&str>,
     v: &Value,
     headers: &HeaderMap,
 ) -> Result<Value, ApiError> {
-    let mine = |f: &Feed| f.user_id == u.id;
+    if let Some(w) = workspace {
+        if !reminders::sees_workspace(d, u, w) {
+            return Err(forbidden());
+        }
+    }
+    let mine = |f: &Feed| f.user_id == u.id && f.workspace_id.as_deref() == workspace;
     match method {
         "GET" => Ok(view(d.calendar_feeds.iter().find(|f| mine(f)))),
         "POST" => {
@@ -57,6 +76,7 @@ pub(super) fn route(
                 token_hash: hash_token(&token),
                 created_at: now(),
                 journal,
+                workspace_id: workspace.map(String::from),
             };
             let mut result = view(Some(&feed));
             d.calendar_feeds.push(feed);
@@ -116,7 +136,14 @@ pub(super) async fn feed(
     else {
         return not_found();
     };
-    let body = calendar(d, &u, feed.journal, &sharing::site_url(&headers), now());
+    let body = calendar(
+        d,
+        &u,
+        feed.journal,
+        feed.workspace_id.as_deref(),
+        &sharing::site_url(&headers),
+        now(),
+    );
     (
         [
             ("content-type", "text/calendar; charset=utf-8"),
@@ -130,7 +157,16 @@ pub(super) async fn feed(
 }
 
 /// The feed's iCalendar text for `u`.
-pub(super) fn calendar(d: &Data, u: &User, journal: bool, base: &str, at: u64) -> String {
+pub(super) fn calendar(
+    d: &Data,
+    u: &User,
+    journal: bool,
+    only: Option<&str>,
+    base: &str,
+    at: u64,
+) -> String {
+    // A workspace feed holds that workspace only.
+    let in_scope = |w: &str| only.is_none_or(|o| o == w);
     let stamp = utc(at);
     let mut events: Vec<Vec<String>> = vec![];
     let workspace_of = |folder: &str| {
@@ -144,7 +180,7 @@ pub(super) fn calendar(d: &Data, u: &User, journal: bool, base: &str, at: u64) -
             .find(|x| x.id == w)
             .map_or(String::new(), |x| x.name.clone())
     };
-    for r in reminders::listed(d, u).filter(|r| r.note_id.is_empty()) {
+    for r in reminders::listed(d, u).filter(|r| r.note_id.is_empty() && in_scope(&r.workspace_id)) {
         let workspace = d
             .workspaces
             .iter()
@@ -153,7 +189,15 @@ pub(super) fn calendar(d: &Data, u: &User, journal: bool, base: &str, at: u64) -
         let mut event = vec![
             format!("UID:reminder-{}@minerva", r.id),
             format!("DTSTAMP:{stamp}"),
-            format!("DTSTART:{}", utc(r.at)),
+            // A repeat in a known time zone keeps its local time there.
+            match (&r.repeat, r.zone.is_empty()) {
+                (Some(_), false) => format!(
+                    "DTSTART;TZID={}:{}",
+                    r.zone,
+                    utc(r.at.saturating_add_signed(i64::from(r.offset) * 60)).trim_end_matches('Z')
+                ),
+                _ => format!("DTSTART:{}", utc(r.at)),
+            },
             "DURATION:PT30M".into(),
             format!("SUMMARY:{}", text(&r.title)),
             format!("DESCRIPTION:{}", text(&format!("Reminder in {workspace}"))),
@@ -172,6 +216,7 @@ pub(super) fn calendar(d: &Data, u: &User, journal: bool, base: &str, at: u64) -
         .notes
         .iter()
         .filter(|n| !n.trashed && note_role(d, u, n).is_some())
+        .filter(|n| only.is_none() || in_scope(&workspace_of_folder(d, &n.folder_id)))
     {
         if journal {
             if let Some(day) = n.journal.as_deref().and_then(compact_date) {
@@ -244,6 +289,12 @@ pub(super) fn calendar(d: &Data, u: &User, journal: bool, base: &str, at: u64) -
 }
 
 /// An alert when the event starts.
+fn workspace_of_folder(d: &Data, folder: &str) -> String {
+    d.folders
+        .iter()
+        .find(|f| f.id == folder)
+        .map_or(String::new(), |f| f.workspace_id.clone())
+}
 fn alarm(summary: &str) -> Vec<String> {
     vec![
         "BEGIN:VALARM".into(),

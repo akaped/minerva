@@ -278,6 +278,8 @@ function dialog(ctx, r, categories, done) {
       category: form.category.value,
       at: Math.floor(when.getTime() / 1000),
       offset: -when.getTimezoneOffset(),
+      // Calendar apps keep a repeat at this local time across DST changes.
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
       repeat: !preset
         ? null
         : preset === "custom"
@@ -312,9 +314,14 @@ export function webcal(url) {
  * like, your journal days) that calendar apps subscribe to. The address is
  * shown once, when it is made; making a new one ends the old one.
  */
-async function calendarDialog(ctx, made = null) {
+async function calendarDialog(ctx, made = null, scope = "mine") {
   const { esc, modal, api, toast } = ctx;
-  const feed = made || (await api("calendar-feed"));
+  // Your own feed (every workspace), or this workspace's, to share.
+  const path =
+    scope === "workspace"
+      ? `calendar-feed/${ctx.workspaceId}`
+      : "calendar-feed";
+  const feed = made || (await api(path));
   const since = feed.created_at
     ? new Date(feed.created_at * 1000).toLocaleDateString(undefined, {
         dateStyle: "medium",
@@ -325,14 +332,26 @@ async function calendarDialog(ctx, made = null) {
     ? `<p>${$t("Subscribe to this address in your calendar app. It is shown only now: copy it before closing.")}</p><label>${$t("Calendar address")}<input name="url" readonly value="${esc(made.url)}"></label><div class="toolbar-group"><button type="button" class="btn primary" id="copy-feed">${$t("Copy address")}</button><a class="btn" href="${esc(webcal(made.url))}">${$t("Open in calendar app")}</a></div><p class="hint">${$t("Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription. Outlook: Add calendar → Subscribe from web. Calendars refresh it every few hours.")}</p>`
     : feed.enabled
       ? `<p>${$t("Your calendar address is on, since {since}. For safety it is not shown again: make a new one to see it, and the old one stops working.", { since: esc(since) })}</p>${journal}`
-      : `<p>${$t("Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.")}</p>${journal}`;
-  modal.innerHTML = `<form class="calendar-feed-form"><h2>${$t("Add to your calendar")}</h2>${body}<p class="hint">${$t("Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.")}</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? `<button type="button" class="btn danger" id="feed-off">${$t("Turn off")}</button>` : ""}<button type="button" class="btn" id="cancel">${made ? $t("Done") : $t("Cancel")}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? $t("New address") : $t("Create address")}</button>`}</footer></form>`;
+      : scope === "workspace"
+        ? `<p>${$t("Get an address with this workspace's reminders and ⏰ times only, to share with people who are not in it. It shows what you can see here, and updates as it changes.")}</p>${journal}`
+        : `<p>${$t("Get a private address that calendar apps subscribe to: your reminders, and every ⏰ time in notes you can open, in all your workspaces. It updates as they change.")}</p>${journal}`;
+  const scopes = made
+    ? ""
+    : `<div class="calendar-scope" role="radiogroup" aria-label="${$t("Which calendar")}"><label class="checkbox-label"><input type="radio" name="scope" value="mine" ${scope === "mine" ? "checked" : ""}>${$t("All my workspaces, for me")}</label><label class="checkbox-label"><input type="radio" name="scope" value="workspace" ${scope === "workspace" ? "checked" : ""}>${$t("This workspace, to share")}</label></div>`;
+  modal.innerHTML = `<form class="calendar-feed-form"><h2>${$t("Add to your calendar")}</h2>${scopes}${body}<p class="hint">${scope === "workspace" ? $t("Anyone with the address can see this workspace's reminders, without signing in. Share it with care; make a new one or turn it off to stop it.") : $t("Anyone with the address can see these reminders, without signing in. Keep it to yourself; if it leaks, make a new one or turn it off.")}</p><div class="form-error" role="alert"></div><footer>${feed.enabled && !made ? `<button type="button" class="btn danger" id="feed-off">${$t("Turn off")}</button>` : ""}<button type="button" class="btn" id="cancel">${made ? $t("Done") : $t("Cancel")}</button>${made ? "" : `<button class="btn primary" type="submit">${feed.enabled ? $t("New address") : $t("Create address")}</button>`}</footer></form>`;
   if (!modal.open) modal.showModal();
   const form = modal.querySelector("form");
   const fail = (e) =>
     (form.querySelector(".form-error").textContent = e.message);
   form.querySelector("#cancel").onclick = () => modal.close();
   const copy = form.querySelector("#copy-feed");
+  form
+    .querySelectorAll("[name=scope]")
+    .forEach(
+      (r) =>
+        (r.onchange = () =>
+          calendarDialog(ctx, null, r.value).catch((e) => fail(e))),
+    );
   if (copy)
     copy.onclick = async () => {
       form.url.select();
@@ -345,14 +364,14 @@ async function calendarDialog(ctx, made = null) {
     };
   if (form.journal && feed.enabled)
     form.journal.onchange = () =>
-      api("calendar-feed", "PUT", { journal: form.journal.checked })
+      api(path, "PUT", { journal: form.journal.checked })
         .then(() => toast($t("Calendar updated")))
         .catch(fail);
   const off = form.querySelector("#feed-off");
   if (off)
     off.onclick = async () => {
       try {
-        await api("calendar-feed", "DELETE");
+        await api(path, "DELETE");
         modal.close();
         toast($t("Calendar address turned off"));
       } catch (e) {
@@ -371,10 +390,10 @@ async function calendarDialog(ctx, made = null) {
     )
       return;
     try {
-      const created = await api("calendar-feed", "POST", {
+      const created = await api(path, "POST", {
         journal: !!form.journal?.checked,
       });
-      await calendarDialog(ctx, created);
+      await calendarDialog(ctx, created, scope);
     } catch (err) {
       fail(err);
     }

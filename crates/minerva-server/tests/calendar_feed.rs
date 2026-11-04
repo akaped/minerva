@@ -179,3 +179,105 @@ async fn feed_holds_what_its_owner_sees_and_can_be_replaced() {
     .await;
     assert_eq!(status, 403);
 }
+
+#[tokio::test]
+async fn a_workspace_feed_to_share_and_repeats_in_their_time_zone() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let (_, login) = api(
+        &router,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await;
+    let root = login["token"].as_str().unwrap().to_string();
+    let owner = common::member(&router, &root, "owner@test.local").await;
+    let stranger = common::member(&router, &root, "stranger@test.local").await;
+    let (_, boot) = api(&router, "GET", "bootstrap", &owner, json!({})).await;
+    let team = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let personal = boot["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["personal"] == true)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let soon = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 86400;
+    for (workspace, title) in [(&team, "Team standup"), (&personal, "Dentist")] {
+        let (status, r) = api(
+            &router,
+            "POST",
+            "reminders",
+            &owner,
+            json!({"workspace_id": workspace, "title": title, "at": soon, "offset": 60, "zone": "Europe/Rome", "repeat": {"every": 1, "unit": "week"}}),
+        )
+        .await;
+        assert_eq!(status, 200, "{r}");
+    }
+
+    // One workspace only, as an address to share.
+    let (status, _) = api(
+        &router,
+        "POST",
+        &format!("calendar-feed/{team}"),
+        &stranger,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 403, "only for a workspace one can see");
+    let (status, made) = api(
+        &router,
+        "POST",
+        &format!("calendar-feed/{team}"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{made}");
+    assert_eq!(made["workspace_id"], team.as_str());
+    let path = url::Url::parse(made["url"].as_str().unwrap())
+        .unwrap()
+        .path()
+        .to_string();
+    let (status, ics) = fetch(&router, &path).await;
+    assert_eq!(status, 200);
+    assert!(
+        ics.contains("Team standup") && !ics.contains("Dentist"),
+        "{ics}"
+    );
+    // A repeat keeps its local time in its time zone.
+    assert!(ics.contains("DTSTART;TZID=Europe/Rome:"), "{ics}");
+    // One's own feed is separate, and has both.
+    let (_, mine) = api(&router, "POST", "calendar-feed", &owner, json!({})).await;
+    let mine_path = url::Url::parse(mine["url"].as_str().unwrap())
+        .unwrap()
+        .path()
+        .to_string();
+    let (_, all) = fetch(&router, &mine_path).await;
+    assert!(all.contains("Team standup") && all.contains("Dentist"));
+    let (_, still) = fetch(&router, &path).await;
+    assert!(
+        still.contains("Team standup"),
+        "making one's own feed keeps the workspace's"
+    );
+    let (_, off) = api(
+        &router,
+        "DELETE",
+        &format!("calendar-feed/{team}"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(off["enabled"], false);
+    assert_eq!(fetch(&router, &path).await.0, 404);
+}

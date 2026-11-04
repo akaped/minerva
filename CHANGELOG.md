@@ -29,6 +29,7 @@ turns that section into the next version.
 - **Blocks across notes:** type `[[Note name#words` to link (or with `![[`, embed) one block of another note; edit an embedded block right where it is shown with ✎, and the change lands in its own note; embedded notes update as soon as their note changes; links to a block on published pages go to that block; and Logseq imports keep block references and `{{embed …}}` pointing at the block or page.
 - **Folding and link cards:** ⋯ → **Keep folding in the note** folds and unfolds for everyone who opens it, as Logseq does (otherwise folding stays on each device); link cards show for share-link guests and on published pages too; and **Link** / **Card** on a link block switches between a card and a plain link.
 - **More imports:** Bear (TextBundles, with pictures, and its tags with spaces) and OneNote (pages or sections exported as a single-file web page, with pictures); Notion tables keep multi-select columns, and relation columns link to the imported table's records.
+- **Calendar feeds:** a workspace can have its own calendar address, with only its reminders and ⏰ times, to share with people outside it (📅 Add to your calendar → This workspace, to share); and repeating reminders stay at their local time in calendar apps across daylight-saving changes.
 
 ## [0.6.0] - 2026-11-03
 
