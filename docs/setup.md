@@ -101,6 +101,7 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
   - Formatting shortcuts (Ctrl+B/I/E/K, Ctrl+Shift+H to highlight, Ctrl+Shift+X to strike through) and a floating toolbar for selected text.
   - Pasting from web pages, Google Docs, or Word converts formatting to Markdown.
   - Find and replace in a note (Ctrl+F), and focus mode (Ctrl+Shift+F).
+  - Presentation mode (⋯ → Present, Ctrl+Alt+P): the note as full-screen slides, split at divider blocks (`---`) or, without them, at its top-level headings.
   - Word count and reading time.
 - Rich blocks:
   - Callouts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), `==highlights==`, and math (`$…$`, `$$…$$`) rendered to MathML on the server.

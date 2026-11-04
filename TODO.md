@@ -4,7 +4,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] **Presentation mode**: a note as slides, split at dividers or headings.
 
 
 

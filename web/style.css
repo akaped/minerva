@@ -8200,3 +8200,216 @@ body.comments-open .note-pane {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Presentation mode (presentation.js): one slide at a time over the page. */
+.presentation {
+  --slide-bg: #fffefb;
+  --slide-ink: #263249;
+  --slide-muted: #8590a2;
+  --slide-code: #f2f4f8;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--slide-bg);
+  color: var(--slide-ink);
+  /* Text grows with the screen: about 28px on a 1080p display. */
+  font-size: clamp(16px, min(2.6vw, 4.2vh), 44px);
+  outline: none;
+}
+[data-theme="dark"] .presentation {
+  --slide-bg: #131823;
+  --slide-ink: #e1e6f1;
+  --slide-muted: #a6b1c6;
+  --slide-code: #1f2636;
+}
+body.presenting {
+  overflow: hidden;
+}
+.slide-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 4vh 6vw 2vh;
+  cursor: pointer;
+}
+.slide {
+  width: min(100%, 36em);
+  max-height: 100%;
+  overflow: hidden;
+  line-height: 1.45;
+  cursor: auto;
+}
+.slide.overflows {
+  overflow-y: auto;
+}
+.slide.title-slide {
+  text-align: center;
+}
+.slide header h1 {
+  margin: 0 0 0.4em;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.2em;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.slide-icon {
+  font-size: 2.4em;
+  margin-bottom: 0.2em;
+}
+.slide-block {
+  display: flex;
+  gap: 0.4em;
+}
+.slide-block.indent-1 { padding-left: 1.2em; }
+.slide-block.indent-2 { padding-left: 2.4em; }
+.slide-block.indent-3,
+.slide-block.indent-4,
+.slide-block.indent-5,
+.slide-block.indent-6 { padding-left: 3.6em; }
+.slide-task {
+  flex: none;
+}
+.slide-block.is-task ul {
+  list-style: none;
+  padding-left: 0;
+}
+.slide-content {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.slide-content > :first-child {
+  margin-top: 0;
+}
+.slide-content p {
+  margin: 0 0 0.5em;
+}
+.slide-content h1,
+.slide-content h2,
+.slide-content h3 {
+  margin: 0 0 0.5em;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.slide-content h1 { font-size: 1.9em; }
+.slide-content h2 { font-size: 1.6em; }
+.slide-content h3 { font-size: 1.3em; }
+.slide-content ul,
+.slide-content ol {
+  margin: 0 0 0.3em;
+  padding-left: 1.2em;
+}
+.slide-content li + li {
+  margin-top: 0.2em;
+}
+.slide-content blockquote,
+.slide-content .lp-quote,
+.slide-content .lp-callout {
+  margin: 0.4em 0;
+  padding: 0.4em 0.8em;
+  border-left: 0.15em solid var(--accent);
+  color: var(--slide-muted);
+}
+.slide-content pre {
+  padding: 0.6em 0.8em;
+  border-radius: 0.3em;
+  background: var(--slide-code);
+  overflow: auto;
+  font-size: 0.7em;
+}
+.slide-content code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  background: var(--slide-code);
+  padding: 0.05em 0.25em;
+  border-radius: 0.2em;
+}
+.slide-content pre code {
+  font-size: 1em;
+  padding: 0;
+  background: none;
+}
+.slide-content table {
+  border-collapse: collapse;
+  font-size: 0.8em;
+}
+.slide-content td,
+.slide-content th {
+  border: 1px solid var(--line);
+  padding: 0.3em 0.6em;
+}
+.slide-content img,
+.slide-content video,
+.slide-content svg {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+}
+.slide-content hr {
+  display: none;
+}
+.slide-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--slide-muted);
+  font-size: 14px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.slide-bar:hover,
+.slide-bar:focus-within,
+.presentation:focus-visible .slide-bar {
+  opacity: 1;
+}
+.slide-spacer {
+  flex: 1;
+}
+.slide-count {
+  min-width: 4.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.slide-nav {
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+}
+.slide-nav:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--slide-ink);
+}
+.slide-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.slide-progress {
+  height: 3px;
+  background: var(--line);
+}
+.slide-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-progress span,
+  .slide-bar {
+    transition: none;
+  }
+}

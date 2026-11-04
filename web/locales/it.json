@@ -2142,5 +2142,17 @@
   "Archived · out of the sidebar and search": "Archiviata · fuori dalla barra laterale e dalla ricerca",
   "Note archived": "Nota archiviata",
   "Note back from the archive": "Nota ripristinata dall'archivio",
-  "Invalid archive flag": "Indicatore di archiviazione non valido"
+  "Invalid archive flag": "Indicatore di archiviazione non valido",
+  "Present": "Presenta",
+  "Show this note as slides, split at dividers or headings": "Mostra questa nota come diapositive, divise ai separatori o ai titoli",
+  "presentation": "presentazione",
+  "Previous slide": "Diapositiva precedente",
+  "Previous slide (←)": "Diapositiva precedente (←)",
+  "Next slide": "Diapositiva successiva",
+  "Next slide (→ or Space)": "Diapositiva successiva (→ o Spazio)",
+  "Full screen": "Schermo intero",
+  "Full screen (F)": "Schermo intero (F)",
+  "End presentation": "Termina la presentazione",
+  "End presentation (Esc)": "Termina la presentazione (Esc)",
+  "{current} / {total}": "{current} / {total}"
 }

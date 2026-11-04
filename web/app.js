@@ -34,6 +34,7 @@ import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import { buildGraph, neighborhood, mountGraph, folderColor } from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
 import { recordingBlocks, timestamp } from "./recording.js";
+import { present } from "./presentation.js";
 import {
   startWorker,
   offlineReading,
@@ -228,6 +229,7 @@ const paths = {
   copy: "M9 9h11v11H9z M5 15H4V4h11v1",
   star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z",
   archive: "M3 4h18v4H3z M5 8v12h14V8 M10 12h4",
+  play: "M3 4h18v12H3z M12 16v4 M8 20h8 M10 7.5l4 2.5-4 2.5z",
   trash: "M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7",
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M20 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8",
@@ -2333,6 +2335,15 @@ function renderEditor() {
     [
       item("find-note", "search", $t("Find and replace"), "", "Ctrl+F"),
       `<button role="menuitemcheckbox" tabindex="-1" id="focus-toggle" aria-checked="${document.body.classList.contains("focus-mode")}">${icon("canvas")}<span>${$t("Focus mode")}</span><kbd>${shortcutKeys("Ctrl+Shift+F")}</kbd></button>`,
+      mode === "document"
+        ? item(
+            "present-note",
+            "play",
+            $t("Present"),
+            `title="${$t("Show this note as slides, split at dividers or headings")}"`,
+            "Ctrl+Alt+P",
+          )
+        : "",
       can ? item("save-note", "check", $t("Save now"), "", "Ctrl+S") : "",
     ],
     shareMode
@@ -2425,6 +2436,7 @@ function renderEditor() {
     ),
   );
   action($("#focus-toggle"), "click", () => toggleFocus());
+  action($("#present-note"), "click", presentNote);
   renderRecordPanel().catch(error);
   action($("#doc-icon"), "click", (e) => iconPicker(e.currentTarget));
   action($("#add-icon"), "click", (e) => iconPicker(e.currentTarget));
@@ -3074,6 +3086,23 @@ function bindToolbarMenu(
     close(true);
   }, true);
   return { open, close };
+}
+/** Shows the open note as slides (see presentation.js). */
+let presenting = null;
+async function presentNote() {
+  if (!note || presenting || mode !== "document") return;
+  await flush();
+  const blocks = new Map(
+    $$("#blocks .block").map((el) => [el.dataset.block, el]),
+  );
+  presenting = present({
+    title: note.title,
+    icon: note.icon,
+    markdowns: note.blocks.map((b) => b.markdown),
+    blocks: note.blocks.map((b) => blocks.get(b.id)),
+    esc,
+    onClose: () => (presenting = null),
+  });
 }
 function toggleFocus(force) {
   const on = document.body.classList.toggle("focus-mode", force);
@@ -9283,6 +9312,17 @@ document.addEventListener("keydown", (e) => {
     flush().catch(error);
   }
   const key = e.key.toLowerCase();
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    e.altKey &&
+    key === "p" &&
+    note &&
+    !modal.open
+  ) {
+    e.preventDefault();
+    presentNote().catch(error);
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && key === "f" && note && !modal.open) {
     e.preventDefault();
     if (e.shiftKey) toggleFocus();
