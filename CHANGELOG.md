@@ -26,6 +26,7 @@ turns that section into the next version.
 - **`minerva-cli` in every release**, for Linux and Windows. `minerva-cli backup` run again fetches only what changed since the last backup (and moves renamed or moved notes' files); `--full` fetches everything.
 - **Lighter live editing:** an open note now receives only the changes it lacks instead of the whole note on every sync, which keeps long notes quick on slow connections.
 - **Comments:** edit your own comments (marked “edited”); the text a thread is about is highlighted in its block, and a click on it opens the thread; comments that mention you appear in the Mentions widget; and guests with an edit link can comment and reply too, as “Guest”, seeing members only as “Member”.
+- **Blocks across notes:** type `[[Note name#words` to link (or with `![[`, embed) one block of another note; edit an embedded block right where it is shown with ✎, and the change lands in its own note; embedded notes update as soon as their note changes; links to a block on published pages go to that block; and Logseq imports keep block references and `{{embed …}}` pointing at the block or page.
 
 ## [0.6.0] - 2026-11-03
 

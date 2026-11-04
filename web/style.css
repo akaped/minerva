@@ -8509,3 +8509,37 @@ mark.comment-quote {
 .comment-edit:focus-visible {
   opacity: 1;
 }
+.link-picker .picker-hint {
+  margin: 4px 8px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* Editing an embedded block where it is shown. */
+.note-embed-edit {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.note-embed-editor {
+  display: block;
+}
+.note-embed-editor textarea {
+  width: 100%;
+  min-height: 60px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  padding: 7px;
+}
+.note-embed-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.note-embed-actions small {
+  margin-right: auto;
+  color: var(--muted);
+}

@@ -105,6 +105,10 @@ const signals = new LiveSignals();
 export function watchNote(id, onChange) {
   return signals.watch(id, onChange);
 }
+/** Whether this page gets live signals (else it polls). */
+export function liveSignals() {
+  return signals.available;
+}
 
 export class Collaboration {
   constructor(

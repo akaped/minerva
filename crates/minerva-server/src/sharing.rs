@@ -776,7 +776,9 @@ fn public_links(markdown: &str, pages: &[(String, String)]) -> String {
     }
     crate::embeds::replace_refs(markdown, |r| {
         let (_, path) = pages.iter().find(|(id, _)| id == r.note)?;
-        Some(format!("[{}](/{path})", r.label))
+        // A link to a block goes to that block on the page.
+        let anchor = r.block.map_or(String::new(), |b| format!("#b-{b}"));
+        Some(format!("[{}](/{path}{anchor})", r.label))
     })
     .into_owned()
 }
@@ -794,9 +796,16 @@ fn article(
     pages: &[(String, String)],
     lang: &str,
 ) -> String {
+    // Each block can be linked to: `#b-{block id}`.
     let content: String = rendered(&c.blocks, links, pages)
         .iter()
-        .map(|html| format!("<div class=\"block\">{html}</div>\n"))
+        .zip(&c.blocks)
+        .map(|(html, b)| {
+            format!(
+                "<div class=\"block\" id=\"b-{}\">{html}</div>\n",
+                escape(&b.id)
+            )
+        })
         .collect();
     let content = export::fill_contents(&content);
     format!(

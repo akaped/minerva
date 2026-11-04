@@ -28,7 +28,7 @@ import { attachPreview, previewHTML, headingLevel } from "./live-preview.js";
 import { renderDashboard } from "./dashboard.js";
 import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
-import { Collaboration, watchNote } from "./collaboration.js";
+import { Collaboration, watchNote, liveSignals } from "./collaboration.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import {
@@ -4443,6 +4443,10 @@ async function updateLinkPicker(ta) {
   if (mention) return updateMentionPicker(ta, mention);
   const query = linkQuery(ta.value, ta.selectionStart);
   if (!query || shareMode) return closeLinkPicker();
+  query.embed = ta.value[query.start - 1] === "!";
+  // `[[Note name#words`: that note's blocks with the words.
+  const hash = query.query.indexOf("#");
+  if (hash > 0) return updateBlockPicker(ta, query, hash);
   const results = query.query.trim()
     ? await api("search", "POST", { query: query.query.trim() })
     : [...workspaceNotes(), ...(data.shared_notes || [])]
@@ -4450,7 +4454,6 @@ async function updateLinkPicker(ta) {
         .sort((a, b) => b.updated_at - a.updated_at);
   if (linkQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
   const items = results.filter((n) => n.id !== note.id).slice(0, 8);
-  query.embed = ta.value[query.start - 1] === "!";
   if (query.embed) return showPicker(ta, query, items, $t("Embed a note"));
   if (
     /^(u|un|unf|unc|tas|todo|jour|open)/i.test(query.query.trim()) ||
@@ -4463,6 +4466,50 @@ async function updateLinkPicker(ta) {
     });
   showPicker(ta, query, items, $t("Link to a note"));
 }
+// Notes whose blocks the picker lists, fetched once a while.
+const pickerNotes = new Map();
+async function updateBlockPicker(ta, query, hash) {
+  const name = query.query.slice(0, hash).trim().toLowerCase();
+  const words = query.query.slice(hash + 1).trim().toLowerCase();
+  const known = [...workspaceNotes(), ...(data.shared_notes || [])].filter(
+    (n) => !n.trashed,
+  );
+  const target =
+    known.find((n) => n.title.toLowerCase() === name) ||
+    known.find((n) => n.title.toLowerCase().startsWith(name)) ||
+    (await api("search", "POST", { query: name }).catch(() => []))[0];
+  if (linkQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
+  if (!target) return showPicker(ta, query, [], $t("Link to a block"));
+  let full = pickerNotes.get(target.id);
+  if (!full || Date.now() - full.at > 10000) {
+    full = {
+      at: Date.now(),
+      note:
+        target.id === note.id
+          ? note
+          : await api("notes/" + target.id).catch(() => null),
+    };
+    pickerNotes.set(target.id, full);
+  }
+  if (linkQuery(ta.value, ta.selectionStart)?.start !== query.start) return;
+  const blocks = (full.note?.blocks || [])
+    .map((b) => ({ b, label: blockLabel(b.markdown) }))
+    .filter(({ label }) => label && label.toLowerCase().includes(words))
+    .slice(0, 8)
+    .map(({ b, label }) => ({
+      icon: "¶",
+      title: label,
+      block: b.id,
+      note: target.id,
+      noteTitle: target.title,
+    }));
+  showPicker(
+    ta,
+    query,
+    blocks,
+    query.embed ? $t("Embed a block") : $t("Link to a block"),
+  );
+}
 function drawLinkPicker() {
   const { list, items, selected } = linkPicker;
   list.innerHTML =
@@ -4472,7 +4519,13 @@ function drawLinkPicker() {
           `<button role="option" aria-selected="${i === selected}" class="${i === selected ? "selected" : ""}" data-pick="${i}">${n.email ? `<span class="mention-avatar">${esc(n.name.slice(0, 1).toUpperCase())}</span>${esc(n.name)} <small>${esc(n.email)}</small>` : `${esc(n.icon)} ${esc(n.title)}`}</button>`,
       )
       .join("") ||
-    `<p class="muted">${linkPicker.list.getAttribute("aria-label") === $t("Mention someone") ? $t("Nobody else can open this note yet. Share it, or its workspace, first.") : $t("No matching notes")}</p>`;
+    `<p class="muted">${linkPicker.list.getAttribute("aria-label") === $t("Mention someone") ? $t("Nobody else can open this note yet. Share it, or its workspace, first.") : linkPicker.list.getAttribute("aria-label") === $t("Link to a block") || linkPicker.list.getAttribute("aria-label") === $t("Embed a block") ? $t("No matching blocks") : $t("No matching notes")}</p>`;
+  // A hint for linking a block, under note results.
+  if (items.length && !items[0].block && !items[0].email)
+    list.insertAdjacentHTML(
+      "beforeend",
+      `<p class="picker-hint">${$t("Type # after a note’s name to pick one of its blocks")}</p>`,
+    );
   $$("[data-pick]", list).forEach((b) => {
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", () => pickLink(Number(b.dataset.pick)));
@@ -4484,9 +4537,13 @@ function pickLink(index) {
   if (!target) return;
   const text = target.email
     ? `@${target.email} `
-    : query.embed
-      ? embedCode(target.title, target.id)
-      : target.special || noteLink(target.title, target.id);
+    : target.block
+      ? query.embed
+        ? embedCode(target.title, target.note, target.block)
+        : blockLink(target.title, target.note, target.block)
+      : query.embed
+        ? embedCode(target.title, target.id)
+        : target.special || noteLink(target.title, target.id);
   const from = query.embed ? query.start - 1 : query.start;
   replaceRange(ta, {
     from,
@@ -4499,7 +4556,9 @@ function pickLink(index) {
   announce(
     target.email
       ? `Mentioned ${target.name}`
-      : query.embed
+      : target.block
+        ? $t("Linked to a block of {title}", { title: target.noteTitle })
+        : query.embed
         ? `Embedded ${target.title}`
         : $t("Linked to {title}", { title: target.title }),
   );
@@ -9301,15 +9360,70 @@ function localEmbed(target) {
 }
 function drawNoteEmbed(slot, target, entry) {
   slot.dataset.state = "ready";
+  // Never redrawn while its block is being edited here.
+  if (slot.dataset.editing) return;
   const href = `#note/${target.note}${target.block ? `#${target.block}` : ""}`;
   const problem = EMBED_PROBLEMS[entry?.state] || (!entry?.blocks && "This note could not be loaded.");
   const html = problem
     ? `<span class="note-embed-note">${icon("note")}${esc(problem)}${entry?.title && entry.state !== "trashed" ? ` <a href="${esc(href)}">${esc(entry.title)}</a>` : ""}</span>`
-    : `<span class="note-embed-panel" role="group" aria-label="${target.block ? $t("Block") : $t("Note")} from ${esc(entry.title)}"><a class="note-embed-source" href="${esc(href)}" title="${target.block ? $t("Open the block in its note") : $t("Open the note")}"><span aria-hidden="true">${esc(entry.icon || "▤")}</span>${esc(entry.title)}</a><span class="note-embed-body">${entry.blocks.map((b) => `<span class="note-embed-block">${b.html}</span>`).join("")}${entry.more ? `<span class="note-embed-more">${$t("The rest is in the note.")}</span>` : ""}</span></span>`;
+    : `<span class="note-embed-panel" role="group" aria-label="${target.block ? $t("Block") : $t("Note")} from ${esc(entry.title)}"><a class="note-embed-source" href="${esc(href)}" title="${target.block ? $t("Open the block in its note") : $t("Open the note")}"><span aria-hidden="true">${esc(entry.icon || "▤")}</span>${esc(entry.title)}</a>${target.block && entry.can_edit && !shareMode && target.note !== note?.id ? `<button type="button" class="note-embed-edit" data-embed-edit title="${$t("Edit this block here; it changes in its note too")}" aria-label="${$t("Edit the embedded block")}">✎</button>` : ""}<span class="note-embed-body">${entry.blocks.map((b) => `<span class="note-embed-block">${b.html}</span>`).join("")}${entry.more ? `<span class="note-embed-more">${$t("The rest is in the note.")}</span>` : ""}</span></span>`;
   // Unchanged content is left alone, so a reader's selection survives.
   if (drawnEmbeds.get(slot) === html) return;
   drawnEmbeds.set(slot, html);
   slot.innerHTML = html;
+  const edit = $("[data-embed-edit]", slot);
+  if (edit)
+    edit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      editEmbeddedBlock(slot, target, entry);
+    });
+}
+/** Edits an embedded block in place; it saves to its own note. */
+function editEmbeddedBlock(slot, target, entry) {
+  const base = entry.blocks?.[0]?.markdown;
+  const body = $(".note-embed-body", slot);
+  if (base == null || !body) return;
+  slot.dataset.editing = "1";
+  body.innerHTML = `<span class="note-embed-editor"><textarea aria-label="${$t("Edit the embedded block")}" spellcheck="true"></textarea><span class="note-embed-actions"><small>${$t("Ctrl+Enter to save · Escape to cancel")}</small><button type="button" class="btn" data-embed-cancel>${$t("Cancel")}</button><button type="button" class="btn primary" data-embed-save>${$t("Save")}</button></span></span>`;
+  const ta = $("textarea", body);
+  ta.value = base;
+  ta.style.height = Math.max(60, ta.scrollHeight) + "px";
+  ta.focus();
+  for (const kind of ["click", "mousedown", "keydown"])
+    body.addEventListener(kind, (e) => e.stopPropagation());
+  const done = () => {
+    delete slot.dataset.editing;
+    drawnEmbeds.delete(slot);
+    drawNoteEmbed(slot, target, noteEmbeds.get(embedKey(target)) || entry);
+  };
+  const save = async () => {
+    const markdown = ta.value;
+    if (markdown === base) return done();
+    try {
+      await api(`notes/${target.note}/blocks/${target.block}`, "PUT", {
+        markdown,
+        base,
+      });
+      noteEmbeds.delete(embedKey(target));
+      const [fresh] = await api("embeds", "POST", { items: [target] });
+      if (fresh) noteEmbeds.set(embedKey(fresh), fresh);
+      toast($t("Saved in “{title}”", { title: entry.title }));
+      done();
+    } catch (e) {
+      error(e);
+    }
+  };
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      save();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      done();
+    }
+  });
+  $("[data-embed-save]", body).onclick = save;
+  $("[data-embed-cancel]", body).onclick = done;
 }
 /** Fills the slots of embedded notes and blocks, then keeps them current. */
 async function renderNoteEmbeds() {
@@ -9350,13 +9464,49 @@ async function renderNoteEmbeds() {
       if (slot.isConnected)
         drawNoteEmbed(slot, target, noteEmbeds.get(embedKey(target)));
   }
+  watchEmbeds();
+  // Live signals bring changes at once; polling stays as a fallback, often
+  // where there are no signals (the desktop app, share links).
   clearInterval(noteEmbedTimer);
-  noteEmbedTimer = setInterval(() => refreshNoteEmbeds().catch(error), 5000);
+  noteEmbedTimer = setInterval(
+    () => refreshNoteEmbeds().catch(error),
+    liveSignals() ? 60000 : 5000,
+  );
+}
+// Live signals of the notes embedded in the open note: one per note.
+const embedWatches = new Map();
+let embedSignal = 0;
+function watchEmbeds() {
+  const ids = new Set();
+  for (const slot of $$("#blocks .note-embed[data-state=ready]")) {
+    const target = slotTarget(slot.classList);
+    if (target && note && target.note !== note.id) ids.add(target.note);
+  }
+  for (const [id, stop] of embedWatches)
+    if (!ids.has(id)) {
+      stop();
+      embedWatches.delete(id);
+    }
+  for (const id of ids)
+    if (!embedWatches.has(id))
+      embedWatches.set(
+        id,
+        watchNote(id, () => {
+          clearTimeout(embedSignal);
+          embedSignal = setTimeout(
+            () => refreshNoteEmbeds().catch(() => {}),
+            250,
+          );
+        }),
+      );
 }
 // Picks up edits to embedded notes, made here or by other people.
 async function refreshNoteEmbeds() {
   const slots = $$("#blocks .note-embed[data-state=ready]");
-  if (!slots.length || !note) return clearInterval(noteEmbedTimer);
+  if (!slots.length || !note) {
+    watchEmbeds();
+    return clearInterval(noteEmbedTimer);
+  }
   if (document.hidden) return;
   const known = new Map();
   for (const slot of slots) {

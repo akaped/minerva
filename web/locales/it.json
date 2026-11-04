@@ -2216,5 +2216,15 @@
   "edited": "modificato",
   "Edit comment": "Modifica il commento",
   "Comment updated": "Commento aggiornato",
-  "in a comment": "in un commento"
+  "in a comment": "in un commento",
+  "Link to a block": "Collega un blocco",
+  "Embed a block": "Incorpora un blocco",
+  "No matching blocks": "Nessun blocco corrispondente",
+  "Type # after a note’s name to pick one of its blocks": "Scrivi # dopo il nome di una nota per sceglierne un blocco",
+  "Linked to a block of {title}": "Collegato a un blocco di {title}",
+  "Edit this block here; it changes in its note too": "Modifica qui questo blocco; cambia anche nella sua nota",
+  "Edit the embedded block": "Modifica il blocco incorporato",
+  "Ctrl+Enter to save · Escape to cancel": "Ctrl+Invio per salvare · Esc per annullare",
+  "Saved in “{title}”": "Salvato in “{title}”",
+  "This block changed meanwhile. Open the note to see the latest text.": "Questo blocco è cambiato nel frattempo. Apri la nota per vedere il testo più recente."
 }

@@ -1701,6 +1701,34 @@ fn dispatch(
             d.notes.push(Arc::new(n.clone()));
             note_view(&n)
         }
+        // One block, changed where it is shown (an embed): refused when it changed
+        // since the caller read it (`base`), so no one's edit is lost.
+        ("PUT", ["notes", nid, "blocks", bid]) => {
+            let markdown = v["markdown"]
+                .as_str()
+                .ok_or_else(|| bad("markdown is required"))?
+                .to_string();
+            if markdown.len() > 100_000 {
+                return Err(bad("Block is too large"));
+            }
+            let base = v["base"].as_str();
+            let note = mcp::edit_blocks(d, &u, nid, |blocks| {
+                let b = blocks
+                    .iter_mut()
+                    .find(|b| b.id == *bid)
+                    .ok_or_else(|| bad("No such block"))?;
+                if base.is_some_and(|base| base != b.markdown) {
+                    return Err(ApiError(
+                        StatusCode::CONFLICT,
+                        "This block changed meanwhile. Open the note to see the latest text."
+                            .into(),
+                    ));
+                }
+                b.markdown = markdown;
+                Ok(())
+            })?;
+            note_view(&note)
+        }
         ("POST", ["notes", nid, "append"]) => {
             let after = v["after_block_id"].as_str();
             let markdown = v["markdown"]

@@ -257,7 +257,7 @@ async fn sites_group_pages_under_their_own_paths() {
         json!({}),
     )
     .await;
-    n["blocks"] = json!([{"id":"b1","markdown":format!("See [the intro](#note/{hello}) and [a secret](#note/{bobs}).\n\n![](/api/v1/attachments/{fid})")}]);
+    n["blocks"] = json!([{"id":"b1","markdown":format!("See [the intro](#note/{hello}), [its first line](#note/{hello}#p1) and [a secret](#note/{bobs}).\n\n![](/api/v1/attachments/{fid})")}]);
     api(&router, "PUT", &format!("notes/{dragon}"), &alice, n).await;
     let (status, _) = publish(
         &router,
@@ -318,6 +318,10 @@ async fn sites_group_pages_under_their_own_paths() {
     assert!(
         page.contains("href=\"/blog/hello\""),
         "links to published notes resolve"
+    );
+    assert!(
+        page.contains("href=\"/blog/hello#b-p1\"") && page.contains("id=\"b-b1\""),
+        "links to a block go to it, and blocks can be linked to"
     );
     assert!(
         !page.contains(&bobs),

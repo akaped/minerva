@@ -299,7 +299,7 @@ pub(super) fn append_markdown(
 }
 /// Changes note `nid` with `change` (on its blocks), saved like an edit in the
 /// app: the previous version kept, open editors updated. Checks edit access.
-fn edit_blocks(
+pub(super) fn edit_blocks(
     d: &mut Data,
     u: &User,
     nid: &str,

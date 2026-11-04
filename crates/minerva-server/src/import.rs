@@ -558,6 +558,33 @@ fn resolve(from: &str, target: &str) -> String {
     parts.join("/")
 }
 
+/// Marks a Logseq block ID inside imported Markdown until blocks are made.
+const ID_MARK: char = '\u{3}';
+fn valid_block_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+/// A block's Markdown without its ID mark, and the ID it marks.
+fn block_id(markdown: &str) -> (String, Option<String>) {
+    let Some(start) = markdown.find(ID_MARK) else {
+        return (markdown.to_string(), None);
+    };
+    let after = &markdown[start + ID_MARK.len_utf8()..];
+    let Some(end) = after.find(ID_MARK) else {
+        return (markdown.replace(ID_MARK, ""), None);
+    };
+    let id = after[..end].to_string();
+    let rest = format!(
+        "{}{}",
+        &markdown[..start],
+        &after[end + ID_MARK.len_utf8()..]
+    );
+    // Any other marks (a block holding nested ones) go.
+    let (rest, _) = block_id(&rest);
+    (rest, Some(id))
+}
 /// Rewrites a page's links: `[[wiki links]]` and relative links to imported notes,
 /// embedded and linked files to attachments (via `attach`), Logseq block references
 /// to links, and Evernote's media. Fenced code is left as it is.
@@ -575,14 +602,21 @@ fn rewrite(
         if t.starts_with("```") || t.starts_with("~~~") {
             fenced = !fenced;
         }
-        // Logseq's own block bookkeeping.
+        // Logseq's own block bookkeeping. A block's ID is kept, as a mark on its
+        // first line that becomes the Minerva block's ID (see `block_id`), so
+        // references and embeds of it still reach it.
         let bare = t.trim_end();
-        if !fenced
-            && (bare.starts_with("id:: ")
-                || bare == "collapsed:: true"
-                || bare == "collapsed:: false")
-        {
-            continue;
+        if !fenced {
+            if let Some(id) = bare.strip_prefix("id:: ").map(str::trim) {
+                if valid_block_id(id) && out.ends_with('\n') {
+                    out.pop();
+                    out.push_str(&format!("{ID_MARK}{id}{ID_MARK}\n"));
+                }
+                continue;
+            }
+            if bare == "collapsed:: true" || bare == "collapsed:: false" {
+                continue;
+            }
         }
         if fenced || t.starts_with("```") || t.starts_with("~~~") {
             out.push_str(line);
@@ -610,11 +644,36 @@ fn rewrite_line(
                 continue;
             }
         }
-        // `((block id))`.
+        // `((block id))`: a link to that block.
         if let Some(after) = rest.strip_prefix("((") {
             if let Some((id, tail)) = after.split_once("))") {
                 if let Some((note, text)) = links.blocks.get(id.trim()) {
-                    out.push_str(&format!("[{}](#note/{note})", label(text)));
+                    out.push_str(&format!("[{}](#note/{note}#{})", label(text), id.trim()));
+                    rest = tail;
+                    continue;
+                }
+            }
+        }
+        // `{{embed ((block id))}}` and `{{embed [[page]]}}`: embeds.
+        if let Some(after) = rest.strip_prefix("{{embed ") {
+            if let Some((inner, tail)) = after.split_once("}}") {
+                let inner = inner.trim();
+                let embed =
+                    if let Some(id) = inner.strip_prefix("((").and_then(|i| i.strip_suffix("))")) {
+                        links.blocks.get(id.trim()).map(|(note, text)| {
+                            format!("![{}](#note/{note}#{})", label(text), id.trim())
+                        })
+                    } else if let Some(page) =
+                        inner.strip_prefix("[[").and_then(|i| i.strip_suffix("]]"))
+                    {
+                        links
+                            .note(page, from)
+                            .map(|note| format!("![{}](#note/{note})", label(page)))
+                    } else {
+                        None
+                    };
+                if let Some(embed) = embed {
+                    out.push_str(&embed);
                     rest = tail;
                     continue;
                 }
@@ -845,11 +904,22 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
                 p.title.clone()
             },
             icon: String::new(),
-            blocks: parts
-                .iter()
-                .enumerate()
-                .map(|(i, b)| Block::new(&truncate(b, BLOCK_BYTES), i))
-                .collect(),
+            blocks: {
+                let mut used = HashSet::new();
+                parts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let (markdown, own) = block_id(b);
+                        let mut block = Block::new(&truncate(&markdown, BLOCK_BYTES), i);
+                        // Logseq's ID, so references reach the block.
+                        if let Some(own) = own.filter(|o| used.insert(o.clone())) {
+                            block.id = own;
+                        }
+                        block
+                    })
+                    .collect()
+            },
             revision: 1,
             updated_at: now(),
             favorite: false,

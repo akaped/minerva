@@ -13,13 +13,12 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Folding and cards**: fold state shared with the note (as Logseq's `collapsed::`) as an option; link cards on published pages and for share-link guests; choosing between a card and a plain link.
 - [ ] **Live signals for the desktop app and share links**: `minerva://` pages cannot open the WebSocket, and guests are not signed in. Relay signals through the desktop gateway, and give guests a share-scoped socket; until then both poll.
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).
-- [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
+- [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); importing straight from Notion's API instead of an export.
 - [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.
 
 - [ ] **Recordings**: recordings longer than about 90 minutes (24 MB) need splitting before transcription; who said what (speaker labels); action items assigned to members as `@mentions` (now the owner is written as said); transcribing in the browser, so audio never leaves the device.
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders; repeating reminders in the feed follow daylight-saving changes in the reader's calendar rather than the time zone they were set in; a feed per workspace to share with others.
 - [ ] **Installable app**: editing offline (now offline notes are read-only; it needs the CRDT updates queued and merged when back), keeping a whole workspace offline rather than the notes opened, files other than pictures offline, push notifications for reminders, and sharing files (not only text and links) to the app.
-- [ ] **Block references and embeds**: editing an embedded block in place (now it opens its note); choosing a block in the `[[` picker (now from the block's ⠿ menu); block anchors on published pages (a block link goes to the page's top); importing Logseq's `((uuid))` references and `{{embed …}}`; embeds refresh every 5 seconds instead of on a live signal.
 
 ## MAYBE IN FUTURE. I will tell you when
 - [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.

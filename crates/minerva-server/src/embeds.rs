@@ -181,6 +181,8 @@ pub(super) fn route(d: &Data, u: &User, v: &Value) -> Result<Value, ApiError> {
                 None => n.blocks.iter().map(|b| (b, b.markdown.clone())).collect(),
             };
             view["state"] = json!("ok");
+            // Editors change an embedded block where it is shown.
+            view["can_edit"] = json!(note_role(d, u, n) == Some(Role::Editor));
             if item["revision"].as_u64() == Some(n.revision) {
                 view["unchanged"] = json!(true);
                 return Ok(view);
@@ -189,7 +191,7 @@ pub(super) fn route(d: &Data, u: &User, v: &Value) -> Result<Value, ApiError> {
             view["blocks"] = json!(shown
                 .iter()
                 .take(MAX_BLOCKS)
-                .map(|(b, markdown)| json!({"id": b.id, "html": render(markdown)}))
+                .map(|(b, markdown)| json!({"id": b.id, "html": render(markdown), "markdown": b.markdown}))
                 .collect::<Vec<_>>());
             Ok(view)
         })

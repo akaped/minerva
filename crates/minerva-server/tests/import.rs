@@ -237,7 +237,7 @@ async fn imports_from_notion_obsidian_logseq_and_evernote() {
     // Logseq: namespaced pages, journals, page properties and block references.
     let graph = zip(&[
         ("graph/pages/books___dune.md", b"tags:: scifi\n\n- Spice\n  id:: 650e1a2b-0000-4000-8000-000000000001\n- Sand\n\t- Worms" as &[u8]),
-        ("graph/journals/2026_11_01.md", b"- Read ((650e1a2b-0000-4000-8000-000000000001)) in [[books/dune]]"),
+        ("graph/journals/2026_11_01.md", b"- Read ((650e1a2b-0000-4000-8000-000000000001)) in [[books/dune]]\n- {{embed ((650e1a2b-0000-4000-8000-000000000001))}}\n- {{embed [[books/dune]]}}"),
         ("graph/logseq/config.edn", b"{}"),
     ]);
     let (status, report) = import(&router, &token, &target, "graph.zip", graph).await;
@@ -255,11 +255,17 @@ async fn imports_from_notion_obsidian_logseq_and_evernote() {
         "- Spice\n- Sand\n  - Worms",
         "block IDs are Logseq's own"
     );
+    // The referenced block keeps Logseq's ID, so a reference reaches it.
+    assert_eq!(
+        dune["blocks"][0]["id"],
+        "650e1a2b-0000-4000-8000-000000000001"
+    );
     let (_, day) = &all["2026-11-01"];
-    let link = format!("(#note/{})", dune["id"].as_str().unwrap());
+    let note = dune["id"].as_str().unwrap();
+    let block = "650e1a2b-0000-4000-8000-000000000001";
     assert_eq!(
         text(day),
-        format!("- Read [Spice]{link} in [books/dune]{link}")
+        format!("- Read [Spice](#note/{note}#{block}) in [books/dune](#note/{note})\n- ![Spice](#note/{note}#{block})\n- ![books/dune](#note/{note})")
     );
 
     // Evernote: notes, tags, checklists and embedded files.
