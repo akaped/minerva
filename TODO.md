@@ -16,7 +16,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).
 - [ ] **Importers**: OneNote and Bear; Notion's multi-select and relation columns (now text); Logseq's page embeds `{{embed …}}`; importing straight from Notion's API instead of an export.
 - [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.
-- [ ] **`minerva-cli` in releases**: build it for Linux and Windows with the desktop apps; `backup` that only fetches what changed since the last run.
 
 - [ ] **Recordings**: recordings longer than about 90 minutes (24 MB) need splitting before transcription; who said what (speaker labels); action items assigned to members as `@mentions` (now the owner is written as said); transcribing in the browser, so audio never leaves the device.
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders; repeating reminders in the feed follow daylight-saving changes in the reader's calendar rather than the time zone they were set in; a feed per workspace to share with others.

@@ -23,6 +23,7 @@ turns that section into the next version.
 - **Databases:** number properties (and rollups and formulas) can show as a percentage or an amount in a currency; drag cards up and down within a board column and they stay in that order; a database shown in a note keeps the board grouping or calendar date you choose there; rollups can combine a related database's rollups and formulas, and formulas can use the linked records' properties with `related("Tasks", "Hours")` and `sum`, `average`, `first`, `last`, `unique`; and records' pages stay record pages in the desktop app's offline copies.
 - **MCP and API:** AI tools connected with write access can change a block, move it, and attach a file to a note (shown as a picture or a link). Personal API tokens can be read only, for backups and reports, and the lists of tokens and AI connections show when each was last used.
 - **OAuth for MCP clients** that cannot take a pasted credential (`MINERVA_MCP_OAUTH=1`): they register themselves, you approve them for one workspace on a consent page, read only or read and write, and they get hour-long credentials that renew themselves and show in **MCP connections**, where revoking ends them.
+- **`minerva-cli` in every release**, for Linux and Windows. `minerva-cli backup` run again fetches only what changed since the last backup (and moves renamed or moved notes' files); `--full` fetches everything.
 
 ## [0.6.0] - 2026-11-03
 

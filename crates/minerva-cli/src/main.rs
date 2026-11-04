@@ -23,7 +23,9 @@ const USAGE: &str = "Usage: minerva-cli <command>
   append <note-id> [text]      Adds Markdown to the end of a note
   backup <directory>           Saves every note you can open as Markdown (with
                                --files: a zip with its attachments) and every
-                               database as JSON, by workspace and folder
+                               database as JSON, by workspace and folder. Run
+                               again, it fetches only what changed since (--full
+                               fetches everything)
 
 Environment: MINERVA_URL (the server's address) and MINERVA_TOKEN (a personal
 API token, created in Settings → API tokens).";
@@ -204,8 +206,91 @@ fn unique(dir: &Path, name: &str, id: &str, ext: &str) -> PathBuf {
     }
 }
 
-fn backup(c: &Client, dir: &Path, files: bool) -> Result<(), String> {
+/// What an earlier backup saved, kept in the backup folder: by note or database
+/// ID, its last change and the file it went to.
+const MANIFEST: &str = ".minerva-backup.json";
+
+#[derive(Default)]
+struct Manifest {
+    entries: serde_json::Map<String, Value>,
+    format: String,
+}
+impl Manifest {
+    fn load(dir: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(dir.join(MANIFEST)) else {
+            return Self::default();
+        };
+        let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+        Self {
+            entries: v["entries"].as_object().cloned().unwrap_or_default(),
+            format: v["format"].as_str().unwrap_or("").to_string(),
+        }
+    }
+    /// The file saved for `id` when it is still current: the same change, and
+    /// the file still there.
+    fn current(&self, id: &str, updated_at: &Value, dir: &Path) -> Option<PathBuf> {
+        let e = self.entries.get(id)?;
+        let path = dir.join(e["path"].as_str()?);
+        (e["updated_at"] == *updated_at && !updated_at.is_null() && path.exists()).then_some(path)
+    }
+    fn earlier(&self, id: &str, dir: &Path) -> Option<PathBuf> {
+        Some(dir.join(self.entries.get(id)?["path"].as_str()?))
+    }
+    fn note(&mut self, id: &str, updated_at: &Value, path: &Path, dir: &Path) {
+        let relative = path.strip_prefix(dir).unwrap_or(path);
+        self.entries.insert(
+            id.into(),
+            json!({"updated_at": updated_at, "path": relative.to_string_lossy()}),
+        );
+    }
+    fn save(&self, dir: &Path) -> Result<(), String> {
+        let text = serde_json::to_string_pretty(&json!({
+            "format": self.format,
+            "entries": self.entries,
+        }))
+        .map_err(|e| e.to_string())?;
+        let path = dir.join(MANIFEST);
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
+/// Where `id` goes: where it went last time if the name and folder are the
+/// same, else a free name (the old file goes, as the note was renamed or moved).
+fn target_for(
+    manifest: &Manifest,
+    dir: &Path,
+    folder: &Path,
+    name: &str,
+    id: &str,
+    ext: &str,
+) -> PathBuf {
+    let wanted = folder.join(format!("{}.{ext}", file_name(name)));
+    let with_id = folder.join(format!(
+        "{} ({}).{ext}",
+        file_name(name),
+        &id[..id.len().min(8)]
+    ));
+    match manifest.earlier(id, dir) {
+        Some(old) if old == wanted || old == with_id => old,
+        Some(old) => {
+            let _ = std::fs::remove_file(&old);
+            unique(folder, name, id, ext)
+        }
+        None => unique(folder, name, id, ext),
+    }
+}
+
+fn backup(c: &Client, dir: &Path, files: bool, full: bool) -> Result<(), String> {
     let boot = c.get("bootstrap")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let format = if files { "zip" } else { "md" };
+    // A backup in another format, or asked in full, starts again.
+    let mut manifest = Manifest::load(dir);
+    if full || manifest.format != format {
+        manifest = Manifest::default();
+    }
+    manifest.format = format.into();
+    let mut unchanged = 0;
     let folder_dir = |fid: &Value| -> Option<PathBuf> {
         let f = list(&boot, "folders").iter().find(|f| f["id"] == *fid)?;
         Some(
@@ -219,9 +304,16 @@ fn backup(c: &Client, dir: &Path, files: bool) -> Result<(), String> {
         let Some(target) = folder_dir(&n["folder_id"]) else {
             continue;
         };
-        std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
-        let format = if files { "zip" } else { "md" };
         let id = s(n, "id");
+        let wanted = target.join(format!("{}.{format}", file_name(s(n, "title"))));
+        if let Some(path) = manifest.current(id, &n["updated_at"], dir) {
+            let same_place = path == wanted || path.parent() == Some(target.as_path());
+            if same_place {
+                unchanged += 1;
+                continue;
+            }
+        }
+        std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
         let result = c
             .send(
                 reqwest::Method::GET,
@@ -231,8 +323,9 @@ fn backup(c: &Client, dir: &Path, files: bool) -> Result<(), String> {
             .and_then(|r| r.bytes().map_err(|e| e.to_string()));
         match result {
             Ok(bytes) => {
-                let path = unique(&target, s(n, "title"), id, format);
+                let path = target_for(&manifest, dir, &target, s(n, "title"), id, format);
                 std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                manifest.note(id, &n["updated_at"], &path, dir);
                 notes += 1;
             }
             Err(e) => {
@@ -245,12 +338,20 @@ fn backup(c: &Client, dir: &Path, files: bool) -> Result<(), String> {
         let Some(target) = folder_dir(&db["folder_id"]) else {
             continue;
         };
+        let id = s(db, "id");
+        if let Some(path) = manifest.current(id, &db["updated_at"], dir) {
+            if path.parent() == Some(target.as_path()) {
+                unchanged += 1;
+                continue;
+            }
+        }
         std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
-        match c.get(&format!("databases/{}", s(db, "id"))) {
+        match c.get(&format!("databases/{id}")) {
             Ok(full) => {
-                let path = unique(&target, s(db, "name"), s(db, "id"), "database.json");
+                let path = target_for(&manifest, dir, &target, s(db, "name"), id, "database.json");
                 let text = serde_json::to_string_pretty(&full).map_err(|e| e.to_string())?;
                 std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+                manifest.note(id, &db["updated_at"], &path, dir);
                 databases += 1;
             }
             Err(e) => {
@@ -259,9 +360,15 @@ fn backup(c: &Client, dir: &Path, files: bool) -> Result<(), String> {
             }
         }
     }
+    manifest.save(dir)?;
     println!(
-        "Saved {notes} notes and {databases} databases in {}",
-        dir.display()
+        "Saved {notes} notes and {databases} databases in {}{}",
+        dir.display(),
+        if unchanged > 0 {
+            format!(" ({unchanged} unchanged since the last backup)")
+        } else {
+            String::new()
+        }
     );
     if failed > 0 {
         return Err(format!("{failed} could not be saved"));
@@ -332,8 +439,9 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         "backup" if !rest.is_empty() => {
             let files = rest.iter().any(|a| a == "--files");
-            let dir = rest.iter().find(|a| *a != "--files").ok_or(USAGE)?;
-            backup(&c, Path::new(dir), files)
+            let full = rest.iter().any(|a| a == "--full");
+            let dir = rest.iter().find(|a| !a.starts_with("--")).ok_or(USAGE)?;
+            backup(&c, Path::new(dir), files, full)
         }
         _ => Err(USAGE.into()),
     }

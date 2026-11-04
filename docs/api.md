@@ -158,15 +158,17 @@ For scripts and `minerva-cli`. A token signs in as its owner with `Authorization
 
 ### `minerva-cli`
 
-Built from `crates/minerva-cli` (`cargo build --release -p minerva-cli`). Set `MINERVA_URL` and `MINERVA_TOKEN`, then:
+Each release has it for Linux and Windows (`minerva-cli-…` downloads), or build it from `crates/minerva-cli` (`cargo build --release -p minerva-cli`; `scripts/package-cli.sh` makes the packages). Set `MINERVA_URL` and `MINERVA_TOKEN` (a read-only token is enough for `search`, `folders` and `backup`), then:
 
 ```sh
 minerva-cli search budget review          # ID, title and snippet of each match
 minerva-cli folders                       # folder IDs and paths
 echo "- call the bank" | minerva-cli new "Inbox" "Monday"   # folder by name, path or ID
 minerva-cli append NOTE_ID "One more thing"
-minerva-cli backup ./backup [--files]     # notes as Markdown (or zips with attachments), databases as JSON
+minerva-cli backup ./backup [--files] [--full]   # notes as Markdown (or zips with attachments), databases as JSON
 ```
+
+`backup` keeps `.minerva-backup.json` in the folder: the next run fetches only notes and databases changed since (by their last change), writes a renamed or moved one to its new place and removes its old file, and keeps files of notes deleted since. `--full`, or switching between Markdown and `--files`, fetches everything again.
 
 ## MCP credentials
 
