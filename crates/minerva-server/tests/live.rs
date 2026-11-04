@@ -179,3 +179,123 @@ async fn common_member(base: &str, root: &str, email: &str) -> String {
         .unwrap()
         .to_string()
 }
+
+#[tokio::test]
+async fn guests_and_the_desktop_app_hear_too() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    let root = http(
+        &base,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let owner = common_member(&base, &root, "owner@test.local").await;
+    let boot = http(&base, "GET", "bootstrap", &owner, json!({})).await;
+    let folder = boot["folders"][0]["id"].as_str().unwrap().to_string();
+    let note = http(
+        &base,
+        "POST",
+        "notes",
+        &owner,
+        json!({"folder_id": folder, "title": "Shared"}),
+    )
+    .await;
+    let other = http(
+        &base,
+        "POST",
+        "notes",
+        &owner,
+        json!({"folder_id": folder, "title": "Private"}),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap().to_string();
+    let other_id = other["id"].as_str().unwrap().to_string();
+    let edit = |nid: String, title: &'static str| {
+        let (base, owner) = (base.clone(), owner.clone());
+        async move {
+            let mut n = http(&base, "GET", &format!("notes/{nid}"), &owner, json!({})).await;
+            n["title"] = json!(title);
+            http(&base, "PUT", &format!("notes/{nid}"), &owner, n).await;
+        }
+    };
+
+    // A waiting request answers as soon as a watched note changes.
+    let waiting = {
+        let (base, owner, id) = (base.clone(), owner.clone(), id.clone());
+        tokio::spawn(async move {
+            reqwest::Client::new()
+                .get(format!("{base}/api/v1/live/wait?notes={id}"))
+                .bearer_auth(owner)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    edit(id.clone(), "Shared, renamed").await;
+    let answer = tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(answer, json!({"notes": [id]}));
+    let status = reqwest::Client::new()
+        .get(format!("{base}/api/v1/live/wait?notes={id}"))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(status.as_u16(), 401, "signed in only");
+
+    // A guest's socket hears its note, and only it.
+    let link = http(
+        &base,
+        "POST",
+        &format!("notes/{id}/shares"),
+        &owner,
+        json!({"kind":"link","role":"viewer"}),
+    )
+    .await;
+    let cookie = format!("minerva_share={}", link["token"].as_str().unwrap());
+    let mut request = format!("{}/api/v1/shared/live", base.replace("http", "ws"))
+        .into_client_request()
+        .unwrap();
+    request
+        .headers_mut()
+        .insert("origin", base.parse().unwrap());
+    request
+        .headers_mut()
+        .insert("cookie", cookie.parse().unwrap());
+    let (mut guest, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    guest
+        .send(Message::Text(
+            json!({"watch": [id.clone(), other_id.clone()]})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    edit(other_id.clone(), "Private, renamed").await;
+    assert_eq!(signal(&mut guest).await, None, "not another note");
+    edit(id.clone(), "Shared again").await;
+    assert_eq!(signal(&mut guest).await, Some(json!({"note": id})));
+    // Without a link, no socket.
+    let mut request = format!("{}/api/v1/shared/live", base.replace("http", "ws"))
+        .into_client_request()
+        .unwrap();
+    request
+        .headers_mut()
+        .insert("origin", base.parse().unwrap());
+    assert!(tokio_tungstenite::connect_async(request).await.is_err());
+}

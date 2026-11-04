@@ -10,7 +10,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 ## Follow-ups from the last round
 
 - [ ] **Comments**: in desktop offline copies (they are not replicated yet).
-- [ ] **Live signals for the desktop app and share links**: `minerva://` pages cannot open the WebSocket, and guests are not signed in. Relay signals through the desktop gateway, and give guests a share-scoped socket; until then both poll.
 - [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).
 - [ ] **Importers**: importing straight from Notion's API instead of an export.
 - [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.

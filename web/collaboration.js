@@ -40,16 +40,30 @@ export function replaceText(text, value) {
  * app) and share links have none, and poll instead.
  */
 class LiveSignals {
-  constructor() {
+  constructor(path = "/api/v1/live") {
+    this.path = path;
     this.listeners = new Map();
     this.socket = null;
     this.connected = false;
     this.retry = 1000;
   }
   get available() {
+    return this.socket_ok || this.waits;
+  }
+  /** A WebSocket, on web pages; not in the desktop app, whose pages it serves. */
+  get socket_ok() {
     return (
       typeof WebSocket !== "undefined" &&
-      /^https?:$/.test(globalThis.location?.protocol || "")
+      /^https?:$/.test(globalThis.location?.protocol || "") &&
+      !globalThis.ipc
+    );
+  }
+  /** Else, for signed-in pages, waiting requests (`/api/v1/live/wait`). */
+  get waits() {
+    return (
+      this.path === "/api/v1/live" &&
+      typeof fetch !== "undefined" &&
+      !!globalThis.location
     );
   }
   watch(id, onSignal) {
@@ -65,12 +79,54 @@ class LiveSignals {
     };
   }
   send() {
+    if (!this.socket_ok) {
+      // A waiting request asks for the old list: ask again with the new one.
+      this.waiting?.abort();
+      return;
+    }
     if (this.connected)
       this.socket.send(JSON.stringify({ watch: [...this.listeners.keys()] }));
   }
+  /** Signals through waiting requests, one after another. */
+  async wait() {
+    if (this.polling) return;
+    this.polling = true;
+    let retry = 1000;
+    while (this.listeners.size) {
+      const ids = [...this.listeners.keys()];
+      this.waiting = new AbortController();
+      try {
+        const response = await fetch(
+          `/api/v1/live/wait?notes=${encodeURIComponent(ids.join(","))}`,
+          {
+            signal: this.waiting.signal,
+            credentials: "same-origin",
+            headers: { "x-minerva-client": "1" },
+          },
+        );
+        if (!response.ok) throw new Error(String(response.status));
+        const { notes = [] } = await response.json();
+        this.connected = true;
+        retry = 1000;
+        for (const id of notes)
+          for (const signal of this.listeners.get(id) || []) signal();
+      } catch (e) {
+        if (e?.name === "AbortError") continue;
+        this.connected = false;
+        await new Promise((r) => setTimeout(r, retry));
+        retry = Math.min(retry * 2, 30000);
+      }
+    }
+    this.polling = false;
+    this.connected = false;
+  }
   connect() {
+    if (!this.socket_ok) {
+      if (this.listeners.size) this.wait();
+      return;
+    }
     if (this.socket || !this.listeners.size) return;
-    const url = new URL("/api/v1/live", location.href);
+    const url = new URL(this.path, location.href);
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -101,6 +157,8 @@ class LiveSignals {
   }
 }
 const signals = new LiveSignals();
+// A share-link guest's socket, for the shared note only.
+const guestSignals = new LiveSignals("/api/v1/shared/live");
 /** Calls `onChange` when note `id` changes on the server; returns a stop function. */
 export function watchNote(id, onChange) {
   return signals.watch(id, onChange);
@@ -165,8 +223,14 @@ export class Collaboration {
     this.ready = true;
     // Signals say when others changed the note; polling stays as a fallback,
     // slow while signals arrive.
-    if (this.syncPath === "notes/" + this.id + "/sync")
-      this.unwatch = signals.watch(this.id, () => this.sync().catch(() => {}));
+    const live =
+      this.syncPath === "notes/" + this.id + "/sync"
+        ? signals
+        : this.syncPath === "shared/sync"
+          ? guestSignals
+          : null;
+    if (live)
+      this.unwatch = live.watch(this.id, () => this.sync().catch(() => {}));
     const poll = () => {
       if (this.closed) return;
       this.timer = setTimeout(
@@ -174,7 +238,7 @@ export class Collaboration {
           this.sync()
             .finally(poll)
             .catch(() => {}),
-        signals.connected ? 5000 : 650,
+        live?.connected ? 5000 : 650,
       );
     };
     poll();

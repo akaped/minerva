@@ -31,6 +31,7 @@ turns that section into the next version.
 - **More imports:** Bear (TextBundles, with pictures, and its tags with spaces) and OneNote (pages or sections exported as a single-file web page, with pictures); Notion tables keep multi-select columns, and relation columns link to the imported table's records.
 - **Calendar feeds:** a workspace can have its own calendar address, with only its reminders and ⏰ times, to share with people outside it (📅 Add to your calendar → This workspace, to share); and repeating reminders stay at their local time in calendar apps across daylight-saving changes.
 - **Recordings:** long recordings (beyond about 90 minutes) are transcribed in parts, with times running on; with a diarizing transcription model the transcript says who spoke; and action items whose owner is a member mention them.
+- **Live everywhere:** share-link guests and the desktop app now see other people's edits at once, as the web app does (guests through a socket for their note only, the desktop app through waiting requests its gateway forwards), instead of checking every few seconds.
 
 ## [0.6.0] - 2026-11-03
 

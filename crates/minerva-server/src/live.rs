@@ -3,8 +3,12 @@
 //! next poll. A page sends `{"watch": [note IDs]}`; the server replies
 //! `{"note": id}` whenever that note's text, details, or the people in it change,
 //! and the page then syncs through the usual HTTP endpoint. Signals carry no
-//! content, and each is checked against the reader's current access. Pages that
-//! cannot open a socket (the desktop app's own pages, share links) keep polling.
+//! content, and each is checked against the reader's current access.
+//!
+//! Share-link guests have their own socket (`/api/v1/shared/live`), signed in by
+//! their link and able to watch only the note it opens. Pages that cannot open
+//! a socket (the desktop app's, whose requests go through its gateway) wait for
+//! signals with a long-lasting request instead (`/api/v1/live/wait`).
 use super::*;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use tokio::sync::broadcast;
@@ -81,7 +85,79 @@ pub(super) async fn endpoint(
     };
     Ok(ws
         .max_message_size(64 * 1024)
-        .on_upgrade(move |socket| watch(socket, store, headers, events)))
+        .on_upgrade(move |socket| watch(socket, store, headers, events, readable)))
+}
+/// `GET /api/v1/shared/live`: a guest's socket, for the shared note only.
+pub(super) async fn guest_endpoint(
+    ws: WebSocketUpgrade,
+    State(store): State<Shared>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let origin = headers.get("origin").and_then(|o| o.to_str().ok());
+    if origin != Some(sharing::site_url(&headers).as_str()) {
+        return Err(forbidden());
+    }
+    let events = {
+        let s = store.lock().map_err(|_| internal())?;
+        sharing::guest_note(&s.data, &headers)?;
+        s.events.subscribe()
+    };
+    Ok(ws
+        .max_message_size(64 * 1024)
+        .on_upgrade(move |socket| watch(socket, store, headers, events, guest_readable)))
+}
+/// How long a waiting request waits for a signal before answering with none.
+const WAIT: std::time::Duration = std::time::Duration::from_secs(25);
+
+/// `GET /api/v1/live/wait?notes=a,b`: answers `{notes: [ids]}` as soon as one of
+/// those notes changes (and the reader may still open it), or with none after
+/// 25 seconds; the page then asks again.
+pub(super) async fn wait(
+    State(store): State<Shared>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let wanted: HashSet<String> = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+        .find(|(k, _)| k == "notes")
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+        .split(',')
+        .filter(|id| !id.is_empty() && id.len() <= 64)
+        .take(WATCHED)
+        .map(String::from)
+        .collect();
+    let mut events = {
+        let s = store.lock().map_err(|_| internal())?;
+        authenticate(&s.data, &headers)?;
+        s.events.subscribe()
+    };
+    let deadline = tokio::time::Instant::now() + WAIT;
+    loop {
+        let event = tokio::select! {
+            event = events.recv() => event,
+            _ = tokio::time::sleep_until(deadline) => break,
+        };
+        let ids: Vec<String> = match event {
+            Ok(id) if wanted.contains(&id) => vec![id],
+            Ok(_) => continue,
+            Err(broadcast::error::RecvError::Lagged(_)) => wanted.iter().cloned().collect(),
+            Err(broadcast::error::RecvError::Closed) => break,
+        };
+        let shown: Vec<String> = ids
+            .into_iter()
+            .filter(|id| readable(&store, &headers, id) == Some(true))
+            .collect();
+        if !shown.is_empty() {
+            return Ok(axum::Json(json!({"notes": shown})).into_response());
+        }
+    }
+    Ok(axum::Json(json!({"notes": []})).into_response())
+}
+/// Whether the guest's link still opens note `id` (and only that note).
+fn guest_readable(store: &Shared, headers: &HeaderMap, id: &str) -> Option<bool> {
+    let s = store.lock().ok()?;
+    let (_, note) = sharing::guest_note(&s.data, headers).ok()?;
+    Some(note.id == id)
 }
 
 /// Whether the person behind `headers` is still signed in and may read note `id`.
@@ -102,6 +178,7 @@ async fn watch(
     store: Shared,
     headers: HeaderMap,
     mut events: broadcast::Receiver<String>,
+    readable: fn(&Shared, &HeaderMap, &str) -> Option<bool>,
 ) {
     let mut watched: HashSet<String> = HashSet::new();
     let mut ping = tokio::time::interval(std::time::Duration::from_secs(30));
