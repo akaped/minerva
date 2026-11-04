@@ -93,3 +93,12 @@ Use HTTPS when connecting remotely. Set `MINERVA_PUBLIC_URL` to the exact public
 **MCP connections** lets an external assistant read Minerva through MCP. It does not configure an LLM or send documents to a provider by itself. In-app chat is configured under **AI providers**.
 
 For scripts that are not AI tools, use a personal API token and the REST API, or the `minerva-cli` command (see `api.md`).
+
+## OAuth for clients that need it
+
+Some MCP clients cannot take a pasted credential and sign in with OAuth instead. Set `MINERVA_MCP_OAUTH=1` (and `MINERVA_PUBLIC_URL` to the address clients use) to let them, as the MCP authorization specification describes:
+
+- An MCP request without a valid credential gets `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/api/workspaces/{id}/mcp"`; that document names this server, whose `/.well-known/oauth-authorization-server` lists the endpoints.
+- Clients register at `POST /oauth/register` (public clients only, `token_endpoint_auth_method` `none`). Redirect addresses must be HTTPS, or HTTP to `localhost`, `127.0.0.1` or `[::1]`; up to five each.
+- `GET /oauth/authorize` needs PKCE (`S256`) and shows a consent page to the person signed in to Minerva in that browser: the client's name and return host, the workspace (from the `resource` parameter, or chosen there), and read-only or read-write access (preselected from `scope` `mcp:read` / `mcp:write`). The page cannot be framed, and only its own one-time key can approve.
+- `POST /oauth/token` exchanges the code (once, within 10 minutes, with the matching `code_verifier`) for an access token and a refresh token. The access token is an MCP credential named “{client} (OAuth)” that lasts an hour; refresh tokens last 30 days and change at each use. Revoking the connection in **MCP connections** ends both.

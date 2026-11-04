@@ -29,7 +29,48 @@ fn view(db: &Connection, c: &Credential) -> Value {
 pub(super) fn forget_workspace(d: &mut Data, wid: &str) {
     d.mcp_credentials.retain(|c| c.workspace_id != wid);
 }
-fn workspace_visible(d: &Data, u: &User, wid: &str) -> bool {
+/// A credential for an OAuth client, lasting `seconds`: its ID and token.
+pub(super) fn issue(
+    d: &mut Data,
+    user_id: &str,
+    wid: &str,
+    name: &str,
+    write: bool,
+    seconds: u64,
+) -> Result<(String, String), ApiError> {
+    // Expired ones stay: an OAuth client renews its credential with a refresh token.
+    if d.mcp_credentials
+        .iter()
+        .filter(|c| c.user_id == user_id)
+        .count()
+        >= 50
+    {
+        return Err(bad("Revoke an existing credential before creating another"));
+    }
+    let token = format!("mnv_mcp_v1_{}{}", id(), id());
+    let c = Credential {
+        id: id(),
+        user_id: user_id.into(),
+        workspace_id: wid.into(),
+        name: name.chars().take(120).collect(),
+        token_hash: hash_token(&token),
+        created_at: now(),
+        expires_at: now() + seconds,
+        write,
+    };
+    let issued = (c.id.clone(), token);
+    d.mcp_credentials.push(c);
+    Ok(issued)
+}
+/// A new token for an OAuth credential that still exists (it was not revoked).
+pub(super) fn renew(d: &mut Data, credential: &str, seconds: u64) -> Option<(String, String)> {
+    let c = d.mcp_credentials.iter_mut().find(|c| c.id == credential)?;
+    let token = format!("mnv_mcp_v1_{}{}", id(), id());
+    c.token_hash = hash_token(&token);
+    c.expires_at = now() + seconds;
+    Some((c.id.clone(), token))
+}
+pub(super) fn workspace_visible(d: &Data, u: &User, wid: &str) -> bool {
     d.workspaces.iter().any(|w| w.id == wid)
         && (owns(d, u, wid)
             || d.folders
@@ -692,7 +733,9 @@ pub(super) async fn endpoint(
         }
     }
     tokio::task::spawn_blocking(move||{
-        let mut s=store.lock().map_err(|_|internal())?;let (u,write)=credential_user(&s.data,&headers,&wid)?;
+        let mut s=store.lock().map_err(|_|internal())?;
+        // Without a valid credential, OAuth clients learn where to get one.
+        let (u,write)=match credential_user(&s.data,&headers,&wid){Ok(x)=>x,Err(e) if e.0==StatusCode::UNAUTHORIZED=>{let mut r=e.into_response();if let Some(c)=oauth::challenge(&headers,&wid).and_then(|c|c.parse().ok()){r.headers_mut().insert("www-authenticate",c);}return Ok(r);}Err(e)=>return Err(e)};
         if method!=Method::POST{return Ok((StatusCode::METHOD_NOT_ALLOWED,[("allow","POST")]).into_response());}
         let accept=headers.get("accept").and_then(|h|h.to_str().ok()).unwrap_or("");
         if !accept.contains("application/json")||!accept.contains("text/event-stream"){return Err(ApiError(StatusCode::NOT_ACCEPTABLE,"Accept must include application/json and text/event-stream".into()));}

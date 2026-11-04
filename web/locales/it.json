@@ -2194,5 +2194,21 @@
   "content_base64 is not valid base64": "content_base64 non è base64 valido",
   "Files must contain 1 byte to 10 MB": "I file devono contenere da 1 byte a 10 MB",
   "A block cannot move after itself": "Un blocco non può spostarsi dopo se stesso",
-  "This token is read only. Create one with write access to change anything.": "Questo token è di sola lettura. Creane uno con accesso in scrittura per modificare qualcosa."
+  "This token is read only. Create one with write access to change anything.": "Questo token è di sola lettura. Creane uno con accesso in scrittura per modificare qualcosa.",
+  "This application is not registered with Minerva.": "Questa applicazione non è registrata con Minerva.",
+  "The application's return address does not match its registration.": "L'indirizzo di ritorno dell'applicazione non corrisponde alla sua registrazione.",
+  "Only the authorization code flow is supported.": "È supportato solo il flusso con codice di autorizzazione.",
+  "The application must use PKCE (S256).": "L'applicazione deve usare PKCE (S256).",
+  "The application asks for an unknown resource.": "L'applicazione chiede una risorsa sconosciuta.",
+  "Cannot connect": "Impossibile collegare",
+  "Sign in to continue": "Accedi per continuare",
+  "Sign in to Minerva in another tab, then come back here.": "Accedi a Minerva in un'altra scheda, poi torna qui.",
+  "I have signed in": "Ho effettuato l'accesso",
+  "You cannot open that workspace.": "Non puoi aprire quello spazio di lavoro.",
+  "Workspace:": "Spazio di lavoro:",
+  "“{name}” wants to use your Minerva notes.": "“{name}” vuole usare le tue note di Minerva.",
+  "It will return to {host}. Signed in as {email}.": "Tornerà a {host}. Accesso come {email}.",
+  "Your folder permissions always apply. You can revoke the connection under MCP connections.": "I permessi delle tue cartelle valgono sempre. Puoi revocare il collegamento in Connessioni MCP.",
+  "Deny": "Rifiuta",
+  "Allow": "Consenti"
 }

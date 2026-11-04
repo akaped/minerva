@@ -18,6 +18,7 @@ mod journal;
 mod live;
 mod mail;
 mod mcp;
+mod oauth;
 mod plugins;
 mod previews;
 mod record_pages;
@@ -268,6 +269,7 @@ impl Store {
         flashcards::initialize(&db)?;
         graph::initialize(&db)?;
         tokens::initialize(&db)?;
+        oauth::initialize(&db)?;
         let (data, saved) = storage::open(&db, initial, |data| {
             ensure_personal(data);
             // Databases from before replication get a change-log row and field clocks
@@ -1082,6 +1084,12 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/server-plugins/{*path}", any(server_plugins::endpoint))
         .route("/api/v1/{*path}", any(api))
         // attach_file carries files of up to 10 MB, base64-encoded.
+        // OAuth for MCP clients (off unless MINERVA_MCP_OAUTH=1).
+        .route("/.well-known/oauth-protected-resource/api/workspaces/{workspace_id}/mcp", get(oauth::resource_metadata))
+        .route("/.well-known/oauth-authorization-server", get(oauth::server_metadata))
+        .route("/oauth/register", axum::routing::post(oauth::register))
+        .route("/oauth/authorize", get(oauth::authorize).post(oauth::decide))
+        .route("/oauth/token", axum::routing::post(oauth::token))
         .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint).layer(DefaultBodyLimit::max(15 * 1024 * 1024)))
         // Public sites (`/blog/...`); paths the server uses are reserved and win.
         .route("/{site}", get(sharing::public))
