@@ -8437,3 +8437,29 @@ body.presenting {
     transition: none;
   }
 }
+
+/* Ctrl+K's filters: a folder, a tag, a recent change. */
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.search-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.search-filter select {
+  max-width: 190px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.search-icon svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}

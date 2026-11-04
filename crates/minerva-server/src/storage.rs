@@ -371,6 +371,12 @@ pub(super) fn write(
         PartialEq::eq,
     );
     changed |= apply(db, "databases", &databases)?;
+    for id in &databases.gone {
+        search::index_database(db, id, None).map_err(|_| internal())?;
+    }
+    for (id, b) in &databases.put {
+        search::index_database(db, id, Some(b)).map_err(|_| internal())?;
+    }
     changed |= apply(
         db,
         "note_crdt",

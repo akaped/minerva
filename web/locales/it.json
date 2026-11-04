@@ -629,7 +629,6 @@
   "Copying to this computer… It appears here in a moment.": "Copia su questo computer… Comparirà qui tra poco.",
   "Offline copy removed": "Copia offline rimossa",
   "Find a thought": "Trova un pensiero",
-  "Search titles, text and tags across your accessible workspaces.": "Cerca tra titoli, testo e tag in tutti gli spazi di lavoro a cui hai accesso.",
   "Search notes": "Cerca nelle note",
   "Search notes…": "Cerca nelle note…",
   "side by side": "affiancata",
@@ -2176,5 +2175,9 @@
   "Graph of {count} notes and their links. Use “Find a note” and the list beside it to move through it with the keyboard.": "Grafo di {count} note e dei loro collegamenti. Usa “Trova una nota” e l'elenco accanto per percorrerlo con la tastiera.",
   "A graph keeps up to {count} positions": "Un grafo conserva fino a {count} posizioni",
   "Positions are required": "Le posizioni sono obbligatorie",
-  "Invalid graph position": "Posizione nel grafo non valida"
+  "Invalid graph position": "Posizione nel grafo non valida",
+  "Any tag": "Qualsiasi tag",
+  "Search titles, text and tags, database records, and the text of attached PDFs.": "Cerca in titoli, testo e tag, nei record dei database e nel testo dei PDF allegati.",
+  "Database records": "Record dei database",
+  "In attached files": "Nei file allegati"
 }

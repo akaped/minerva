@@ -138,6 +138,8 @@ pub(super) fn store(
         params![key, note_id, name, media, now(), body],
     )
     .map_err(|_| internal())?;
+    // Its text is searchable shortly after.
+    search::wake();
     Ok((name, media.to_string()))
 }
 /// Serves one attachment after `allowed` approves its owning note.
@@ -345,6 +347,7 @@ pub(super) async fn storage(
             let (mut deleted, mut bytes, mut kept) = (0, 0i64, 0);
             for file in files.iter().filter(|f| requested.contains(f.id.as_str())) {
                 if orphan(file, &references) {
+                    search::forget_file(&s.db, &file.id).map_err(|_| internal())?;
                     s.db.execute("DELETE FROM attachments WHERE id=?1", [&file.id]).map_err(|_| internal())?;
                     deleted += 1;
                     bytes += file.size;

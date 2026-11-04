@@ -801,6 +801,7 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
             .filter(|id| !kept.contains(id))
             .collect();
         for id in removed {
+            search::forget_files_of(&tx, id).map_err(|_| internal())?;
             tx.execute("DELETE FROM attachments WHERE note_id=?1", [id])
                 .map_err(|_| internal())?;
         }
@@ -1026,6 +1027,7 @@ fn service_worker() -> &'static str {
 
 pub fn app(store: Shared) -> Router {
     mail::spawn(store.clone());
+    search::spawn(store.clone());
     Router::new()
         .route("/", get(|| async { axum::response::Html(include_str!("../../../web/index.html")) }))
         .route("/pane", get(editor_pane))
@@ -1420,16 +1422,67 @@ fn dispatch(
             let workspace = v["workspace_id"].as_str();
             // Archived notes stay out, unless the archive is what is searched.
             let archive = v["archived"].as_bool().unwrap_or(false);
+            // Filters: a folder with its subfolders, a tag, a date of last change.
+            let folder = v["folder_id"].as_str().filter(|f| !f.is_empty());
+            let within: Option<HashSet<&str>> = folder.map(|root| {
+                d.folders
+                    .iter()
+                    .filter(|f| {
+                        let mut at = Some(*f);
+                        for _ in 0..32 {
+                            match at {
+                                Some(x) if x.id == root => return true,
+                                Some(x) => {
+                                    at = x
+                                        .parent_id
+                                        .as_deref()
+                                        .and_then(|p| d.folders.iter().find(|f| f.id == p))
+                                }
+                                None => return false,
+                            }
+                        }
+                        false
+                    })
+                    .map(|f| f.id.as_str())
+                    .collect()
+            });
+            let in_folder = |id: &str| within.as_ref().is_none_or(|w| w.contains(id));
+            let tag_filter = v["tag"]
+                .as_str()
+                .map(|t| t.trim_start_matches('#').to_lowercase())
+                .filter(|t| !t.is_empty());
+            let after = v["updated_after"].as_u64().unwrap_or(0);
+            // The notes with the tag (or one under it, `tag/…`), worked out once.
+            let with_tag: Option<HashSet<&str>> = tag_filter.as_deref().map(|tag| {
+                let nested = format!("{tag}/");
+                d.notes
+                    .iter()
+                    .filter(|n| {
+                        n.tags
+                            .iter()
+                            .chain(cached_inline_tags(d, n).iter())
+                            .any(|t| t == tag || t.starts_with(&nested))
+                    })
+                    .map(|n| n.id.as_str())
+                    .collect()
+            });
+            let in_workspace = |folder_id: &str| {
+                workspace.is_none_or(|w| {
+                    d.folders
+                        .iter()
+                        .any(|f| f.id == folder_id && f.workspace_id == w)
+                })
+            };
             let keep = |n: &Note| {
                 !n.trashed
                     && n.archived == archive
                     && note_role(d, &u, n).is_some()
-                    && workspace.is_none_or(|w| {
-                        d.folders
-                            .iter()
-                            .any(|f| f.id == n.folder_id && f.workspace_id == w)
-                    })
+                    && in_workspace(&n.folder_id)
+                    && in_folder(&n.folder_id)
+                    && n.updated_at >= after
+                    && with_tag.as_ref().is_none_or(|w| w.contains(n.id.as_str()))
             };
+            let filtered = folder.is_some() || tag_filter.is_some() || after > 0;
             let found = match query.strip_prefix('#') {
                 Some(tag) => d
                     .notes
@@ -1444,9 +1497,48 @@ fn dispatch(
                     .take(50)
                     .map(|n| (&**n, String::new()))
                     .collect(),
+                // Filters alone list the notes they keep, latest first.
+                None if query.is_empty() && filtered => {
+                    let mut kept: Vec<&Note> =
+                        d.notes.iter().map(|n| &**n).filter(|n| keep(n)).collect();
+                    kept.sort_by_key(|n| std::cmp::Reverse(n.updated_at));
+                    kept.into_iter()
+                        .take(50)
+                        .map(|n| (n, String::new()))
+                        .collect()
+                }
                 None => search::matches(db, d, &query, keep, 50)?,
             };
-            let matches: Vec<_> = found.into_iter().map(|(n, snippet)| json!({"id": n.id, "title": n.title, "icon": n.icon, "folder_id": n.folder_id, "updated_at": n.updated_at, "snippet": snippet})).collect();
+            let mut matches: Vec<Value> = found.into_iter().map(|(n, snippet)| json!({"kind": "note", "id": n.id, "title": n.title, "icon": n.icon, "folder_id": n.folder_id, "updated_at": n.updated_at, "snippet": snippet})).collect();
+            // Records and files' text, when asked for: after the notes.
+            let include: Vec<&str> = v["include"]
+                .as_array()
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let plain = !query.is_empty() && !query.starts_with('#') && !archive;
+            if plain && include.contains(&"records") && tag_filter.is_none() {
+                let found = search::records(
+                    db,
+                    d,
+                    &query,
+                    |base, r| {
+                        role(d, &u, &base.folder_id).is_some()
+                            && in_workspace(&base.folder_id)
+                            && in_folder(&base.folder_id)
+                            && r.updated_at >= after
+                    },
+                    20,
+                )?;
+                matches.extend(found.into_iter().map(|(base, r, snippet)| {
+                    json!({"kind": "record", "id": r.id, "database_id": base.id, "database_name": base.name, "title": databases::record_title(base, r), "folder_id": base.folder_id, "updated_at": r.updated_at, "snippet": snippet})
+                }));
+            }
+            if plain && include.contains(&"files") {
+                let found = search::files(db, d, &query, keep, 20)?;
+                matches.extend(found.into_iter().map(|(n, attachment, name, snippet)| {
+                    json!({"kind": "file", "id": attachment, "note_id": n.id, "note_title": n.title, "title": name, "icon": n.icon, "folder_id": n.folder_id, "updated_at": n.updated_at, "snippet": snippet})
+                }));
+            }
             json!(matches)
         }
         ("POST", ["workspaces"]) => {

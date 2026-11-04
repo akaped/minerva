@@ -7427,11 +7427,53 @@ function workspaceMenu() {
   };
   bind();
 }
-/** Ctrl+K: find a note by its title, text or tags, and open it. */
+// Ctrl+K's filters, kept while the page is open.
+const searchFilters = { folder: "", tag: "", since: "" };
+/**
+ * Ctrl+K: find a note by its title, text or tags, a database record, or a
+ * file's text (PDFs and text files), and open it. Filters narrow it to a
+ * folder (with its subfolders), a tag, or a recent change.
+ */
 function search() {
   if (!data) return;
+  if (
+    searchFilters.folder &&
+    !data.folders.some((f) => f.id === searchFilters.folder)
+  )
+    searchFilters.folder = "";
+  const filterSelect = (id, label, options, value) =>
+    `<label class="search-filter"><span>${label}</span><select id="${id}">${options.map(([v, text]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
+  const filters = `<div class="search-filters">${filterSelect(
+    "search-folder",
+    $t("Folder"),
+    [
+      ["", $t("All folders")],
+      ...folders().map((f) => [
+        f.id,
+        folderPath(f.id)
+          .map((p) => p.name)
+          .join(" / "),
+      ]),
+    ],
+    searchFilters.folder,
+  )}${filterSelect(
+    "search-tag",
+    $t("Tag"),
+    [["", $t("Any tag")], ...allTags().map(([t]) => [t, "#" + t])],
+    searchFilters.tag,
+  )}${filterSelect(
+    "search-since",
+    $t("Updated"),
+    [
+      ["", $t("Any time")],
+      ["7", $t("In the last week")],
+      ["30", $t("In the last month")],
+      ["365", $t("In the last year")],
+    ],
+    searchFilters.since,
+  )}</div>`;
   modal.innerHTML =
-    `<h2>${$t("Find a thought")}</h2><p>${$t("Search titles, text and tags across your accessible workspaces.")}</p><input id="search-input" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes")}" placeholder="${$t("Search notes…")}" style="width:100%" autocomplete="off" autofocus><div class="search-results" id="results" role="listbox" aria-label="${$t("Notes")}"></div><footer><span class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> open</span>` +
+    `<h2>${$t("Find a thought")}</h2><p>${$t("Search titles, text and tags, database records, and the text of attached PDFs.")}</p><input id="search-input" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes")}" placeholder="${$t("Search notes…")}" style="width:100%" autocomplete="off" autofocus>${filters}<div class="search-results" id="results" role="listbox" aria-label="${$t("Notes")}"></div><footer><span class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> open</span>` +
     (noteTabs
       ? `<span><kbd>${shortcutKeys("Shift")}</kbd>+<kbd>${shortcutKeys("Enter")}</kbd> ${$t("side by side")}</span>`
       : "") +
@@ -7459,6 +7501,16 @@ function search() {
     await flush();
     workspaceId = workspaceOfNote(n) || workspaceId;
     modal.close();
+    if (n.kind === "record") {
+      const base = await api("databases/" + n.database_id);
+      const row = base.rows.find((r) => r.id === n.id);
+      if (row) return openRecordPage(base, row);
+      return;
+    }
+    if (n.kind === "file") {
+      await openNote(n.note_id, { split });
+      return openFile(n.id, n.title);
+    }
     await openNote(n.id, { split });
   }
   function select(i) {
@@ -7476,7 +7528,7 @@ function search() {
       (matches
         .map(
           (n, i) =>
-            `<button class="search-result" id="search-result-${i}" role="option" tabindex="-1" data-result="${i}"><span class="search-icon">${esc(n.icon || "📄")}</span><span class="search-main"><span class="search-title">${esc(n.title || $t("Untitled"))}</span>${n.snippet ? `<span class="search-snippet">${highlightSnippet(n.snippet, esc)}</span>` : ""}</span><small>${esc(place(n))}</small></button>`,
+            `${n.kind && n.kind !== matches[i - 1]?.kind && n.kind !== "note" ? `<p class="search-heading">${n.kind === "record" ? $t("Database records") : $t("In attached files")}</p>` : ""}<button class="search-result" id="search-result-${i}" role="option" tabindex="-1" data-result="${i}"><span class="search-icon">${n.kind === "record" ? icon("grid") : n.kind === "file" ? icon("upload") : esc(n.icon || "📄")}</span><span class="search-main"><span class="search-title">${esc(n.title || $t("Untitled"))}</span>${n.snippet ? `<span class="search-snippet">${highlightSnippet(n.snippet, esc)}</span>` : ""}</span><small>${esc(n.kind === "record" ? [n.database_name, place(n)].filter(Boolean).join(" · ") : n.kind === "file" ? [n.note_title, place(n)].filter(Boolean).join(" · ") : place(n))}</small></button>`,
         )
         .join("") || `<p>${$t("No matching notes.")}</p>`);
     $$("[data-result]").forEach((b) =>
@@ -7487,19 +7539,43 @@ function search() {
   async function results() {
     const version = ++searchVersion;
     const q = input.value.trim();
-    // Before typing: the notes changed most recently.
-    if (!q) {
+    const filtered =
+      searchFilters.folder || searchFilters.tag || searchFilters.since;
+    // Before typing, without filters: the notes changed most recently.
+    if (!q && !filtered) {
       matches = [...data.notes, ...(data.shared_notes || [])]
         .filter((n) => !n.trashed)
         .sort((a, b) => b.updated_at - a.updated_at)
         .slice(0, 8);
       return draw(`<p class="search-heading">${$t("Recently updated")}</p>`);
     }
-    const found = await api("search", "POST", { query: q });
+    const found = await api("search", "POST", {
+      query: q,
+      include: ["records", "files"],
+      ...(searchFilters.folder ? { folder_id: searchFilters.folder } : {}),
+      ...(searchFilters.tag ? { tag: searchFilters.tag } : {}),
+      ...(searchFilters.since
+        ? {
+            updated_after:
+              Math.floor(Date.now() / 1000) -
+              Number(searchFilters.since) * 86400,
+          }
+        : {}),
+    });
     if (version !== searchVersion || !modal.open) return;
     matches = found;
     draw("");
   }
+  for (const [id, key] of [
+    ["#search-folder", "folder"],
+    ["#search-tag", "tag"],
+    ["#search-since", "since"],
+  ])
+    $(id).addEventListener("change", (e) => {
+      searchFilters[key] = e.target.value;
+      results().catch(error);
+      input.focus();
+    });
   let timer;
   input.oninput = () => {
     clearTimeout(timer);
