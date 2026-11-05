@@ -304,17 +304,20 @@ pub(super) fn track(old: &Data, new: &mut Data) -> Result<Vec<Change>, ApiError>
             old.notes.iter().map(|n| (n.id.as_str(), n)).collect();
         let databases: HashMap<&str, &Database> =
             old.databases.iter().map(|b| (b.id.as_str(), b)).collect();
-        let same_note = |n: &Arc<Note>| {
-            notes
-                .get(n.id.as_str())
-                .is_some_and(|o| storage::shared(o, n))
-                && old.collaboration.get(&n.id) == new.collaboration.get(&n.id)
+        let same_note = |(i, n): (usize, &Arc<Note>)| {
+            // Most notes are at the same place, the same shared version.
+            let same = old.notes.get(i).is_some_and(|o| Arc::ptr_eq(o, n))
+                || notes
+                    .get(n.id.as_str())
+                    .is_some_and(|o| storage::shared(o, n));
+            same && old.collaboration.get(&n.id) == new.collaboration.get(&n.id)
         };
         let same_database = |b: &Database| databases.get(b.id.as_str()) == Some(&b);
         new.notes
             .iter()
-            .filter(|n| same_note(n))
-            .map(|n| n.id.clone())
+            .enumerate()
+            .filter(|&(i, n)| same_note((i, n)))
+            .map(|(_, n)| n.id.clone())
             .chain(
                 new.databases
                     .iter()
@@ -352,7 +355,8 @@ pub(super) fn track(old: &Data, new: &mut Data) -> Result<Vec<Change>, ApiError>
                 != old.clocks.get(&k).and_then(|c| c.get(&f));
             if !explicit {
                 let clock = tick(new);
-                new.clocks.entry(k.clone()).or_default().insert(f, clock);
+                Arc::make_mut(Arc::make_mut(&mut new.clocks).entry(k.clone()).or_default())
+                    .insert(f, clock);
             }
         }
         changes.push(Change {
@@ -364,7 +368,9 @@ pub(super) fn track(old: &Data, new: &mut Data) -> Result<Vec<Change>, ApiError>
         });
     }
     for (k, e) in before {
-        new.clocks.remove(&k);
+        if new.clocks.contains_key(&k) {
+            Arc::make_mut(&mut new.clocks).remove(&k);
+        }
         changes.push(Change {
             workspace: e.workspace,
             kind: e.kind,
@@ -437,7 +443,7 @@ fn export(d: &Data, u: &User, kind: &str, id: &str, clock: &str) -> Value {
         "kind": kind,
         "id": id,
         "fields": e.fields,
-        "clocks": d.clocks.get(&key(kind, id)).cloned().unwrap_or_default(),
+        "clocks": d.clocks.get(&key(kind, id)).map(|c| (**c).clone()).unwrap_or_default(),
         "role": role,
     });
     if kind == "note" {
@@ -636,9 +642,7 @@ fn settle(d: &mut Data, kind: &str, id: &str, applied: &Fields, clocks: &Clocks)
         } else {
             tick(d)
         };
-        d.clocks
-            .entry(k.clone())
-            .or_default()
+        Arc::make_mut(Arc::make_mut(&mut d.clocks).entry(k.clone()).or_default())
             .insert(f.clone(), clock);
     }
 }
@@ -843,10 +847,10 @@ fn apply_note(
             record: record_page(fields)?,
             folded: folded_blocks(fields),
         }));
-        d.collaboration.insert(id.into(), Arc::new(crdt.into()));
+        Arc::make_mut(&mut d.collaboration).insert(id.into(), Arc::new(crdt.into()));
         if let Err(error) = sync_text(d, "") {
             d.notes.retain(|n| n.id != id);
-            d.collaboration.remove(id);
+            Arc::make_mut(&mut d.collaboration).remove(id);
             return Err(error);
         }
         settle(d, "note", id, fields, clocks);

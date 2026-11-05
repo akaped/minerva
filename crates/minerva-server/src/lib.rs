@@ -111,7 +111,9 @@ struct Data {
     #[serde(default)]
     /// Each note's live editing (Yjs) state, shared between copies of `Data` like
     /// `history`.
-    collaboration: HashMap<String, Arc<String>>,
+    /// Each note's collaborative document; shared between copies of `Data`
+    /// until a request changes one.
+    collaboration: Arc<HashMap<String, Arc<String>>>,
     #[serde(skip)]
     presence: HashMap<String, Vec<collaboration::Presence>>,
     /// Pending second-factor sign-ins, by challenge hash (memory only).
@@ -142,7 +144,7 @@ struct Data {
     /// Replication: per-entity field clocks, the last issued clock, and applied
     /// push operations (see `replication.rs`).
     #[serde(default)]
-    clocks: HashMap<String, std::collections::BTreeMap<String, String>>,
+    clocks: FieldClocks,
     #[serde(default)]
     hlc: String,
     #[serde(default)]
@@ -190,6 +192,9 @@ struct Data {
     #[serde(skip)]
     comment_activity: HashMap<String, u64>,
 }
+/// Replication's field clocks, by entity: shared between copies of `Data` and
+/// copied only where a request changes them, since every request copies `Data`.
+type FieldClocks = Arc<HashMap<String, Arc<std::collections::BTreeMap<String, String>>>>;
 /// A note's version (held weakly) and its inline tags.
 type CachedTags = (std::sync::Weak<Note>, Vec<String>);
 #[derive(Clone, Default)]
@@ -1174,7 +1179,10 @@ async fn api(
         // request's other changes are discarded.
         s.data.login_challenges = d.login_challenges.clone();
         let (result, cookie) = outcome?;
-        if write {
+        // POSTs that only read (searching, rendering, embeds) change nothing,
+        // so they skip saving; the editor renders a block at every change.
+        let reads_only = matches!(path, "search" | "render" | "embeds");
+        if write && !reads_only {
             let actor = authenticate(&d, &headers).ok();
             mail::assignments(&s.data, &mut d, actor.as_ref());
             persist(&mut s, d)?;

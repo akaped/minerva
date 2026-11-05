@@ -77,7 +77,7 @@ fn replace(doc: &Doc, note: &Note) {
 pub(super) fn replace_note(d: &mut Data, note: &Note) -> Result<(), ApiError> {
     let doc = load(d, note)?;
     replace(&doc, note);
-    d.collaboration.insert(
+    Arc::make_mut(&mut d.collaboration).insert(
         note.id.clone(),
         Arc::new(
             STANDARD.encode(
@@ -261,8 +261,7 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         merged.updated_at = now();
         *d.notes.iter_mut().find(|n| n.id == nid).unwrap() = Arc::new(merged.clone());
     }
-    d.collaboration
-        .insert(nid.into(), Arc::new(encoded.clone()));
+    Arc::make_mut(&mut d.collaboration).insert(nid.into(), Arc::new(encoded.clone()));
     let peers = d.presence.entry(nid.into()).or_default();
     peers.retain(|p| p.seen + 10 > now());
     let mut denied_block = None;

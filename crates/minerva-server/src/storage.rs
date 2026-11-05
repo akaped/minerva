@@ -377,16 +377,21 @@ pub(super) fn write(
     for (id, b) in &databases.put {
         search::index_database(db, id, Some(b)).map_err(|_| internal())?;
     }
-    changed |= apply(
-        db,
-        "note_crdt",
-        &diff(keyed(&old.collaboration), keyed(&new.collaboration), shared),
-    )?;
-    changed |= apply(
-        db,
-        "field_clocks",
-        &diff(keyed(&old.clocks), keyed(&new.clocks), PartialEq::eq),
-    )?;
+    // Maps shared between both copies did not change at all.
+    if !Arc::ptr_eq(&old.collaboration, &new.collaboration) {
+        changed |= apply(
+            db,
+            "note_crdt",
+            &diff(keyed(&old.collaboration), keyed(&new.collaboration), shared),
+        )?;
+    }
+    if !Arc::ptr_eq(&old.clocks, &new.clocks) {
+        changed |= apply(
+            db,
+            "field_clocks",
+            &diff(keyed(&old.clocks), keyed(&new.clocks), shared),
+        )?;
+    }
     changed |= apply(
         db,
         "sessions",

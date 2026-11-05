@@ -10,7 +10,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 ## Follow-ups from the last round
 
 - [ ] **Comments**: in desktop offline copies (they are not replicated yet).
-- [ ] **Storage**: relational tables with foreign keys for queries that should not need everything in memory; evaluate PostgreSQL for larger installations. Each request still copies `Data` (cheap now, but linear in the number of entities).
+- [ ] **Storage**: page the bootstrap, then read through SQL (tables per kind with foreign keys) so requests stop growing with the server; PostgreSQL after that, for more than one app server. Measurements and the plan are in `docs/storage.md`.
 - [ ] **Importers**: importing straight from Notion's API instead of an export.
 - [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.
 

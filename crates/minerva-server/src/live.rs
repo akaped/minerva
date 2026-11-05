@@ -35,7 +35,9 @@ pub(super) fn changed_notes(old: &Data, new: &Data) -> Vec<String> {
     }
     let now: HashSet<&str> = new.notes.iter().map(|n| n.id.as_str()).collect();
     changed.extend(before.keys().filter(|id| !now.contains(*id)));
-    for (id, text) in &new.collaboration {
+    // An unchanged map of documents is the very same one.
+    let same_documents = Arc::ptr_eq(&old.collaboration, &new.collaboration);
+    for (id, text) in new.collaboration.iter().filter(|_| !same_documents) {
         if !old
             .collaboration
             .get(id)
