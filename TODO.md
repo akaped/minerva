@@ -16,7 +16,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 - [ ] **Recordings**: transcribing in the browser, so audio never leaves the device (it needs a speech model of 75 MB or more downloaded to the device).
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders. It is a protocol of its own (discovery, ETags, `REPORT` queries, each client's quirks) and needs its own project.
-- [ ] **Installable app**: push notifications for reminders.
 
 ## MAYBE IN FUTURE. I will tell you when
 - [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.

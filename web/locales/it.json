@@ -2257,5 +2257,13 @@
   "{count} note is kept on this device": "{count} nota è conservata su questo dispositivo",
   "{count} notes are kept on this device": "{count} note sono conservate su questo dispositivo",
   "{count} file will be attached: {names}": "{count} file sarà allegato: {names}",
-  "{count} files will be attached: {names}": "{count} file saranno allegati: {names}"
+  "{count} files will be attached: {names}": "{count} file saranno allegati: {names}",
+  "Notify me of reminders on this device": "Avvisami dei promemoria su questo dispositivo",
+  "When a reminder is due, this device shows a notification, besides the email.": "Quando un promemoria scade, questo dispositivo mostra una notifica, oltre all'email.",
+  "This device will notify you of reminders.": "Questo dispositivo ti avviserà dei promemoria.",
+  "No more reminder notifications on this device.": "Niente più notifiche dei promemoria su questo dispositivo.",
+  "Notifications are blocked for Minerva in this browser.": "Le notifiche per Minerva sono bloccate in questo browser.",
+  "This push service is not supported": "Questo servizio di notifiche non è supportato",
+  "Invalid push subscription": "Iscrizione alle notifiche non valida",
+  "Turn notifications off on another device first": "Disattiva prima le notifiche su un altro dispositivo"
 }

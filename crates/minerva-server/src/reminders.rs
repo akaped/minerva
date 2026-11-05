@@ -485,6 +485,7 @@ pub(crate) fn fire(d: &mut Data) -> bool {
                     ));
                 }
                 let link = format!("/?view=reminders&workspace={}", r.workspace_id);
+                crate::push::queue(d, &user.id, &subject, &lines[1], &link);
                 mail::send(
                     d,
                     &lang,
@@ -528,6 +529,13 @@ pub(crate) fn fire(d: &mut Data) -> bool {
         }
         let text = block.markdown.clone();
         let lang = i18n::of_user(d, &user.id);
+        crate::push::queue(
+            d,
+            &user.id,
+            &i18n::trv(&lang, "Reminder: {title}", &[("title", &note.title)]),
+            &text,
+            &format!("/?note={}", note.id),
+        );
         mail::send(
             d,
             &lang,

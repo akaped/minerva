@@ -223,3 +223,36 @@ function offline() {
     },
   );
 }
+
+// Reminders, as notifications (see push.rs): a click opens their page.
+self.addEventListener("push", (event) => {
+  let message = {};
+  try {
+    message = event.data?.json() || {};
+  } catch {}
+  event.waitUntil(
+    self.registration.showNotification(message.title || "Minerva", {
+      body: message.body || "",
+      icon: "/icons/icon-192.png",
+      data: { url: message.url || "/" },
+    }),
+  );
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(
+    event.notification.data?.url || "/",
+    self.location.origin,
+  );
+  // Only this server's own pages.
+  if (url.origin !== self.location.origin) return;
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windows) => {
+        const open = windows.find((w) => new URL(w.url).origin === url.origin);
+        if (open) return open.navigate(url.href).then((w) => w?.focus());
+        return self.clients.openWindow(url.href);
+      }),
+  );
+});

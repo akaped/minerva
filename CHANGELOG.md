@@ -33,6 +33,7 @@ turns that section into the next version.
 - **Recordings:** long recordings (beyond about 90 minutes) are transcribed in parts, with times running on; with a diarizing transcription model the transcript says who spoke; and action items whose owner is a member mention them.
 - **Live everywhere:** share-link guests and the desktop app now see other people's edits at once, as the web app does (guests through a socket for their note only, the desktop app through waiting requests its gateway forwards), instead of checking every few seconds.
 - **Working offline in the installed app:** notes kept on the device can now be edited without a connection; the changes are kept (even if the app is closed) and merged with everyone else's when you are back online. Account → This device can keep every note of a workspace at once, files (PDFs, sound, documents) are kept too, and files shared from other apps go into the quick note as attachments.
+- **Reminder notifications:** Account → This device → **Notify me of reminders on this device** shows a notification when a reminder is due (besides the email, and also on servers without email); a click opens it.
 
 ## [0.6.0] - 2026-11-03
 

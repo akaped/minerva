@@ -2341,6 +2341,7 @@ dependencies = [
  "pulldown-cmark",
  "qrcode",
  "reqwest",
+ "ring",
  "rusqlite",
  "ruzstd",
  "serde",

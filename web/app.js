@@ -6442,7 +6442,7 @@ function deviceHTML() {
   const languages = `<label class="device-language">${$t("Language")}<select id="interface-language"><option value="">${$t("Automatic")} (${esc(browser)})</option>${LANGUAGES.map(([code, name]) => `<option value="${code}" ${chosenLanguage() === code ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`;
   return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><div><h2>${$t("This device")}</h2><p>${$t("Settings for this browser only.")}</p></div></div><div class="security-body">${languages}${app}${
     worker
-      ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>${$t("Keep notes I open for offline")}</strong><br><small>${$t("Notes and files you open are kept in this browser. Without a connection you can read them, and edit the notes: changes are sent when you are back online. They are deleted when you sign out. Leave this off on a shared computer.")}</small></span></label>${offlineReading() ? `<div class="device-workspace"><button class="btn" id="keep-workspace">${icon("download")}${$t("Keep all of this workspace’s notes")}</button><span class="hint" id="keep-progress" role="status"></span></div>` : ""}`
+      ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>${$t("Keep notes I open for offline")}</strong><br><small>${$t("Notes and files you open are kept in this browser. Without a connection you can read them, and edit the notes: changes are sent when you are back online. They are deleted when you sign out. Leave this off on a shared computer.")}</small></span></label>${"PushManager" in window ? `<label class="checkbox-label device-push"><input type="checkbox" id="push-reminders" disabled><span><strong>${$t("Notify me of reminders on this device")}</strong><br><small>${$t("When a reminder is due, this device shows a notification, besides the email.")}</small></span></label>` : ""}${offlineReading() ? `<div class="device-workspace"><button class="btn" id="keep-workspace">${icon("download")}${$t("Keep all of this workspace’s notes")}</button><span class="hint" id="keep-progress" role="status"></span></div>` : ""}`
       : `<p class=\"hint\">${$t("Reading offline needs a secure (https) connection to the server.")}</p>`
   }</div></section>`;
 }
@@ -6460,6 +6460,59 @@ function bindDevice() {
     if (await install()) toast($t("Minerva is installed."));
   });
   action($("#keep-workspace"), "click", (e) => keepWorkspace(e.currentTarget));
+  const push = $("#push-reminders");
+  if (push) {
+    pushSubscription().then((sub) => {
+      push.checked = !!sub;
+      push.disabled = false;
+    });
+    action(push, "change", async () => {
+      push.disabled = true;
+      try {
+        if (push.checked) await subscribePush();
+        else await unsubscribePush();
+        toast(
+          push.checked
+            ? $t("This device will notify you of reminders.")
+            : $t("No more reminder notifications on this device."),
+        );
+      } catch (e) {
+        push.checked = !push.checked;
+        error(e);
+      } finally {
+        push.disabled = false;
+      }
+    });
+  }
+}
+/** This device's push subscription, if it has one. */
+async function pushSubscription() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    return await reg.pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+}
+async function subscribePush() {
+  if ((await Notification.requestPermission()) !== "granted")
+    throw new Error($t("Notifications are blocked for Minerva in this browser."));
+  const { key } = await api("push");
+  const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/"));
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)),
+  });
+  await api("push/subscribe", "POST", sub.toJSON());
+}
+async function unsubscribePush() {
+  const sub = await pushSubscription();
+  if (!sub) return;
+  await api("push/unsubscribe", "POST", { endpoint: sub.endpoint }).catch(
+    () => {},
+  );
+  await sub.unsubscribe();
 }
 /**
  * Keeps every note of the open workspace on this device, for offline: the

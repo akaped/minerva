@@ -22,6 +22,7 @@ mod mcp;
 mod oauth;
 mod plugins;
 mod previews;
+mod push;
 mod record_pages;
 mod recordings;
 mod reminders;
@@ -167,6 +168,14 @@ struct Data {
     mail_outbox: Vec<mail::Outgoing>,
     #[serde(default)]
     reminders: Vec<reminders::Reminder>,
+    /// Push notifications: the server's VAPID key, people's subscriptions, and
+    /// notifications waiting to go out (see `push.rs`).
+    #[serde(default)]
+    vapid: String,
+    #[serde(default)]
+    push_subscriptions: Vec<push::Subscription>,
+    #[serde(default)]
+    push_outbox: Vec<push::Message>,
     /// The language each person last used the app in, by user ID (see `i18n.rs`).
     #[serde(default)]
     languages: HashMap<String, String>,
@@ -273,6 +282,7 @@ impl Store {
         oauth::initialize(&db)?;
         let (data, saved) = storage::open(&db, initial, |data| {
             ensure_personal(data);
+            push::ensure_keys(data);
             // Databases from before replication get a change-log row and field clocks
             // for every entity, so a replica's first pull receives everything.
             if replication::is_empty(&db)? {
@@ -1034,6 +1044,7 @@ fn service_worker() -> &'static str {
 pub fn app(store: Shared) -> Router {
     mail::spawn(store.clone());
     search::spawn(store.clone());
+    push::spawn(store.clone());
     Router::new()
         .route("/", get(|| async { axum::response::Html(include_str!("../../../web/index.html")) }))
         .route("/pane", get(editor_pane))
@@ -1298,6 +1309,9 @@ fn dispatch(
     }
     if let ("PUT", ["workspaces", wid, "graph", "positions"]) = (method, parts.as_slice()) {
         return Ok((graph::save_positions(db, d, &u, wid, &v)?, None));
+    }
+    if let ["push", rest @ ..] = parts.as_slice() {
+        return Ok((push::route(d, &u, method, rest, &v)?, None));
     }
     if let ["calendar-feed", rest @ ..] = parts.as_slice() {
         let workspace = match rest {
@@ -2065,6 +2079,7 @@ fn dispatch(
             d.shares.retain(|s| s.user_id.as_deref() != Some(*uid));
             mcp::forget_user(d, uid);
             tokens::forget_user(d, uid);
+            push::forget_user(d, uid);
             calendar::forget_user(d, uid);
             d.languages.remove(*uid);
             twofactor::forget(d, uid);

@@ -38,7 +38,10 @@ async fn manifest_icons_worker_and_capture_page() {
     // Text, links and files shared from other apps.
     assert_eq!(manifest["share_target"]["action"], "/capture/share");
     assert_eq!(manifest["share_target"]["method"], "POST");
-    assert_eq!(manifest["share_target"]["params"]["files"][0]["name"], "files");
+    assert_eq!(
+        manifest["share_target"]["params"]["files"][0]["name"],
+        "files"
+    );
     // Every icon it names is served as a picture.
     let icons = manifest["icons"].as_array().unwrap();
     assert!(icons.iter().any(|i| i["purpose"] == "maskable"));
