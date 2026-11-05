@@ -35,7 +35,10 @@ async fn manifest_icons_worker_and_capture_page() {
     assert_eq!(kind, "application/manifest+json");
     let manifest: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(manifest["display"], "standalone");
-    assert_eq!(manifest["share_target"]["action"], "/capture");
+    // Text, links and files shared from other apps.
+    assert_eq!(manifest["share_target"]["action"], "/capture/share");
+    assert_eq!(manifest["share_target"]["method"], "POST");
+    assert_eq!(manifest["share_target"]["params"]["files"][0]["name"], "files");
     // Every icon it names is served as a picture.
     let icons = manifest["icons"].as_array().unwrap();
     assert!(icons.iter().any(|i| i["purpose"] == "maskable"));

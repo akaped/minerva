@@ -29,6 +29,7 @@ import { renderDashboard } from "./dashboard.js";
 import { emojiPicker } from "./emoji-picker.js";
 import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
 import { Collaboration, watchNote, liveSignals } from "./collaboration.js";
+import { keepDoc, keptDoc, forgetDocs } from "./offline-docs.js";
 import { createComments } from "./comments.js";
 import { startNotice, serverPage, withoutNotice } from "./start-notice.js";
 import {
@@ -445,9 +446,16 @@ function announce(message) {
 }
 async function renderMarkdown(markdown) {
   if (renderedCache.has(markdown)) return renderedCache.get(markdown);
-  const { html } = await api(shareMode ? "shared/render" : "render", "POST", {
-    markdown,
-  });
+  let html;
+  try {
+    ({ html } = await api(shareMode ? "shared/render" : "render", "POST", {
+      markdown,
+    }));
+  } catch (e) {
+    // Offline: the text as written, until the server can render it.
+    if (e.status !== 0 && !(e instanceof TypeError)) throw e;
+    return `<p>${esc(markdown).replace(/\n/g, "<br>")}</p>`;
+  }
   if (renderedCache.size > 2000) renderedCache.clear();
   renderedCache.set(markdown, html);
   return html;
@@ -845,7 +853,7 @@ function showOffline(on) {
   bar.className = "offline-bar";
   bar.setAttribute("role", "status");
   bar.textContent =
-    $t("Offline · showing what this device kept. Changes cannot be saved until you are back online.");
+    $t("Offline · showing what this device kept. Changes to notes kept here are sent when you are back online.");
   document.body.append(bar);
 }
 addEventListener("online", async () => {
@@ -1569,6 +1577,7 @@ function shell() {
     await noteTabs?.clear();
     await flush();
     stopLive();
+    await forgetDocs();
     await api("logout", "POST");
     login();
   });
@@ -1994,7 +2003,12 @@ async function openNote(id, { split = false, block = null } = {}) {
   conflict = false;
   mode = "document";
   comments.attach(id);
-  if (note.offline_copy) {
+  // Kept for editing offline: it opens from what this device kept.
+  const keepHere = offlineReading() && !shareMode && !localMode;
+  if (
+    note.offline_copy &&
+    !(keepHere && (await keptDoc(data.user.id, id).catch(() => null)))
+  ) {
     note.role = "viewer";
     live = null;
     shell();
@@ -2024,7 +2038,26 @@ async function openNote(id, { split = false, block = null } = {}) {
     },
   );
   live.presence = blockPresence;
-  await live.start();
+  if (keepHere)
+    live.keep = {
+      save: (state, pending) => keepDoc(data.user.id, id, state, pending),
+      load: () => keptDoc(data.user.id, id),
+    };
+  if (note.offline_copy) {
+    // Offline: the kept document, editable; changes wait for the server.
+    await live.restore();
+    // The kept copy as it was: its blocks are not the ones receiveLive changes.
+    receiveLive(live.snapshot(), {
+      note: { ...note, blocks: note.blocks.map((b) => ({ ...b })) },
+      peers: [],
+      can_edit: (note.role || data.roles?.[note.folder_id]) === "editor",
+    });
+    // Blocks changed offline show as written until the server renders them.
+    note.rendered = await Promise.all(
+      note.blocks.map((b) => renderMarkdown(b.markdown)),
+    );
+    await live.start({ offline: true });
+  } else await live.start();
   shell();
   if (block) showBlock(block);
 }
@@ -6409,7 +6442,7 @@ function deviceHTML() {
   const languages = `<label class="device-language">${$t("Language")}<select id="interface-language"><option value="">${$t("Automatic")} (${esc(browser)})</option>${LANGUAGES.map(([code, name]) => `<option value="${code}" ${chosenLanguage() === code ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`;
   return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><div><h2>${$t("This device")}</h2><p>${$t("Settings for this browser only.")}</p></div></div><div class="security-body">${languages}${app}${
     worker
-      ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>${$t("Keep notes I open for reading offline")}</strong><br><small>${$t("Notes and pictures you open are kept in this browser and shown read-only when the server cannot be reached. They are deleted when you sign out. Leave this off on a shared computer.")}</small></span></label>`
+      ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>${$t("Keep notes I open for offline")}</strong><br><small>${$t("Notes and files you open are kept in this browser. Without a connection you can read them, and edit the notes: changes are sent when you are back online. They are deleted when you sign out. Leave this off on a shared computer.")}</small></span></label>${offlineReading() ? `<div class="device-workspace"><button class="btn" id="keep-workspace">${icon("download")}${$t("Keep all of this workspace’s notes")}</button><span class="hint" id="keep-progress" role="status"></span></div>` : ""}`
       : `<p class=\"hint\">${$t("Reading offline needs a secure (https) connection to the server.")}</p>`
   }</div></section>`;
 }
@@ -6426,6 +6459,48 @@ function bindDevice() {
   action($("#install-app"), "click", async () => {
     if (await install()) toast($t("Minerva is installed."));
   });
+  action($("#keep-workspace"), "click", (e) => keepWorkspace(e.currentTarget));
+}
+/**
+ * Keeps every note of the open workspace on this device, for offline: the
+ * note (kept by the service worker as it is fetched) and its document.
+ */
+async function keepWorkspace(button) {
+  const list = workspaceNotes().filter((n) => !n.trashed);
+  const progress = $("#keep-progress");
+  button.disabled = true;
+  let kept = 0;
+  try {
+    for (const n of list) {
+      await api("notes/" + n.id);
+      // Changes made here offline and not sent yet are never replaced.
+      const before = await keptDoc(data.user.id, n.id).catch(() => null);
+      if (!before?.pending?.length) {
+        const { update } = await api(`notes/${n.id}/sync`, "POST", {
+          update: "",
+        });
+        const state = Uint8Array.from(atob(update), (c) => c.charCodeAt(0));
+        await keepDoc(data.user.id, n.id, state, []);
+      }
+      kept++;
+      if (progress)
+        progress.textContent = $t("{count} of {total} kept", {
+          count: kept,
+          total: list.length,
+        });
+    }
+    toast(
+      $tn(
+        kept,
+        "{count} note is kept on this device",
+        "{count} notes are kept on this device",
+      ),
+    );
+  } catch (e) {
+    error(e);
+  } finally {
+    button.disabled = false;
+  }
 }
 onInstallChange(() => {
   const panel = $("#device-panel");
@@ -10086,7 +10161,10 @@ function sharedUnavailable() {
       // Offline (status 0): the service worker says what is missing.
       $("#app").innerHTML =
         `<div class="loading"><span>${e.status === 0 ? esc(e.message) : $t("Unable to connect to the server. Reload to try again.")}</span></div>`;
-      if (e.status !== 0) error(e);
+      if (e.status !== 0) {
+        console.error(e);
+        error(e);
+      }
     }
   }
 })();

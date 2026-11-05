@@ -38,8 +38,26 @@
     }
   ],
   "share_target": {
-    "action": "/capture",
-    "method": "GET",
-    "params": { "title": "title", "text": "text", "url": "url" }
+    "action": "/capture/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "image/*",
+            "audio/*",
+            "video/*",
+            "application/pdf",
+            "text/*",
+            "*/*"
+          ]
+        }
+      ]
+    }
   }
 }

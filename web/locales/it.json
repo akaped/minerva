@@ -101,7 +101,6 @@
   "Public": "Pubblica",
   "Link": "Link",
   "Shared": "Condivisa",
-  "Offline · showing what this device kept. Changes cannot be saved until you are back online.": "Offline · mostra ciò che questo dispositivo ha conservato. Le modifiche non si possono salvare finché non torni online.",
   "Request failed": "Richiesta non riuscita",
   "Try again": "Riprova",
   "Servers": "Server",
@@ -496,8 +495,6 @@
   "quick note": "nota veloce",
   "This device": "Questo dispositivo",
   "Settings for this browser only.": "Impostazioni solo per questo browser.",
-  "Keep notes I open for reading offline": "Conserva le note che apro per leggerle offline",
-  "Notes and pictures you open are kept in this browser and shown read-only when the server cannot be reached. They are deleted when you sign out. Leave this off on a shared computer.": "Le note e le immagini che apri vengono conservate in questo browser e mostrate in sola lettura quando il server non è raggiungibile. Vengono eliminate quando esci. Lascia disattivato su un computer condiviso.",
   "Reading offline needs a secure (https) connection to the server.": "La lettura offline richiede una connessione sicura (https) al server.",
   "Notes you open are now kept on this device for reading offline.": "Le note che apri ora vengono conservate su questo dispositivo per leggerle offline.",
   "Notes kept on this device were deleted.": "Le note conservate su questo dispositivo sono state eliminate.",
@@ -2251,5 +2248,14 @@
   "Transcribing part {part} of {parts}": "Trascrizione della parte {part} di {parts}",
   "Transcribing the recording": "Trascrizione della registrazione",
   "Writing the notes": "Scrittura degli appunti",
-  "This recording is too long to send at once, and its format cannot be split: use WebM, Ogg, WAV or MP3": "Questa registrazione è troppo lunga per essere inviata in una volta e il suo formato non si può dividere: usa WebM, Ogg, WAV o MP3"
+  "This recording is too long to send at once, and its format cannot be split: use WebM, Ogg, WAV or MP3": "Questa registrazione è troppo lunga per essere inviata in una volta e il suo formato non si può dividere: usa WebM, Ogg, WAV o MP3",
+  "Offline · showing what this device kept. Changes to notes kept here are sent when you are back online.": "Offline · mostra ciò che questo dispositivo ha conservato. Le modifiche alle note conservate qui vengono inviate quando torni online.",
+  "Keep notes I open for offline": "Conserva per l'uso offline le note che apro",
+  "Notes and files you open are kept in this browser. Without a connection you can read them, and edit the notes: changes are sent when you are back online. They are deleted when you sign out. Leave this off on a shared computer.": "Le note e i file che apri sono conservati in questo browser. Senza connessione puoi leggerli e modificare le note: le modifiche vengono inviate quando torni online. Vengono eliminati quando esci. Lascia disattivato su un computer condiviso.",
+  "Keep all of this workspace’s notes": "Conserva tutte le note di questo spazio di lavoro",
+  "{count} of {total} kept": "{count} di {total} conservate",
+  "{count} note is kept on this device": "{count} nota è conservata su questo dispositivo",
+  "{count} notes are kept on this device": "{count} note sono conservate su questo dispositivo",
+  "{count} file will be attached: {names}": "{count} file sarà allegato: {names}",
+  "{count} files will be attached: {names}": "{count} file saranno allegati: {names}"
 }

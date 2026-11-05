@@ -82,7 +82,7 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 
 ## Detailed features
 
-- Installable app (a web app manifest and service worker, `web/sw.js`): its own window, a **Quick note** page (`/capture`) that phones can share pages and text to and that waits for a connection, and notes kept for reading offline when Account → This device allows it. Service workers need HTTPS (or `localhost`), so installing and reading offline work once the server has a certificate.
+- Installable app (a web app manifest and service worker, `web/sw.js`): its own window, a **Quick note** page (`/capture`) that phones can share pages, text and files to and that waits for a connection, and notes kept for offline when Account → This device allows it (every note of a workspace at once, if you like): without a connection they can be read and edited, and the changes are sent when it is back. Service workers need HTTPS (or `localhost`), so installing and working offline work once the server has a certificate.
 
 - Server → workspaces → folders → notes, with stable UUID identities.
 - Workspace and folder creation, folder renaming, note creation and title editing.

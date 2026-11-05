@@ -1051,6 +1051,8 @@ pub fn app(store: Shared) -> Router {
         .route("/manifest.webmanifest", get(|| async { ([("content-type","application/manifest+json"),("cache-control","no-cache")], include_str!("../../../web/manifest.webmanifest")) }))
         .route("/sw.js", get(|| async { ([("content-type","text/javascript; charset=utf-8"),("cache-control","no-cache")], service_worker()) }))
         .route("/capture", get(|| async { axum::response::Html(include_str!("../../../web/capture.html")) }))
+        // Shares are taken by the app's service worker; without one, the quick note page.
+        .route("/capture/share", axum::routing::post(|| async { axum::response::Redirect::to("/capture") }))
         .route("/capture.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], include_str!("../../../web/dist/capture.js")) }))
         .route("/icons/icon-192.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/icon-192.png").as_slice()) }))
         .route("/icons/icon-512.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../../../web/icons/icon-512.png").as_slice()) }))

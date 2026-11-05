@@ -190,13 +190,44 @@ export class Collaboration {
     this.closed = false;
     this.ready = false;
     this.sending = null;
+    // Set by the app to keep the note on this device: `{save(state, pending),
+    // load()}` (see offline-docs.js).
+    this.keep = null;
     this.doc.on("update", (update, origin) => {
       if (origin === "server") return;
       this.pending.push(update);
       this.onStatus($t("Saving…"), true);
+      this.kept();
       clearTimeout(this.debounce);
       this.debounce = setTimeout(() => this.sync().catch(() => {}), 180);
     });
+  }
+  /** Keeps the document and unsent changes on this device, shortly after. */
+  kept() {
+    if (!this.keep) return;
+    clearTimeout(this.keepTimer);
+    this.keepTimer = setTimeout(
+      () =>
+        this.keep
+          .save(Y.encodeStateAsUpdate(this.doc), [...this.pending])
+          .catch(() => {}),
+      300,
+    );
+  }
+  /**
+   * Starts from what this device kept, when the server cannot be reached:
+   * the document as last known, and the changes still to send. Returns
+   * whether there was anything.
+   */
+  async restore() {
+    const kept = await this.keep?.load().catch(() => null);
+    if (!kept?.state) return false;
+    Y.applyUpdate(this.doc, kept.state, "server");
+    for (const update of kept.pending || []) {
+      Y.applyUpdate(this.doc, update, "server");
+      this.pending.push(update);
+    }
+    return true;
   }
   /**
    * Where this user is in the note: the block they are on, and whether they
@@ -209,8 +240,10 @@ export class Collaboration {
       editing: active?.tagName === "TEXTAREA",
     };
   }
-  async start() {
-    await this.sync();
+  async start({ offline = false } = {}) {
+    // Changes made while offline (kept on this device) go first.
+    if (this.keep && !offline) await this.restore();
+    if (!offline) await this.sync();
     // Undo only reverts this client's own changes, never collaborators' edits.
     this.undoManager = new Y.UndoManager(
       [
@@ -345,6 +378,7 @@ export class Collaboration {
           ];
         }
         Y.applyUpdate(this.doc, decode(result.update), "server");
+        this.kept();
         this.onChange(this.snapshot(), result);
         // Never rewrite a field while an input method is composing text.
         if (key && focused.isConnected && !focused.dataset.composing) {

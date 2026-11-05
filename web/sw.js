@@ -27,8 +27,10 @@ const FILES = [
   "/favicon.png",
   "/icons/icon-192.png",
 ];
-// The most notes (and pictures) kept for reading offline.
-const MAX_KEPT = 300;
+// The most notes (and files) kept for offline: a whole workspace can be kept.
+const MAX_KEPT = 3000;
+// Files larger than this are not kept.
+const MAX_FILE = 25 * 1024 * 1024;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -66,6 +68,11 @@ async function setSetting(name, value) {
 async function forget() {
   await caches.delete(DATA);
   await setSetting("user", "");
+  // Notes kept for editing offline (see offline-docs.js).
+  await new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase("minerva-offline");
+    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+  });
 }
 
 self.addEventListener("message", (event) => {
@@ -91,15 +98,47 @@ function kind(url, request) {
     return "file";
   if (url.pathname === "/api/v1/bootstrap") return "data";
   if (/^\/api\/v1\/notes\/[0-9a-f-]{36}$/.test(url.pathname)) return "data";
-  if (/^\/api\/v1\/attachments\/[0-9a-f-]{36}\/preview$/.test(url.pathname))
+  // Files: pictures and previews, and the files themselves (PDFs, sound…).
+  if (/^\/api\/v1\/attachments\/[0-9a-f-]{36}(\/preview)?$/.test(url.pathname))
     return "data";
   return null;
+}
+
+// Things shared to the app from other apps: the text goes on in the address,
+// the files wait here until the quick-note page takes them.
+const SHARED = "minerva-shared";
+async function received(request) {
+  const form = await request.formData();
+  const cache = await caches.open(SHARED);
+  for (const key of await cache.keys()) await cache.delete(key);
+  const files = form.getAll("files").filter((f) => f && f.size);
+  let i = 0;
+  for (const file of files.slice(0, 10)) {
+    await cache.put(
+      `/__minerva/shared/${i++}`,
+      new Response(file, {
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-file-name": encodeURIComponent(file.name || "file"),
+        },
+      }),
+    );
+  }
+  const query = new URLSearchParams();
+  for (const name of ["title", "text", "url"])
+    if (form.get(name)) query.set(name, form.get(name));
+  if (i) query.set("files", String(i));
+  return Response.redirect(`/capture?${query}`, 303);
 }
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname === "/capture/share" && request.method === "POST") {
+    event.respondWith(received(request));
+    return;
+  }
   // Signing out deletes what was kept, whatever the answer.
   if (url.pathname === "/api/v1/logout" && request.method === "POST") {
     event.waitUntil(forget());
@@ -152,12 +191,16 @@ async function data(request) {
   if ([502, 503, 504].includes(response.status)) return fallback(response);
   if (response.status === 401) await forget();
   if (!keep || !response.ok) return response;
+  if (Number(response.headers.get("content-length") || 0) > MAX_FILE)
+    return response;
   if (url.pathname === "/api/v1/bootstrap") {
     // Another account's notes are never shown to this one.
     const user = (await response.clone().json())?.user?.id || "";
     if (user !== (await setting("user"))) {
+      const before = await setting("user");
       await caches.delete(DATA);
       await setSetting("user", user);
+      if (before) await forget().then(() => setSetting("user", user));
     }
   }
   const cache = await caches.open(DATA);

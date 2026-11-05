@@ -81,6 +81,50 @@ function status(text) {
   $("#capture-status").textContent = text;
 }
 
+/** Files shared to the app, kept by the service worker until saved. */
+async function sharedFiles(count) {
+  if (!count || typeof caches === "undefined") return [];
+  const cache = await caches.open("minerva-shared");
+  const out = [];
+  for (let i = 0; i < Math.min(count, 10); i++) {
+    const r = await cache.match(`/__minerva/shared/${i}`);
+    if (!r) continue;
+    out.push({
+      name: decodeURIComponent(r.headers.get("x-file-name") || "file"),
+      type: r.headers.get("content-type") || "",
+      blob: await r.blob(),
+    });
+  }
+  return out;
+}
+/** Attaches files to note `id` and adds a block showing or linking each. */
+async function attach(id, files) {
+  const lines = [];
+  for (const f of files) {
+    const r = await fetch(
+      `/api/v1/notes/${id}/attachments?filename=${encodeURIComponent(f.name)}`,
+      {
+        method: "POST",
+        headers: { "X-Minerva-Client": "1" },
+        body: f.blob,
+      },
+    );
+    const v = await r.json().catch(() => ({}));
+    if (!r.ok)
+      throw new Error(v.error ? serverMessage(v.error) : $t("Request failed"));
+    const label = f.name.replace(/[[\]]/g, "");
+    const link = `/api/v1/attachments/${v.id}`;
+    lines.push(
+      v.media_type?.startsWith("image/")
+        ? `![${label}](${link})`
+        : `[${label}](${link})`,
+    );
+  }
+  if (lines.length)
+    await api(`notes/${id}/append`, "POST", { markdown: lines.join("\n\n") });
+  await caches.delete("minerva-shared").catch(() => {});
+}
+
 /** Sends what waited on this device; keeps what still cannot be sent. */
 async function flush() {
   const waiting = queued();
@@ -180,6 +224,19 @@ async function start() {
   });
   const text = $("#capture-text");
   text.value = shared;
+  // Files shared with it are attached to the note.
+  const files = await sharedFiles(Number(params.get("files") || 0));
+  const list = $("#capture-files");
+  if (list && files.length) {
+    list.hidden = false;
+    list.textContent = $tn(
+      files.length,
+      "{count} file will be attached: {names}",
+      "{count} files will be attached: {names}",
+      { names: files.map((f) => f.name).join(", ") },
+    );
+    if (!text.value) text.value = files.map((f) => f.name).join(", ");
+  }
   $("#capture-form").hidden = false;
   text.focus();
   // A shared page should not be shared again on reload.
@@ -195,6 +252,11 @@ async function start() {
     button.disabled = true;
     try {
       const saved = await send(item);
+      if (files.length) {
+        await attach(saved.id, files);
+        files.length = 0;
+        if (list) list.hidden = true;
+      }
       const folder = data?.folders.find(
         (f) => `folder:${f.id}` === item.target,
       );
