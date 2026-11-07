@@ -144,14 +144,30 @@ Column shape: `{id,name,kind,options?,target?,rollup?,formula?}` where kind is `
 
 Records use optimistic concurrency. Local browser writes are serialized, but stale writes from other clients return 409 rather than overwriting their changes. Archiving is recoverable; no permanent deletion route is exposed. Database metadata is included in `/bootstrap`, filtered by current folder permissions.
 
+## Paged bootstrap
+
+`GET /bootstrap?notes=0` returns the usual account, workspace, folder and database metadata with `notes: []` and `notes_paged: true`. `GET /bootstrap` without this option remains compatible with existing clients.
+
+Fetch sidebar notes with `GET /bootstrap/notes?workspace={id}&limit=200&after={last_id}`. The response is `{notes: [...], next: string | null}`. Pass `next` as `after` for the following page; `null` means finished. The limit is clamped to 1–500. Ordering uses immutable note IDs; each page checks current workspace and folder access, and includes record pages, archived and trashed notes just as bootstrap did. Direct member shares remain in bootstrap's `shared_notes`. Pages are not a frozen snapshot: notes created before a cursor during pagination appear on the next refresh.
+
+The browser loads the current workspace and fetches another workspace on selection. Offline page caches use the complete query string so workspaces and cursors cannot overwrite each other. This bounds response size and summary construction, but does not finish the SQL migration: note selection still scans in-memory state.
+
+## Direct Notion import
+
+`POST /import/notion` accepts `{folder_id, page_id, token}`. `page_id` is a Notion UUID (with or without hyphens); share that page with the token's Notion connection first. Requires editor access to the destination, checked before fetching and again before saving. Uses Notion API version `2025-09-03`, a fixed HTTPS origin, no redirects, bounded responses, and bounded retries of rate limits. The connection token exists only during the request and is never stored.
+
+Imports the selected page and child pages using the existing import report format. Child-page links are rewritten to the imported notes. Supported blocks include paragraphs, headings, lists, tasks, quotes, callouts, code and equations. Other blocks, database tables and files remain source links, listed in warnings; use the export importer for database tables and attachments. Limits: 200 pages, seven child-page levels, 20,000 blocks, 20 MiB converted Markdown and 15 minutes. Failure while fetching creates no notes. Repeating an import creates a new copy.
+
+Protocol references: [Notion block pagination](https://developers.notion.com/reference/get-block-children) and [rate limits](https://developers.notion.com/reference/request-limits).
+
 ## Personal API tokens
 
 For scripts and `minerva-cli`. A token signs in as its owner with `Authorization: Bearer mnv_api_v1_…` and has the owner's permissions on every API, export and attachment route, but cannot manage the account: `api-tokens`, `mcp-credentials`, `account/*` (password, second factor) and `logout` answer 403. Server administrator accounts cannot create tokens. Only SHA-256 hashes are kept. A token created with `access: "read_only"` may only read: any method but GET (and `POST /search`) answers 403, on every route.
 
 | Method | Path               | Contract                                                                                                                                                  |
 | ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api-tokens`      | Your tokens: `{id, name, access, created_at, expires_at, last_used_at}` (`last_used_at` recorded at most once a minute, `null` if never); never the token |
-| POST   | `/api-tokens`      | `{name, expires_days?, access?}`: 1–80 character name, 1–365 days (default 90), `read_write` (default) or `read_only`; returns `token` once; up to 20     |
+| GET    | `/api-tokens`      | Your tokens: `{id, name, workspace_id, access, created_at, expires_at, last_used_at}` (`last_used_at` recorded at most once a minute, `null` if never); never the token |
+| POST   | `/api-tokens`      | `{name, expires_days?, access?, workspace_id?}`: 1–80 character name, 1–365 days (default 90), `read_write` (default) or `read_only`; returns `token` once; up to 20     |
 | DELETE | `/api-tokens/{id}` | Revokes one of your tokens at once                                                                                                                        |
 
 `POST /notes/{id}/append` with `{markdown, after_block_id?}` adds Markdown to a note as blocks, at the end or after a block, like an edit in the app (the previous version goes to history, open editors update). Editor access; returns the note with `added_block_ids`.
@@ -169,6 +185,11 @@ minerva-cli backup ./backup [--files] [--full]   # notes as Markdown (or zips wi
 ```
 
 `backup` keeps `.minerva-backup.json` in the folder: the next run fetches only notes and databases changed since (by their last change), writes a renamed or moved one to its new place and removes its old file, and keeps files of notes deleted since. `--full`, or switching between Markdown and `--files`, fetches everything again.
+
+
+Personal tokens may optionally set `workspace_id` to one workspace the owner can currently access. Omission or `null` keeps the legacy all-accessible-workspaces behavior. The scope never grants permissions: folder roles and direct note shares must still authorize the request, and revocation takes effect immediately. The creation dialog defaults to the selected workspace and also offers all accessible workspaces.
+
+Scoped tokens support bootstrap and its note pages, search, rendering, embeds, folder and note operations (including comments and attachments), database records/pages, and note exports. Bootstrap lists only the chosen workspace, and direct note shares outside it are excluded. Account-wide routes, live subscriptions, replication, AI, plugins, imports, reminders, flashcards, sharing administration and future unaudited routes return 403. Read-only scope remains an independent restriction. Use a session for the full interactive application and MCP credentials for MCP clients.
 
 ## MCP credentials
 
@@ -351,3 +372,59 @@ People mentioned as `@person@example.com` who can open the note, and the thread'
 **Long recordings and speakers.** A recording larger than one transcription request (24 MiB) is sent in parts, cut where its format allows (WebM clusters, Ogg pages, WAV samples, MP3 frames; other formats must fit at once), up to the 60 MiB file limit; the job reports `part` and `parts` while it runs, and each part's times follow the earlier parts'. With a diarizing model (`MINERVA_ASR_MODEL` containing `diarize`, such as `gpt-4o-transcribe-diarize`), the request asks for `diarized_json` and segments carry `speaker`; labels are the provider's, per part. When notes are inserted, an action item's owner who is a member (their full name, or a first name only one member has) becomes an `@mention`.
 
 **Push notifications.** `GET /push` gives the server's VAPID public key (`key`, for `applicationServerKey`) and how many devices the caller subscribed. `POST /push/subscribe` takes the browser's `PushSubscription` (`{endpoint, keys: {p256dh, auth}}`), only for the push services of Chrome/Edge (FCM), Firefox, Safari and Windows, up to 10 per person; `POST /push/unsubscribe {endpoint}` removes one. A due reminder notifies everyone it emails, encrypted as RFC 8291 describes and signed with the VAPID key (RFC 8292); a subscription the push service answers 404 or 410 for is dropped. This works without email set up too.
+
+## OpenRouter providers and tools
+
+Administrators can create or update `/ai/providers` profiles with `kind: "openrouter"`,
+`endpoint: "https://openrouter.ai/api/v1"`, an exact `model` ID, and `api_key`.
+Keys use the existing encrypted provider storage and are never returned. OpenRouter
+uses the Responses API for chat, attachments and writing tasks.
+
+`POST /ai/providers/discover` is administrator-only. Send `{kind, endpoint, api_key}`
+for a new profile, or `{kind, endpoint, provider_id}` to reuse its stored key. Stored
+keys are reused only with the same endpoint. It queries `/models` and `/tools`,
+returning `{models, tools, tools_available}`. Models include IDs, display names,
+context lengths and modalities; the tool list includes supported active Responses
+API tools. Discovery has a 30-second timeout and an 8 MiB response limit. A failed
+tool catalog does not discard discovered models. Manual model IDs remain supported.
+
+`server_tools` is an administrator-controlled array, empty by default:
+
+- `openrouter:web_search`, `openrouter:web_fetch`, `openrouter:image_generation`
+- `openrouter:datetime`, `openrouter:fusion`, `openrouter:advisor`, `openrouter:subagent`
+- `openrouter:shell` (OpenRouter-hosted sandbox, not the desktop computer)
+- `minerva:shell` (desktop embedded server only; see below)
+
+These are explicit allowlists; chat callers cannot add tools. Fusion requires both
+web tools because OpenRouter enables them internally for its panel. Advisor and
+Subagent use the provider's defaults, including the outer model when no worker model
+is specified. Hosted tools incur additional provider charges and depend on routing
+and regional availability. OpenRouter currently labels these APIs beta; see its
+[server-tool documentation](https://openrouter.ai/docs/guides/features/server-tools).
+Chat sets `max_tool_calls: 8` per provider request. Writing workers have no tools;
+researched flashcards receive only the enabled web-search tool.
+
+Generated raster images arrive as `image` NDJSON packets with a data URL in `url`
+and are retained in the saved turn's `images` array (four images and 10 MB per turn,
+20 MB across the conversation). The UI displays and downloads them separately from
+the Markdown reply. Images are not replayed as context on later turns.
+
+### Desktop Shell
+
+Only `Store::open_local` enables desktop execution. Starting the network server with
+a desktop database does not enable Shell. Local owner settings live in a separate
+SQLite row; the default is `{directory: "", unattended: false}`. The administrator
+must also enable `minerva:shell` on the provider profile.
+
+- `GET /ai/shell/settings`; `PUT /ai/shell/settings` with `{directory, unattended}`.
+  The folder must be an existing absolute path. It is a working directory, not a sandbox.
+- `GET /ai/shell/pending/{chat}` lists pending commands for that chat's owner.
+- `POST /ai/shell/approval/{id}` with `{approved: true|false}` consumes an approval once.
+  Unanswered approvals expire after two minutes. Closing the dialog denies the command.
+- `POST /ai/shell/cancel/{chat}` cancels pending approvals and running tool work.
+
+Commands run through `/bin/sh -c` on Unix or `cmd.exe /D /S /C` on Windows, with
+stdin closed, a 30-second limit and up to 32 KiB each of stdout/stderr sent back to
+the model. Chat allows at most four desktop commands. The UI polls for approvals
+because the desktop webview buffers streaming responses. Unattended execution is
+an explicit user setting, not a provider response or model-controlled argument.

@@ -545,9 +545,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
      * holds the IDs of the notes that remain. Their changes are already saved
      * or no longer matter, so nothing is flushed.
      */
-    prune(kept, origin = location.origin) {
+    prune(kept, origin = location.origin, considered = null) {
       const gone = tabs.filter(
-        (t) => t.origin === origin && t.id && !t.chat && !kept.has(t.id),
+        (t) => t.origin === origin && t.id && !t.chat && !kept.has(t.id) && (!considered || considered.has(t.id)),
       );
       if (!gone.length) return;
       for (const tab of gone) {

@@ -4,9 +4,17 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Nonce,
 };
 use futures_util::StreamExt;
+#[path = "ai_openrouter.rs"]
+mod openrouter;
+#[path = "ai_shell.rs"]
+mod shell;
+use openrouter::{discovery, server_tools};
 use std::{io::Write, path::Path, time::Duration};
 
 pub(super) struct Runtime {
+    pub(super) desktop: bool,
+    shell_pending: HashMap<String, shell::Pending>,
+    shell_cancelled: HashSet<String>,
     key_path: Option<String>,
     memory_key: [u8; 32],
     client: reqwest::Client,
@@ -40,9 +48,23 @@ pub(super) fn initialize(
             "ALTER TABLE ai_providers ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT {DEFAULT_MAX_TOKENS}"
         ))?;
     }
+    let has_tools: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('ai_providers') WHERE name='server_tools')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_tools {
+        db.execute_batch(
+            "ALTER TABLE ai_providers ADD COLUMN server_tools TEXT NOT NULL DEFAULT '[]'",
+        )?;
+    }
+    db.execute_batch(r#"CREATE TABLE IF NOT EXISTS ai_shell_settings(id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT OR IGNORE INTO ai_shell_settings VALUES(1, '{"directory":"","unattended":false}');"#)?;
     let mut memory_key = [0; 32];
     OsRng.fill_bytes(&mut memory_key);
     Ok(Runtime {
+        desktop: false,
+        shell_pending: HashMap::new(),
+        shell_cancelled: HashSet::new(),
         key_path: if path == ":memory:" {
             None
         } else {
@@ -112,8 +134,10 @@ struct Provider {
     kind: String,
     endpoint: String,
     model: String,
-    /// Chat may search the web with the provider's own tool (OpenAI, Anthropic).
+    /// Chat may search with the provider's native web tool.
     web_search: bool,
+    #[serde(default)]
+    server_tools: Vec<String>,
     /// The longest answer the model may write, in tokens. Thinking models
     /// count their reasoning too, so they need more than cloud chat models.
     #[serde(default = "default_max_tokens")]
@@ -149,6 +173,8 @@ struct Source {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Turn {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    images: Vec<String>,
     question: String,
     answer: String,
     sources: Vec<Source>,
@@ -178,7 +204,7 @@ struct Context {
 }
 fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
     s.db.query_row(
-        "SELECT id,name,kind,endpoint,model,secret,web_search,max_tokens FROM ai_providers WHERE id=?1",
+        "SELECT id,name,kind,endpoint,model,secret,web_search,max_tokens,server_tools FROM ai_providers WHERE id=?1",
         [key],
         |r| {
             Ok((
@@ -190,6 +216,7 @@ fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
                     model: r.get(4)?,
                     web_search: r.get(6)?,
                     max_tokens: r.get(7)?,
+                    server_tools: serde_json::from_str(&r.get::<_, String>(8)?).unwrap_or_default(),
                 },
                 r.get(5)?,
             ))
@@ -215,7 +242,15 @@ fn endpoint_allowed(endpoint: &str) -> bool {
 }
 fn provider_kind(v: &Value) -> Result<String, ApiError> {
     let kind = field(v, "kind")?;
-    if !["openai", "deepseek", "anthropic", "compatible"].contains(&kind.as_str()) {
+    if ![
+        "openai",
+        "openrouter",
+        "deepseek",
+        "anthropic",
+        "compatible",
+    ]
+    .contains(&kind.as_str())
+    {
         return Err(bad("Unknown provider"));
     }
     Ok(kind)
@@ -229,11 +264,14 @@ fn provider_endpoint(v: &Value) -> Result<String, ApiError> {
     }
     Ok(endpoint)
 }
-/// Whether chat may search the web. Only OpenAI and Anthropic offer a search
-/// tool of their own; it runs at the provider and is billed there.
+/// Provider-native search runs remotely and is billed by the provider.
 fn web_search(v: &Value, kind: &str) -> Result<bool, ApiError> {
-    let on = v["web_search"].as_bool().unwrap_or(false);
-    if on && !matches!(kind, "openai" | "anthropic") {
+    let on = v["web_search"].as_bool().unwrap_or(false)
+        || (kind == "openrouter"
+            && server_tools(v, kind)?
+                .iter()
+                .any(|t| t == "openrouter:web_search"));
+    if on && !matches!(kind, "openai" | "openrouter" | "anthropic") {
         return Err(bad(
             "Web search is available for OpenAI and Anthropic providers",
         ));
@@ -419,7 +457,7 @@ fn user_content(kind: &str, question: &str, files: &[Upload]) -> Result<Value, A
         ));
     }
     let text = |t: String| match kind {
-        "openai" => json!({"type":"input_text","text":t}),
+        "openai" | "openrouter" => json!({"type":"input_text","text":t}),
         _ => json!({"type":"text","text":t}),
     };
     let mut parts = vec![];
@@ -430,12 +468,12 @@ fn user_content(kind: &str, question: &str, files: &[Upload]) -> Result<Value, A
                 text(format!("<document name=\"{label}\">\n{content}\n</document>"))
             }
             UploadKind::Image(media, data) => match kind {
-                "openai" => json!({"type":"input_image","image_url":format!("data:{media};base64,{data}")}),
+                "openai" | "openrouter" => json!({"type":"input_image","image_url":format!("data:{media};base64,{data}")}),
                 "anthropic" => json!({"type":"image","source":{"type":"base64","media_type":media,"data":data}}),
                 _ => json!({"type":"image_url","image_url":{"url":format!("data:{media};base64,{data}")}}),
             },
             UploadKind::Pdf(data) => match kind {
-                "openai" => json!({"type":"input_file","filename":label,"file_data":format!("data:application/pdf;base64,{data}")}),
+                "openai" | "openrouter" => json!({"type":"input_file","filename":label,"file_data":format!("data:application/pdf;base64,{data}")}),
                 "anthropic" => json!({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":data},"title":label}),
                 _ => json!({"type":"file","file":{"filename":label,"file_data":format!("data:application/pdf;base64,{data}")}}),
             },
@@ -583,6 +621,30 @@ fn load_chat(s: &Store, u: &User, key: &str) -> Result<Chat, ApiError> {
     }
     Ok(chat)
 }
+// Revalidate a running conversation without decoding its saved image payloads
+// for every text delta. Scope and source permissions still use current data.
+fn chat_live(s: &Store, u: &User, chat: &Chat) -> Result<(), ApiError> {
+    let exists: bool =
+        s.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ai_chats WHERE id=?1 AND user_id=?2)",
+            params![chat.id, u.id],
+            |r| r.get(0),
+        )
+        .map_err(|_| internal())?;
+    if !exists || chat.user_id != u.id {
+        return Err(missing());
+    }
+    scope_folders(&s.data, u, &chat.scope)?;
+    if chat
+        .turns
+        .iter()
+        .flat_map(|t| &t.sources)
+        .any(|source| !source_allowed(&s.data, u, &chat.scope, source))
+    {
+        return Err(forbidden());
+    }
+    Ok(())
+}
 fn save_chat(s: &Store, chat: &Chat) -> Result<(), ApiError> {
     s.db.execute(
         "INSERT OR REPLACE INTO ai_chats VALUES(?1,?2,?3)",
@@ -602,6 +664,16 @@ fn route(
     parts: &[&str],
     v: Value,
 ) -> Result<Value, ApiError> {
+    if parts.first() == Some(&"shell") {
+        return shell::route(s, u, method, parts, &v);
+    }
+    if v["server_tools"]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|t| t == "minerva:shell"))
+        && !s.ai.desktop
+    {
+        return Err(forbidden());
+    }
     match (method.as_str(), parts) {
         ("GET", ["providers"]) => {
             let mut stmt =
@@ -624,6 +696,7 @@ fn route(
                 id: id(),
                 name: field(&v, "name")?,
                 web_search: web_search(&v, &kind)?,
+                server_tools: server_tools(&v, &kind)?,
                 max_tokens: max_tokens(&v)?,
                 kind,
                 endpoint: provider_endpoint(&v)?,
@@ -637,7 +710,7 @@ fn route(
                 return Err(bad("Maximum 20 provider profiles"));
             }
             s.db.execute(
-                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search, max_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search, max_tokens, server_tools) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     p.id,
                     p.name,
@@ -646,7 +719,8 @@ fn route(
                     p.model,
                     s.ai.encrypt(secret)?,
                     p.web_search,
-                    p.max_tokens
+                    p.max_tokens,
+                    serde_json::to_string(&p.server_tools).map_err(|_| internal())?
                 ],
             )
             .map_err(|_| internal())?;
@@ -660,6 +734,7 @@ fn route(
                 id: old.id.clone(),
                 name: field(&v, "name")?,
                 web_search: web_search(&v, &kind)?,
+                server_tools: server_tools(&v, &kind)?,
                 max_tokens: max_tokens(&v)?,
                 kind,
                 endpoint: provider_endpoint(&v)?,
@@ -680,12 +755,12 @@ fn route(
             }
             match secret {
                 Some(secret) => s.db.execute(
-                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?8, secret=?7 WHERE id=?1",
-                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, s.ai.encrypt(secret)?, p.max_tokens],
+                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?8, secret=?7, server_tools=?9 WHERE id=?1",
+                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, s.ai.encrypt(secret)?, p.max_tokens, serde_json::to_string(&p.server_tools).map_err(|_| internal())?],
                 ),
                 None => s.db.execute(
-                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?7 WHERE id=?1",
-                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, p.max_tokens],
+                    "UPDATE ai_providers SET name=?2, kind=?3, endpoint=?4, model=?5, web_search=?6, max_tokens=?7, server_tools=?8 WHERE id=?1",
+                    params![p.id, p.name, p.kind, p.endpoint, p.model, p.web_search, p.max_tokens, serde_json::to_string(&p.server_tools).map_err(|_| internal())?],
                 ),
             }
             .map_err(|_| internal())?;
@@ -779,6 +854,7 @@ impl Drop for Active {
     fn drop(&mut self) {
         if let Ok(mut s) = self.store.lock() {
             s.ai.active.remove(&self.user_id);
+            s.ai.shell_pending.retain(|_, p| p.user != self.user_id);
         }
     }
 }
@@ -886,6 +962,11 @@ pub(super) async fn endpoint(
         .trim_start_matches("/api/v1/ai/")
         .split('/')
         .collect();
+    if method == Method::POST && parts.as_slice() == ["providers", "discover"] {
+        return discovery(&store, &headers, &v)
+            .await
+            .map(|v| axum::Json(v).into_response());
+    }
     if method == Method::POST && parts.as_slice() == ["transform"] {
         return transform(&store, &headers, v).await;
     }
@@ -936,6 +1017,7 @@ pub(super) async fn endpoint(
             ));
         }
         s.ai.active.insert(u.id.clone());
+        s.ai.shell_cancelled.remove(&chat.id);
         let active = Active {
             store: store.clone(),
             user_id: u.id.clone(),
@@ -960,18 +1042,20 @@ pub(super) async fn endpoint(
         // Keep bounded history, and recheck all of its source permissions on every request.
         for turn in chat.turns.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev() {messages.push(json!({"role":"user","content":turn.question}));messages.push(json!({"role":"assistant","content":turn.answer}));}
         messages.push(json!({"role":"user","content":content}));
-        let request = model_request(&client, &provider, &secret, &system, messages, true, true);
+        let mut answer=String::new();let mut usage=json!({});let mut done=false;let mut failed=false;
+        let mut truncated=false;let mut thinking=false;let mut images:Vec<String>=Vec::new();
+        let mut web:Vec<(String,String)>=Vec::new();
+        let mut shell_count=0;
+        for round in 0..=4 {
+        let mut output_items=Vec::new();
+        let request = model_request(&client, &provider, &secret, &system, messages.clone(), true, true);
         let response=match request.send().await {Ok(r) if r.status().is_success()=>r,Ok(r)=>{yield packet(json!({"type":"error","message":i18n::fill("Provider returned HTTP {status}. Check the model, key, quota and endpoint.",&[("status",&r.status().as_u16().to_string())])}));return},Err(_)=>{yield packet(json!({"type":"error","message":i18n::msg("Provider connection failed or timed out.")}));return}};
-        let mut upstream=response.bytes_stream(); let mut buffer=Vec::new(); let mut answer=String::new();let mut usage=json!({});let mut done=false;let mut failed=false;
-        // The model stopped at its length limit; what it wrote is kept. Thinking
-        // models first stream their reasoning, which is not part of the answer.
-        let mut truncated=false;let mut thinking=false;
-        // Web pages the provider cited, listed under the answer: (title, url).
-        let mut web: Vec<(String,String)>=Vec::new();
+        let mut upstream=response.bytes_stream(); let mut buffer=Vec::new();
+        done=false;
         while let Some(chunk)=upstream.next().await {
             let chunk=match chunk {Ok(c)=>c,Err(_)=>{failed=true;break}};
             buffer.extend_from_slice(&chunk);
-            if buffer.len()>1_048_576 {failed=true;break;}
+            if buffer.len()>12_582_912 {failed=true;break;}
             while let Some(end)=buffer.iter().position(|b|*b==b'\n') {
                 let line:Vec<_>=buffer.drain(..=end).collect();
                 let Ok(line)=std::str::from_utf8(&line) else {failed=true;break};
@@ -979,14 +1063,27 @@ pub(super) async fn endpoint(
                 if raw=="[DONE]" {done=true;break;}
                 let value:Value=match serde_json::from_str(raw){Ok(v)=>v,Err(_)=>{failed=true;break}};
                 let event=value["type"].as_str().unwrap_or("");
+                if provider.kind == "openrouter" && provider.server_tools.iter().any(|t|t=="minerva:shell") && event == "response.output_item.done" && value["item"]["type"] != "openrouter:image_generation" {
+                    if value["item"].to_string().len() > 128_000 || output_items.len() >= 32 {failed=true;break;}
+                    output_items.push(value["item"].clone());
+                }
+                if provider.kind == "openrouter" && provider.server_tools.iter().any(|t|t=="openrouter:image_generation") && event == "response.output_item.done" {
+                    if let Some(image) = openrouter::image(&value["item"]) {
+                        let allowed={let s=store.lock().map_err(|_|internal());s.is_ok_and(|s|authenticate(&s.data,&headers).is_ok() && chat_live(&s,&user,&chat).is_ok() && context.sources.iter().all(|source|source_allowed(&s.data,&user,&chat.scope,source)))};
+                        if !allowed || images.iter().map(String::len).sum::<usize>() + image.len() > 10_000_000 || chat.turns.iter().flat_map(|t| &t.images).map(String::len).sum::<usize>() + images.iter().map(String::len).sum::<usize>() + image.len() > 20_000_000 {failed=true;break;}
+                        if images.len()<4 && !images.iter().any(|s| s == image) {
+                            images.push(image.to_string());yield packet(json!({"type":"image","url":image}));
+                        }
+                    }
+                }
                 // The last chunk may carry both final text and the stop: read it first.
                 let length_stop=value["choices"][0]["finish_reason"]=="length" || value["delta"]["stop_reason"]=="max_tokens" || event=="response.incomplete";
                 if ["error","response.failed"].contains(&event) || value.get("error").is_some() {failed=true;break;}
                 let reasoning=value["choices"][0]["delta"]["reasoning_content"].as_str().or(value["choices"][0]["delta"]["reasoning"].as_str()).or((event=="content_block_delta" && value["delta"]["type"]=="thinking_delta").then(||"…"));
                 if !thinking && reasoning.is_some_and(|r|!r.is_empty()) {thinking=true;yield packet(json!({"type":"thinking"}));}
-                let delta=match provider.kind.as_str(){"openai" if event=="response.output_text.delta"=>value["delta"].as_str(),"anthropic" if event=="content_block_delta"=>value["delta"]["text"].as_str(),"deepseek"|"compatible"=>value["choices"][0]["delta"]["content"].as_str(),_=>None};
+                let delta=match provider.kind.as_str(){"openai"|"openrouter" if event=="response.output_text.delta"=>value["delta"].as_str(),"anthropic" if event=="content_block_delta"=>value["delta"]["text"].as_str(),"deepseek"|"compatible"=>value["choices"][0]["delta"]["content"].as_str(),_=>None};
                 if let Some(delta)=delta {
-                    let allowed={let s=store.lock().map_err(|_|internal());s.is_ok_and(|s|authenticate(&s.data,&headers).is_ok() && context.sources.iter().all(|source|source_allowed(&s.data,&user,&chat.scope,source)) && load_chat(&s,&user,&chat.id).is_ok())};
+                    let allowed={let s=store.lock().map_err(|_|internal());s.is_ok_and(|s|authenticate(&s.data,&headers).is_ok() && context.sources.iter().all(|source|source_allowed(&s.data,&user,&chat.scope,source)) && chat_live(&s,&user,&chat).is_ok())};
                     if !allowed {failed=true;break;}
                     answer.push_str(delta); if answer.len()>64_000 {failed=true;break;}
                     yield packet(json!({"type":"delta","text":delta}));
@@ -1000,20 +1097,38 @@ pub(super) async fn endpoint(
                 }
                 if value["usage"].is_object() {for (key,val) in value["usage"].as_object().unwrap(){usage[key]=val.clone();}}
                 if event=="message_start" {usage=value["message"]["usage"].clone();}
-                if event=="response.completed" {usage=value["response"]["usage"].clone();done=true;}
+                if event=="response.completed" {
+                    if round==0 {usage=value["response"]["usage"].clone();}
+                    else if let Some(fields)=value["response"]["usage"].as_object() {for (key,val) in fields {if let Some(n)=val.as_u64() {usage[key]=json!(usage[key].as_u64().unwrap_or(0).saturating_add(n));}}}
+                    done=true;
+                }
                 if event=="message_stop" {done=true;}
             }
             if done || failed {break;}
         }
+        let calls:Vec<_>=output_items.iter().filter(|i|i["type"]=="function_call").cloned().collect();
+        if calls.is_empty() || !done || failed || truncated {break;}
+        if round==4 {failed=true;break;}
+        messages.extend(output_items);
+        for call in calls {
+            shell_count+=1;
+            if shell_count>4 || call["name"]!="minerva_shell" || !provider.server_tools.iter().any(|t|t=="minerva:shell") {failed=true;break;}
+            let args:Value=serde_json::from_str(call["arguments"].as_str().unwrap_or("")).unwrap_or(Value::Null);
+            let result=shell::run(&store,&headers,&user,&chat,&provider.id,args["command"].as_str().unwrap_or("")).await;
+            let text=match result {Ok(text)=>text,Err(e)=>{yield packet(json!({"type":"error","message":e.1}));return;}};
+            messages.push(json!({"type":"function_call_output","call_id":call["call_id"],"output":text}));
+        }
+        if failed {break;}
+        }
         if truncated && answer.trim().is_empty() {yield packet(json!({"type":"error","message":i18n::msg("The model reached its length limit before answering, probably while reasoning. Give the model a larger context window, or ask for less at once.")}));return;}
-        if failed || !done || answer.is_empty() {yield packet(json!({"type":"error","message":i18n::msg("Response was interrupted, unavailable, or access changed. Partial output was not saved; retry or start a new chat.")}));return;}
+        if failed || !done || (answer.is_empty() && images.is_empty()) {yield packet(json!({"type":"error","message":i18n::msg("Response was interrupted, unavailable, or access changed. Partial output was not saved; retry or start a new chat.")}));return;}
         if truncated {let note="\n\n> [!WARNING]\n> The answer was cut off: the model reached its length limit. Ask it to continue, or give the model a larger context window.";answer.push_str(note);yield packet(json!({"type":"delta","text":note}));}
         // Cited pages the answer does not already link, as a list of links.
         let listed:Vec<_>=web.iter().filter(|(_,url)|!answer.contains(url.as_str())).map(|(title,url)|format!("- [{}]({})",title.replace(['[',']','\n'],""),url.replace(['(',')',' '],""))).collect();
         if !listed.is_empty() {let sources=format!("\n\n**Web sources**\n{}",listed.join("\n"));answer.push_str(&sources);yield packet(json!({"type":"delta","text":sources}));}
         chat.title=chat.turns.first().map(|t|t.question.chars().take(80).collect()).unwrap_or_else(||question.chars().take(80).collect());
-        chat.turns.push(Turn{question,answer,sources:context.sources.clone(),usage:usage.clone(),created_at:now(),provider:provider.name.clone(),model:provider.model.clone(),files:names});chat.updated_at=now();
-        let saved={let s=store.lock().map_err(|_|internal());s.and_then(|s|{authenticate(&s.data,&headers)?;load_chat(&s,&user,&chat.id)?;if context.sources.iter().any(|source|!source_allowed(&s.data,&user,&chat.scope,source)){return Err(forbidden());}save_chat(&s,&chat)})};
+        chat.turns.push(Turn{images,question,answer,sources:context.sources.clone(),usage:usage.clone(),created_at:now(),provider:provider.name.clone(),model:provider.model.clone(),files:names});chat.updated_at=now();
+        let saved={let s=store.lock().map_err(|_|internal());s.and_then(|s|{authenticate(&s.data,&headers)?;chat_live(&s,&user,&chat)?;if context.sources.iter().any(|source|!source_allowed(&s.data,&user,&chat.scope,source)){return Err(forbidden());}save_chat(&s,&chat)})};
         if saved.is_err() {yield packet(json!({"type":"error","message":i18n::msg("Response could not be saved. Your access may have changed.")}));return;}
         yield packet(json!({"type":"done","usage":usage,"revision":chat.turns.len()}));
     };
@@ -1108,7 +1223,7 @@ fn model_request(
     search: bool,
 ) -> reqwest::RequestBuilder {
     let (suffix, mut payload) = match p.kind.as_str() {
-        "openai" => (
+        "openai" | "openrouter" => (
             "responses",
             json!({"model":p.model,"instructions":system,"input":messages,"store":false,"max_output_tokens":p.max_tokens}),
         ),
@@ -1125,14 +1240,36 @@ fn model_request(
         }
     };
     // Search is opt-in for chat and researched flashcards; workers never search.
-    if search && p.web_search {
+    if search && p.web_search && p.kind != "openrouter" {
         payload["tools"] = match p.kind.as_str() {
-            "openai" => json!([{"type":"web_search"}]),
+            "openai" | "openrouter" => json!([{"type":"web_search"}]),
             _ => json!([{"type":"web_search_20250305","name":"web_search","max_uses":5}]),
         };
     }
     if search && p.web_search && p.kind == "openai" {
         payload["include"] = json!(["web_search_call.action.sources"]);
+    }
+    if search && p.kind == "openrouter" {
+        // Research workers receive search only; interactive chat receives the admin allowlist.
+        let mut names = if stream {
+            p.server_tools.clone()
+        } else {
+            Vec::new()
+        };
+        if p.web_search && !names.iter().any(|t| t == "openrouter:web_search") {
+            names.push("openrouter:web_search".into());
+        }
+        if !names.is_empty() {
+            payload["tools"] = json!(names
+                .iter()
+                .map(|t| if t == "minerva:shell" {
+                    shell::definition()
+                } else {
+                    json!({"type":t})
+                })
+                .collect::<Vec<_>>());
+            payload["max_tool_calls"] = json!(8);
+        }
     }
     payload["stream"] = json!(stream);
     if stream && suffix == "chat/completions" {
@@ -1185,7 +1322,9 @@ pub(super) fn flashcard_completion(
     research: bool,
 ) -> Result<Completion, ApiError> {
     let (p, encrypted) = provider(s, provider_id)?;
-    if research && (!p.web_search || !matches!(p.kind.as_str(), "openai" | "anthropic")) {
+    if research
+        && (!p.web_search || !matches!(p.kind.as_str(), "openai" | "openrouter" | "anthropic"))
+    {
         return Err(bad(
             "Topic research requires an OpenAI or Anthropic profile with web search enabled.",
         ));
@@ -1232,7 +1371,7 @@ impl Completion {
         let v: Value =
             serde_json::from_slice(&bytes).map_err(|_| bad("Provider returned invalid JSON"))?;
         let answer = match self.kind.as_str() {
-            "openai" => {
+            "openai" | "openrouter" => {
                 if v["status"] != "completed" {
                     return Err(bad("Provider response was incomplete"));
                 }

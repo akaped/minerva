@@ -3,6 +3,7 @@ mod ai;
 mod anki;
 mod attachments;
 mod audio;
+mod bootstrap;
 mod calendar;
 mod collaboration;
 mod comments;
@@ -255,6 +256,7 @@ impl Store {
             if !s.data.local {
                 return Err(format!("{path} belongs to a server, not a desktop app").into());
             }
+            s.ai.desktop = true;
             let mut d = s.data.clone();
             let user_id = d.users[0].user.id.clone();
             d.sessions.clear();
@@ -466,6 +468,7 @@ fn ensure_personal(d: &mut Data) {
 /// A new server's data: its first account, a workspace, and a welcome note.
 fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
     let user = User {
+        token_workspace: None,
         id: id(),
         name: if local { "You" } else { "Administrator" }.into(),
         email: email.to_lowercase(),
@@ -574,6 +577,9 @@ fn role(d: &Data, u: &User, folder_id: &str) -> Option<Role> {
         return None;
     }
     let f = d.folders.iter().find(|f| f.id == folder_id)?;
+    if !tokens::within(u, &f.workspace_id) {
+        return None;
+    }
     if let Some(r) = replication::replica(d, &f.workspace_id) {
         return replication::replica_role(d, r, folder_id);
     }
@@ -701,6 +707,9 @@ fn access(d: &Data, u: &User, f: &str, write: bool) -> Result<(), ApiError> {
 /// Effective access to one note: its folder role, raised by a direct member share.
 fn note_role(d: &Data, u: &User, n: &Note) -> Option<Role> {
     if u.admin && !d.local {
+        return None;
+    }
+    if !tokens::note_within(d, u, n) {
         return None;
     }
     let folder = role(d, u, &n.folder_id);
@@ -894,6 +903,9 @@ fn admin(u: &User) -> Result<(), ApiError> {
     }
 }
 fn owns(d: &Data, u: &User, w: &str) -> bool {
+    if !tokens::within(u, w) {
+        return false;
+    }
     if u.admin && !d.local {
         return false;
     }
@@ -905,6 +917,9 @@ fn owns(d: &Data, u: &User, w: &str) -> bool {
 /// The owner, and members who can edit the whole workspace: they add folders
 /// and set up its Journal and Templates.
 fn edits_workspace(d: &Data, u: &User, w: &str) -> bool {
+    if !tokens::within(u, w) {
+        return false;
+    }
     if u.admin && !d.local {
         return false;
     }
@@ -1087,9 +1102,11 @@ pub fn app(store: Shared) -> Router {
         .route("/api/v1/shared/link-preview", get(previews::guest_endpoint))
         .route("/api/v1/shared/live", get(live::guest_endpoint))
         .route("/api/v1/shared/{*path}", any(sharing::shared).layer(DefaultBodyLimit::max(attachments::FILE_LIMIT + 1024)))
+        .route("/api/v1/bootstrap/notes", get(bootstrap::endpoint))
         .route("/api/v1/live", get(live::endpoint))
         .route("/api/v1/live/wait", get(live::wait))
         .route("/api/v1/link-preview", get(previews::endpoint))
+        .route("/api/v1/import/notion", axum::routing::post(import::notion_endpoint))
         .route("/api/v1/import", axum::routing::post(import::endpoint).layer(DefaultBodyLimit::max(import::IMPORT_LIMIT)))
         .route("/api/v1/admin/overview", get(administration::overview))
         .route("/api/v1/admin/storage", any(attachments::storage))
@@ -1151,12 +1168,17 @@ async fn api(
         {
             return Err(bad("X-Minerva-Client: 1 is required"));
         }
-        let value: Value = if body.is_empty() {
+        let mut value: Value = if body.is_empty() {
             json!({})
         } else {
             serde_json::from_slice(&body).map_err(|_| bad("Invalid JSON"))?
         };
         let path = uri.path().trim_start_matches("/api/v1/");
+        if method == Method::GET && path == "bootstrap" {
+            value = json!({"omit_notes": url::form_urlencoded::parse(
+                uri.query().unwrap_or("").as_bytes()
+            ).any(|(k, v)| k == "notes" && v == "0")});
+        }
         let outcome = if path.starts_with("sync/") || path.starts_with("local/") {
             authenticate(&d, &headers).and_then(|u| {
                 let query = uri.query().unwrap_or("");
@@ -1418,6 +1440,7 @@ fn dispatch(
             let workspaces: Vec<_> = d
                 .workspaces
                 .iter()
+                .filter(|w| tokens::within(&u, &w.id))
                 .filter(|w| {
                     owns(d, &u, &w.id)
                         || (!u.admin
@@ -1431,7 +1454,7 @@ fn dispatch(
             let notes: Vec<_> = d
                 .notes
                 .iter()
-                .filter(|n| readable.contains(n.folder_id.as_str()))
+                .filter(|n| v["omit_notes"] != true && readable.contains(n.folder_id.as_str()))
                 .map(|n| {
                     let mut v = note_summary(n);
                     v["sharing"] = sharing::summary(d, &n.id);
@@ -1460,7 +1483,7 @@ fn dispatch(
                 })
                 .collect();
             let account = d.users.iter().find(|a| a.user.id == u.id);
-            json!({"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            json!({"notes_paged":v["omit_notes"] == true,"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()).filter(|w| tokens::within(&u, w)),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -1969,6 +1992,7 @@ fn dispatch(
             };
             let hash = password_hash(&password)?;
             let user = User {
+                token_workspace: None,
                 id: id(),
                 name: field(&v, "name")?,
                 email,

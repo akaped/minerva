@@ -96,7 +96,7 @@ function kind(url, request) {
     url.pathname === "/emoji.json"
   )
     return "file";
-  if (url.pathname === "/api/v1/bootstrap") return "data";
+  if (["/api/v1/bootstrap", "/api/v1/bootstrap/notes"].includes(url.pathname)) return "data";
   if (/^\/api\/v1\/notes\/[0-9a-f-]{36}$/.test(url.pathname)) return "data";
   // Files: pictures and previews, and the files themselves (PDFs, sound…).
   if (/^\/api\/v1\/attachments\/[0-9a-f-]{36}(\/preview)?$/.test(url.pathname))
@@ -172,10 +172,11 @@ async function networkFirst(request, cacheName, options = {}) {
 // otherwise the kept copy, marked as one.
 async function data(request) {
   const url = new URL(request.url);
+  const key = url.pathname + (url.pathname === "/api/v1/bootstrap/notes" ? url.search : "");
   const keep = (await setting("offline")) === "1";
   const fallback = async (response) => {
     const kept =
-      keep && (await caches.match(url.pathname, { cacheName: DATA }));
+      keep && (await caches.match(key, { cacheName: DATA }));
     if (!kept) return response || offline();
     const headers = new Headers(kept.headers);
     headers.set("x-minerva-offline", "1");
@@ -204,7 +205,7 @@ async function data(request) {
     }
   }
   const cache = await caches.open(DATA);
-  await cache.put(url.pathname, response.clone());
+  await cache.put(key, response.clone());
   const keys = await cache.keys();
   for (const old of keys.slice(0, Math.max(0, keys.length - MAX_KEPT)))
     if (!old.url.endsWith("/api/v1/bootstrap")) await cache.delete(old);

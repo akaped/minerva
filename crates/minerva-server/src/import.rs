@@ -11,6 +11,9 @@
 //! split into blocks as if typed: a block per paragraph and per list item, nested
 //! by indentation.
 use super::*;
+#[path = "notion_import.rs"]
+mod notion;
+pub(super) use notion::endpoint as notion_endpoint;
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 

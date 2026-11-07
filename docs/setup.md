@@ -118,10 +118,11 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 - Live collaborative editing using Yjs in the browser and Yrs in Rust: concurrent text merging, collaborator presence, stable block IDs, and reconnect retries.
 - Structured databases inside folders: typed text, number, checkbox, date, select, and URL properties; inline cell editing; filtering and sorting; table and select-grouped board views; recoverable record archive; editable properties and permanent deletion of records, properties, and databases; live databases inside notes (`/` → Database).
 - Light, Dark, and System themes, remembered in the browser.
-- AI chat with OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible API, limited to the workspace, folder, or note you choose and to what you may read:
+- AI chat with OpenRouter, OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible API, limited to the workspace, folder, or note you choose and to what you may read:
   - Ask AI in a note opens the chat in a tab beside it, about that note.
   - Replies appear as note blocks. Add one block or the whole reply to the note, save the reply as a new note, or copy its Markdown.
   - Providers can be edited by administrators, who can also allow web search for OpenAI and Anthropic providers: the model then researches the web, and the pages it cites are listed under its answer.
+  - OpenRouter setup can load models and server tools from its API. Administrators enable tools per profile; desktop Shell has separate user approval and unattended settings. See [OpenRouter setup and tools](api.md#openrouter-providers-and-tools).
   - Conversations can be deleted one by one or all at once.
 - Built-in read-only MCP over stateless Streamable HTTP, with workspace-scoped credentials, expiry, revocation, note search/read, and typed database queries. See [MCP setup](mcp.md).
 - Sharing: share a note with a member (view or edit), or create view/edit links that work without signing in, with revocation. Publish notes as clean public pages at `/shared/{slug}`, pinned or live, with an index and an Atom feed, or group them into sites with their own paths, such as a `/blog` or a `/wiki`. See [Sharing](sharing.md).

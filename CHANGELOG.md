@@ -12,6 +12,12 @@ turns that section into the next version.
 
 ### Added
 
+- **OpenRouter:** discover available models and tools during provider setup, configure server tools per profile, and display generated images in chat. Desktop Shell asks before each command by default, with an optional unattended setting and working folder. Hosted Shell is labeled separately.
+
+- **Workspace-limited API tokens:** choose a workspace when creating a personal token. Note and folder permissions, direct shares, search, databases, exports and attachments stay inside that workspace and follow later permission changes. Account-wide features and unaudited routes are denied for scoped tokens; existing unscoped tokens keep working.
+- **Import directly from Notion:** import a page and its child pages using a Notion connection token, without making an export. Text, headings, lists, tasks and code are converted to notes; child-page links point to the imported notes. The token is not saved. Database tables, files and unsupported blocks remain links to Notion with a warning; the export importer still copies tables and files.
+- **Paged sidebar loading:** the browser fetches notes for the selected workspace in pages of 200, and fetches another workspace when opened. Note tabs in other workspaces stay open. Legacy bootstrap clients keep the complete response.
+
 - **Flashcard statistics:** reviews per day, your true retention against your target, your study streak, the recall expected now, new, learning, mature and paused cards, and what comes due in the next 30 days, for one deck or all of them.
 - **Your own scheduling:** choose the desired retention (70–97%), and **Optimize for my memory** fits the FSRS scheduler's weights to your review history, keeping them only if they predict your recall better than the defaults. Every review is now logged for this.
 - **Pictures and sounds on cards:** **Add picture or sound** and **Record sound** in the card editor; Anki imports keep their sounds, and with review progress, their review history, which rebuilds each card's memory.

@@ -24,9 +24,11 @@ pub(super) struct ApiToken {
     /// Reads only: anything but GET (and search) is refused.
     #[serde(default)]
     read_only: bool,
+    #[serde(default)]
+    workspace_id: Option<String>,
 }
 fn view(db: &Connection, t: &ApiToken) -> Value {
-    json!({"id":t.id,"name":t.name,"created_at":t.created_at,"expires_at":t.expires_at,"access":if t.read_only {"read_only"} else {"read_write"},"last_used_at":last_used(db, &t.token_hash)})
+    json!({"id":t.id,"workspace_id":t.workspace_id,"name":t.name,"created_at":t.created_at,"expires_at":t.expires_at,"access":if t.read_only {"read_only"} else {"read_write"},"last_used_at":last_used(db, &t.token_hash)})
 }
 
 pub(super) fn initialize(db: &Connection) -> rusqlite::Result<()> {
@@ -79,6 +81,9 @@ pub(super) async fn guard(
             if current.is_some() || s.data.mcp_credentials.iter().any(|c| c.hash() == hash) {
                 touch(&s.db, &hash);
             }
+            if current.is_some_and(|t| t.workspace_id.is_some()) && !scoped_path(req.uri().path()) {
+                return forbidden().into_response();
+            }
             current.is_some_and(|t| t.read_only) && !reads(req.method(), req.uri().path())
         };
         if refused {
@@ -102,7 +107,11 @@ pub(super) fn user(d: &Data, token: &str) -> Option<User> {
     d.users
         .iter()
         .find(|a| a.user.id == t.user_id && !a.user.disabled && (!a.user.admin || d.local))
-        .map(|a| a.user.clone())
+        .map(|a| {
+            let mut user = a.user.clone();
+            user.token_workspace = t.workspace_id.clone();
+            user
+        })
 }
 /// Whether the request signs in with a personal token.
 pub(super) fn used(headers: &HeaderMap) -> bool {
@@ -155,6 +164,21 @@ pub(super) fn route(
                 "read_write" => false,
                 _ => return Err(bad("Access is read_only or read_write")),
             };
+            let workspace_id = match v.get("workspace_id") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(w)) if !w.is_empty() => {
+                    if !d.workspaces.iter().any(|ws| ws.id == *w)
+                        || !(owns(d, u, w)
+                            || d.folders
+                                .iter()
+                                .any(|f| f.workspace_id == *w && role(d, u, &f.id).is_some()))
+                    {
+                        return Err(forbidden());
+                    }
+                    Some(w.clone())
+                }
+                _ => return Err(forbidden()),
+            };
             d.api_tokens.retain(|t| t.expires_at > now());
             if d.api_tokens.iter().filter(|t| t.user_id == u.id).count() >= LIMIT {
                 return Err(bad("Revoke an existing token before creating another"));
@@ -168,6 +192,7 @@ pub(super) fn route(
                 created_at: now(),
                 expires_at: now() + days * 86400,
                 read_only,
+                workspace_id,
             };
             let mut result = view(db, &t);
             // Shown once: only its hash is kept.
@@ -190,4 +215,39 @@ pub(super) fn route(
 /// Revokes every token of a deleted account.
 pub(super) fn forget_user(d: &mut Data, user_id: &str) {
     d.api_tokens.retain(|t| t.user_id != user_id);
+}
+
+/// Workspace scope is an additional restriction, never an access grant.
+pub(super) fn within(u: &User, workspace: &str) -> bool {
+    u.token_workspace.as_deref().is_none_or(|w| w == workspace)
+}
+pub(super) fn note_within(d: &Data, u: &User, n: &Note) -> bool {
+    u.token_workspace.is_none()
+        || d.folders
+            .iter()
+            .any(|f| f.id == n.folder_id && within(u, &f.workspace_id))
+}
+/// Fail closed for account-wide APIs and future routes until they have been
+/// audited for workspace isolation. Resource handlers still enforce live roles.
+fn scoped_path(path: &str) -> bool {
+    let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+    match parts.as_slice() {
+        ["export", _] => true,
+        ["api", "v1", "bootstrap", "notes"] => true,
+        ["api", "v1", "bootstrap" | "search" | "render" | "embeds"] => true,
+        ["api", "v1", "folders" | "notes" | "databases"] => true,
+        ["api", "v1", "folders", _] => true,
+        ["api", "v1", "notes", _] => true,
+        ["api", "v1", "notes", _, "blocks", _] => true,
+        ["api", "v1", "notes", _, "attachments" | "comments"] => true,
+        ["api", "v1", "notes", _, "attachments" | "comments", _] => true,
+        ["api", "v1", "notes", _, "comments", _, _] => true,
+        ["api", "v1", "notes", _, "append" | "folding" | "metadata" | "history" | "sync"] => true,
+        ["api", "v1", "attachments", _] | ["api", "v1", "attachments", _, "preview"] => true,
+        ["api", "v1", "databases", _] => true,
+        ["api", "v1", "databases", _, "people" | "rows"] => true,
+        ["api", "v1", "databases", _, "rows", _] => true,
+        ["api", "v1", "databases", _, "rows", _, "page"] => true,
+        _ => false,
+    }
 }

@@ -200,6 +200,7 @@ pub(super) fn guest_route(
     }
     let by = Commenter {
         user: User {
+            token_workspace: None,
             id: format!("share:{share_id}"),
             name: "Guest".into(),
             email: String::new(),

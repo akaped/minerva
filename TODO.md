@@ -3,16 +3,16 @@
 What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed November 2026), and follow-ups found while building the last round. Ordered by what matters most for people switching to Minerva and for its learning focus. Move an item to `CHANGELOG.md` when it ships.
 
 ## Next
-
+- [ ] Users should also be able to setup their own private AI providers (only for the desktop app) so they will be able to conttrol their data and route their requests to their own models, add also as an option the use of ChaGPT abonament through OAuth.
+- [ ]
 
 
 
 ## Follow-ups from the last round
 
 - [ ] **Comments**: in desktop offline copies (they are not replicated yet).
-- [ ] **Storage**: page the bootstrap, then read through SQL (tables per kind with foreign keys) so requests stop growing with the server; PostgreSQL after that, for more than one app server. Measurements and the plan are in `docs/storage.md`.
-- [ ] **Importers**: importing straight from Notion's API instead of an export.
-- [ ] **MCP and API**: personal tokens limited to one workspace (read-only tokens exist); it touches every permission check, so it needs its own careful pass.
+- [ ] **Storage**: read through SQL, with tables per kind and foreign keys (bootstrap note lists are now paged by workspace), so requests stop growing with the server; PostgreSQL after that, for more than one app server. Measurements and the plan are in `docs/storage.md`.
+- [ ] **Importers**: extend the direct Notion API importer to database tables and attached files (page text and child pages now import directly; unsupported content stays linked to Notion).
 
 - [ ] **Recordings**: transcribing in the browser, so audio never leaves the device (it needs a speech model of 75 MB or more downloaded to the device).
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders. It is a protocol of its own (discovery, ETags, `REPORT` queries, each client's quirks) and needs its own project.

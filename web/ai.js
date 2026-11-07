@@ -11,6 +11,7 @@ export function stopAI() {
 }
 const presets = {
   openai: { label: "OpenAI", endpoint: "https://api.openai.com/v1" },
+  openrouter: { label: "OpenRouter", endpoint: "https://openrouter.ai/api/v1" },
   deepseek: { label: "DeepSeek", endpoint: "https://api.deepseek.com" },
   anthropic: {
     label: "Anthropic Claude",
@@ -19,7 +20,25 @@ const presets = {
   compatible: { label: "OpenAI-compatible API", endpoint: "" },
 };
 
-export async function renderAISettings({ api, esc, data, error }) {
+const serverTools = [
+  ["openrouter:web_search", () => $t("Web Search")],
+  ["openrouter:web_fetch", () => $t("Web Fetch")],
+  ["openrouter:image_generation", () => $t("Image Generation")],
+  ["openrouter:datetime", () => $t("Datetime")],
+  ["openrouter:fusion", () => $t("Fusion")],
+  ["openrouter:advisor", () => $t("Advisor")],
+  ["openrouter:subagent", () => $t("Subagent")],
+  ["openrouter:shell", () => $t("Hosted Shell")],
+  ["minerva:shell", () => $t("Desktop Shell")],
+];
+
+export async function renderAISettings({
+  api,
+  esc,
+  data,
+  error,
+  localMode = false,
+}) {
   const epoch = generation;
   const providers = await api("ai/providers");
   if (epoch !== generation) return;
@@ -42,9 +61,26 @@ export async function renderAISettings({ api, esc, data, error }) {
       )
       .join(
         "",
-      )}</select></label><label>${$t("Profile name")}<input name="name" maxlength="200" placeholder="${$t("e.g. Team assistant")}" value="${esc(p.name || "")}" required></label><label>${$t("API base URL")}<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>${$t("Model ID")}<input name="model" placeholder="${$t("Exact model ID from your provider")}" maxlength="200" value="${esc(p.model || "")}" required></label><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>${$t("Allow web search")}</label><p class="hint web-search-hint"></p><label>${$t("Max answer length (tokens)")}<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">${$t("Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.")}</p><label>${$t("API key")}<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? `<p>${$t("The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.")}</p>` : ""}<p>${$t("Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.")}</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Save provider")}</button></footer></form>`;
+      )}</select></label><label>${$t("Profile name")}<input name="name" maxlength="200" placeholder="${$t("e.g. Team assistant")}" value="${esc(p.name || "")}" required></label><label>${$t("API base URL")}<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>${$t("Model ID")}<input name="model" list="provider-models" placeholder="${$t("Exact model ID from your provider")}" maxlength="200" value="${esc(p.model || "")}" required></label><datalist id="provider-models"></datalist><div id="openrouter-setup" hidden><button type="button" class="btn" id="discover-models">${$t("Load available models and tools")}</button><p id="discovery-status" role="status"></p><p id="model-capabilities" class="hint"></p><fieldset><legend>${$t("Allowed server tools")}</legend>${serverTools
+      .filter(([id]) => id !== "minerva:shell" || localMode)
+      .map(
+        ([id, label]) =>
+          `<label class="checkbox-label"><input type="checkbox" data-server-tool="${id}" ${(p.server_tools || []).includes(id) ? "checked" : ""}>${label()}</label>`,
+      )
+      .join(
+        "",
+      )}</fieldset><p class="hint">${$t("OpenRouter tools run remotely and incur additional charges. Availability depends on the model, route and region. Fusion requires Web Search and Web Fetch. Hosted Shell runs remotely, not on this computer.")}</p></div><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>${$t("Allow web search")}</label><p class="hint web-search-hint"></p><label>${$t("Max answer length (tokens)")}<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">${$t("Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.")}</p><label>${$t("API key")}<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? `<p>${$t("The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.")}</p>` : ""}<p>${$t("Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.")}</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Save provider")}</button></footer></form>`;
+    if (localMode) {
+      const settings = document.createElement("button");
+      settings.type = "button";
+      settings.className = "btn";
+      settings.textContent = $t("Desktop Shell settings");
+      $("#openrouter-setup", modal).append(settings);
+      settings.onclick = () => configureShell(api, esc, error);
+    }
     modal.showModal();
     const clear = () => {
+      discoveryGeneration++;
       modal.close();
       modal.innerHTML = "";
     };
@@ -62,6 +98,9 @@ export async function renderAISettings({ api, esc, data, error }) {
       const kind = $("select[name=kind]", modal).value;
       const box = $("input[name=web_search]", modal);
       const supported = kind === "openai" || kind === "anthropic";
+      $("#openrouter-setup", modal).hidden = kind !== "openrouter";
+      box.closest("label").hidden = kind === "openrouter";
+      $(".web-search-hint", modal).hidden = kind === "openrouter";
       box.disabled = !supported;
       if (!supported) box.checked = false;
       $(".web-search-hint", modal).textContent = supported
@@ -70,8 +109,88 @@ export async function renderAISettings({ api, esc, data, error }) {
           )
         : $t("Web search is available for OpenAI and Anthropic providers.");
     };
+    let models = [];
+    let discoveryGeneration = 0;
+    const describeModel = () => {
+      const model = models.find(
+        (m) => m.id === $("input[name=model]", modal).value,
+      );
+      $("#model-capabilities", modal).textContent = model
+        ? $t("Context: {context} tokens · Input: {input} · Output: {output}", {
+            context: model.context_length ?? "?",
+            input: (model.input_modalities || []).join(", "),
+            output: (model.output_modalities || []).join(", "),
+          })
+        : "";
+    };
+    $("input[name=model]", modal).oninput = describeModel;
+    $("#discover-models", modal).onclick = async () => {
+      const run = ++discoveryGeneration;
+      const form = $("#provider-form", modal);
+      const button = $("#discover-models", modal);
+      const values = Object.fromEntries(
+        new FormData($("#provider-form", modal)),
+      );
+      if (existing) values.provider_id = existing.id;
+      button.disabled = true;
+      $("#discovery-status", modal).textContent = $t(
+        "Loading models and tools…",
+      );
+      try {
+        const result = await api("ai/providers/discover", "POST", values);
+        if (
+          !form.isConnected ||
+          $("#provider-form", modal) !== form ||
+          run !== discoveryGeneration ||
+          !modal.open ||
+          $("input[name=endpoint]", modal).value !== values.endpoint ||
+          $("select[name=kind]", modal).value !== values.kind
+        )
+          return;
+        models = result.models;
+        $("#provider-models", modal).innerHTML = models
+          .map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`)
+          .join("");
+        $("#discovery-status", modal).textContent = result.tools_available
+          ? $t(
+              "Loaded {count} models. Choose a model ID below or enter one manually.",
+              { count: models.length },
+            )
+          : $t(
+              "Models loaded. The tool catalog is unavailable; tool choices remain unchanged.",
+            );
+        if (result.tools_available) {
+          $$("[data-server-tool]", modal).forEach((box) => {
+            const found = result.tools.find(
+              (t) => t.id === box.dataset.serverTool,
+            );
+            box.closest("label").title = found
+              ? found.summary || ""
+              : $t("Not listed in the current provider catalog");
+          });
+        }
+        describeModel();
+      } catch (err) {
+        if (
+          run === discoveryGeneration &&
+          modal.open &&
+          form.isConnected &&
+          $("#provider-form", modal) === form
+        )
+          $("#discovery-status", modal).textContent =
+            `${err.message} ${$t("You can still enter a model ID manually.")}`;
+      } finally {
+        if (run === discoveryGeneration) button.disabled = false;
+      }
+    };
     searchable();
     $("select[name=kind]", modal).onchange = (e) => {
+      discoveryGeneration++;
+      models = [];
+      $("#provider-models", modal).innerHTML = "";
+      $("#discover-models", modal).disabled = false;
+      $("#discovery-status", modal).textContent = "";
+      $("#model-capabilities", modal).textContent = "";
       $("input[name=endpoint]", modal).value = presets[e.target.value].endpoint;
       searchable();
     };
@@ -82,11 +201,21 @@ export async function renderAISettings({ api, esc, data, error }) {
       try {
         const values = Object.fromEntries(new FormData(e.target));
         values.web_search = $("input[name=web_search]", modal).checked;
+        values.server_tools =
+          values.kind === "openrouter"
+            ? $$("[data-server-tool]:checked", modal).map(
+                (box) => box.dataset.serverTool,
+              )
+            : [];
+        values.web_search =
+          values.kind === "openrouter"
+            ? values.server_tools.includes("openrouter:web_search")
+            : values.web_search;
         values.max_tokens = Number(values.max_tokens);
         if (existing) await api(`ai/providers/${existing.id}`, "PATCH", values);
         else await api("ai/providers", "POST", values);
         clear();
-        await renderAISettings({ api, esc, data, error });
+        await renderAISettings({ api, esc, data, error, localMode });
       } catch (err) {
         $(".form-error", modal).textContent = err.message;
         button.disabled = false;
@@ -115,7 +244,7 @@ export async function renderAISettings({ api, esc, data, error }) {
               "DELETE",
             );
             modal.close();
-            await renderAISettings({ api, esc, data, error });
+            await renderAISettings({ api, esc, data, error, localMode });
           } catch (err) {
             error(err);
           }
@@ -125,6 +254,7 @@ export async function renderAISettings({ api, esc, data, error }) {
 }
 
 export async function renderAIChat({
+  localMode = false,
   api,
   esc,
   data,
@@ -361,12 +491,17 @@ export async function renderAIChat({
         }),
     );
   }
+  function imageHTML(url) {
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url))
+      return "";
+    return `<a href="${esc(url)}" download="minerva-image"><img src="${esc(url)}" alt="${$t("Generated image")}" style="max-width:100%;max-height:600px"></a>`;
+  }
   function drawTurns() {
     $("#chat-messages").innerHTML =
       chat?.turns
         .map(
           (t) =>
-            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}${filesHTML(t.files)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
+            `<article class="chat-turn"><p class="chat-question">${esc(t.question)}${filesHTML(t.files)}</p><div class="chat-reply">${replyMeta(t.provider, t.model)}<div class="chat-answer">${esc(t.answer)}</div><div class="chat-generated-images">${(t.images || []).map(imageHTML).join("")}</div><div class="chat-sources">${sourcesHTML(t.sources)}</div><small class="chat-usage">${usageLabel(t.usage)}</small></div></article>`,
         )
         .join("") ||
       `<div class="empty"><h3>${$t("A new conversation")}</h3><p>${$t("Ask a question to get started.")}</p></div>`;
@@ -405,6 +540,7 @@ export async function renderAIChat({
     if (!answer.isConnected) return;
     const target =
       scope?.kind === "note" && canEditNote(scope.id) ? scope.id : null;
+    answer.classList.remove("chat-pending");
     answer.classList.add("chat-blocks");
     answer.innerHTML = blocks
       .map(
@@ -413,6 +549,7 @@ export async function renderAIChat({
       )
       .join("");
     turn.querySelector(".chat-reply-actions")?.remove();
+    if (!blocks.length) return;
     const actions = document.createElement("div");
     actions.className = "chat-reply-actions";
     actions.innerHTML = `<button class="btn" data-reply="copy">${$t("Copy")}</button><button class="btn" data-reply="note">${$t("New note")}</button>${target ? `<button class="btn primary" data-reply="add">${$t("Add all to note")}</button>` : ""}`;
@@ -589,6 +726,7 @@ export async function renderAIChat({
     drawFiles();
     fit();
     let complete = false;
+    let stopShellPolling = () => {};
     // The reply is shown formatted while it streams, redrawn a few times a
     // second rather than on every token.
     let drawn = 0,
@@ -622,6 +760,9 @@ export async function renderAIChat({
       }
       if (epoch !== generation || controller.signal.aborted)
         throw new DOMException("Stopped", "AbortError");
+      if (localMode && chosen?.server_tools?.includes("minerva:shell")) {
+        stopShellPolling = pollShell(api, esc, chat.id, controller.signal);
+      }
       const response = await fetch(`/api/v1/ai/chats/${chat.id}/messages`, {
         method: "POST",
         headers: {
@@ -682,6 +823,15 @@ export async function renderAIChat({
             const pending = $(".chat-pending-text", turn);
             if (pending) pending.textContent = $t("Thinking…");
           }
+          if (event.type === "image") {
+            let gallery = $(".chat-generated-images", turn);
+            if (!gallery) {
+              gallery = document.createElement("div");
+              gallery.className = "chat-generated-images";
+              $(".chat-answer", turn).after(gallery);
+            }
+            gallery.insertAdjacentHTML("beforeend", imageHTML(event.url));
+          }
           if (event.type === "delta") {
             answer += event.text;
             live(answer);
@@ -725,6 +875,7 @@ export async function renderAIChat({
         }
       }
     } finally {
+      stopShellPolling();
       if (epoch === generation) {
         running = false;
         controller = null;
@@ -798,4 +949,80 @@ function filesHTML(names) {
         })[c],
     );
   return `<span class="chat-question-files">${names.map((n) => `<span class="chat-file small">📎 ${esc(n)}</span>`).join("")}</span>`;
+}
+
+async function configureShell(api, esc, error) {
+  try {
+    const config = await api("ai/shell/settings");
+    const dialog = document.createElement("dialog");
+    dialog.innerHTML = `<form><h2>${$t("Desktop Shell settings")}</h2><p>${$t("Commands run with your operating-system account privileges. The working folder is not a sandbox. Command output is sent to the selected provider.")}</p><label>${$t("Working folder")}<input name="directory" value="${esc(config.directory)}" placeholder="/absolute/path" required></label><label class="checkbox-label"><input type="checkbox" name="unattended" ${config.unattended ? "checked" : ""}>${$t("Allow unattended commands")}</label><p>${$t("Off by default: ask before each command. When enabled, the model may execute commands without asking while this chat runs.")}</p><p class="form-error" role="alert"></p><footer><button type="button" class="btn" data-cancel>${$t("Cancel")}</button><button type="submit" class="btn primary">${$t("Save")}</button></footer></form>`;
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.onclose = () => dialog.remove();
+    $("[data-cancel]", dialog).onclick = () => dialog.close();
+    $("form", dialog).onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api("ai/shell/settings", "PUT", {
+          directory: $("[name=directory]", dialog).value,
+          unattended: $("[name=unattended]", dialog).checked,
+        });
+        dialog.close();
+      } catch (err) {
+        $(".form-error", dialog).textContent = err.message;
+      }
+    };
+  } catch (err) {
+    error(err);
+  }
+}
+
+function pollShell(api, esc, chatId, signal) {
+  let stopped = false,
+    timer,
+    dialog;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
+    dialog?.close();
+    api(`ai/shell/cancel/${chatId}`, "POST", {}).catch(() => {});
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  const poll = async () => {
+    try {
+      const pending = await api(`ai/shell/pending/${chatId}`);
+      for (const request of pending) {
+        if (stopped) return;
+        const approved = await new Promise((resolve) => {
+          dialog = document.createElement("dialog");
+          dialog.innerHTML = `<h2>${$t("Run this command?")}</h2><p>${$t("Working folder")}: ${esc(request.directory)}</p><pre style="white-space:pre-wrap">${esc(request.command)}</pre><p>${$t("Command output will be sent to the model.")}</p><footer><button class="btn" data-deny>${$t("Deny")}</button><button class="btn primary" data-allow>${$t("Run command")}</button></footer>`;
+          document.body.append(dialog);
+          let allowed = false;
+          const current = dialog;
+          current.onclose = () => {
+            current.remove();
+            dialog = null;
+            resolve(allowed);
+          };
+          $("[data-deny]", current).onclick = () => current.close();
+          $("[data-allow]", current).onclick = () => {
+            allowed = true;
+            current.close();
+          };
+          current.showModal();
+        });
+        if (!stopped)
+          await api(`ai/shell/approval/${request.id}`, "POST", { approved });
+      }
+    } catch {
+      /* A closed chat/session must never imply approval. */
+    }
+    if (!stopped) timer = setTimeout(poll, 750);
+  };
+  timer = setTimeout(poll, 750);
+  return () => {
+    signal.removeEventListener("abort", stop);
+    stop();
+  };
 }

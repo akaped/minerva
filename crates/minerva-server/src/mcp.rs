@@ -783,6 +783,7 @@ mod tests {
     #[test]
     fn expired_credentials_fail_even_for_an_administrator() {
         let user = User {
+            token_workspace: None,
             id: "u".into(),
             name: "Admin".into(),
             email: "admin@test.local".into(),

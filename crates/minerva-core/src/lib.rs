@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct User {
+    /// Request-only credential boundary; never accepted from or written to JSON.
+    #[serde(skip)]
+    pub token_workspace: Option<String>,
     pub id: String,
     pub name: String,
     pub email: String,

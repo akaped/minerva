@@ -385,7 +385,7 @@ pub(super) fn shared_with(d: &Data, u: &User) -> Vec<Value> {
     }
     d.notes
         .iter()
-        .filter(|n| role(d, u, &n.folder_id).is_none())
+        .filter(|n| tokens::note_within(d, u, n) && role(d, u, &n.folder_id).is_none())
         .filter_map(|n| {
             member_role(d, &u.id, n).map(|r| {
                 json!({"id":n.id,"title":n.title,"icon":n.icon,"updated_at":n.updated_at,"role":r,"folder_id":n.folder_id,"favorite":n.favorite,"trashed":n.trashed,"tags":n.tags,"inline_tags":inline_tags(n),"sharing":summary(d,&n.id)})

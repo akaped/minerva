@@ -43,7 +43,7 @@ Opening and editing notes take about half the time they did; bootstrap is unchan
 ## Next, in order
 
 1. **Share the notes list the same way** (0.3 ms at 3,000 notes; notes are already shared one by one). After that, a copy of `Data` costs about the same at any size, and what remains is scanning: saving still compares every note, and opening one looks through every note for its backlinks.
-2. **Page the bootstrap.** Send the sidebar's notes for the open workspace, and the rest on demand, instead of every note on the server.
+2. **Bootstrap note paging is implemented.** The browser asks for metadata with `bootstrap?notes=0`, then loads the selected workspace through `bootstrap/notes` in pages of 200. Switching workspaces fetches that workspace. The page endpoint reads under the store lock without cloning or saving `Data`; it bounds summary construction and response size. Selection still scans and sorts the in-memory notes. The legacy bootstrap response remains available for API clients. No new scale measurements have been taken yet.
 3. **Read through SQL.** The rows are already one per entity. With tables per kind (workspaces, folders, notes, blocks, records) and foreign keys, handlers can query what they need (one note and its access, a folder's notes, backlinks by an index of links) instead of scanning `Data`. Then `Data` holds only what must stay in memory (sessions, presence, caches), and requests stop growing with the server. This is the large step: about 15,000 lines of handlers read `Data` today, and they can move one kind at a time, starting with the most used (opening, saving and listing notes, backlinks).
 
 ## PostgreSQL

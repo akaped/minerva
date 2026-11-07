@@ -958,28 +958,43 @@ function owner() {
 function editsWorkspace() {
   return owner() || !!currentWorkspace()?.can_edit;
 }
+let refreshGeneration = 0;
 async function refresh() {
-  data = await api("bootstrap");
-  // A personal workspace keeps its English name; it shows in the reader's.
+  const generation = ++refreshGeneration;
+  const next = await api("bootstrap?notes=0");
+  const selected = [workspaceId, new URLSearchParams(location.search).get("workspace"), lastWorkspace(next), next.default_workspace]
+    .find((id) => next.workspaces.some((w) => w.id === id)) || next.workspaces[0]?.id;
+  // Only prune tabs whose notes were actually covered by this refresh.
+  const considered = new Set([
+    ...(data?.notes || []), ...(data?.record_notes || []), ...(data?.archived_notes || []),
+  ].filter((n) => data.folders.some((f) => f.id === n.folder_id && f.workspace_id === selected)).map((n) => n.id));
+  for (const n of data?.shared_notes || []) considered.add(n.id);
+  if (next.notes_paged && selected) {
+    next.notes = [];
+    let after = "";
+    do {
+      let page;
+      try {
+        page = await api(`bootstrap/notes?workspace=${encodeURIComponent(selected)}&limit=200&after=${encodeURIComponent(after)}`);
+      } catch (err) {
+        if (next.offline_copy && err.status === 0) break;
+        throw err;
+      }
+      next.notes.push(...page.notes);
+      after = page.next;
+      if (generation !== refreshGeneration) return;
+    } while (after);
+  }
+  if (generation !== refreshGeneration) return;
+  data = next;
+  workspaceId = selected;
   for (const w of data.workspaces) if (w.personal) w.name = $t("My Workspace");
-  // Emails and what the server makes speak the language the app shows.
   if (!shareMode && data.language !== language())
     api("account/language", "PUT", { language: language() }).catch(() => {});
-  // Records' pages are listed with their records, not with the folder's notes.
   data.record_notes = data.notes.filter((n) => n.record);
   data.notes = data.notes.filter((n) => !n.record);
-  // Archived notes leave the sidebar, search and overviews: only Archive lists them.
   data.archived_notes = data.notes.filter((n) => n.archived);
   data.notes = data.notes.filter((n) => !n.archived);
-  // The account's default workspace first, then any other.
-  if (!data.workspaces.some((w) => w.id === workspaceId)) {
-    // The workspace open last time on this device, else the account's default.
-    const last = lastWorkspace();
-    workspaceId = [last, data.default_workspace].find((id) =>
-      data.workspaces.some((w) => w.id === id),
-    );
-    workspaceId ??= data.workspaces[0]?.id;
-  }
   if (noteTabs) {
     // Tabs of deleted or trashed notes close.
     noteTabs.prune(
@@ -993,6 +1008,8 @@ async function refresh() {
           .filter((n) => !n.trashed)
           .map((n) => n.id),
       ),
+      location.origin,
+      data.notes_paged ? considered : null,
     );
     redrawSidebar();
   }
@@ -1000,9 +1017,9 @@ async function refresh() {
 /** The workspace this person last had open on this server, on this device. */
 const lastWorkspaceKey = () =>
   `minerva.workspace.${data.server_id}.${data.user.id}`;
-function lastWorkspace() {
+function lastWorkspace(state = data) {
   try {
-    return localStorage.getItem(lastWorkspaceKey());
+    return localStorage.getItem(`minerva.workspace.${state.server_id}.${state.user.id}`);
   } catch {
     return null;
   }
@@ -1423,7 +1440,7 @@ function adminShell() {
   bindThemeSelect();
   if (view === "admin") renderAdmin().catch(error);
   else if (view === "providers")
-    renderAISettings({ api, esc, data, error }).catch(error);
+    renderAISettings({ api, esc, data, error, localMode }).catch(error);
   else if (view === "account") renderAccount().catch(error);
   else
     renderServerOverview({ api, esc, formDialog, refresh, error }).catch(error);
@@ -1611,9 +1628,10 @@ function shell() {
   else if (view === "templates") renderTemplates();
   else if (view === "integrations") renderIntegrations().catch(error);
   else if (view === "providers")
-    renderAISettings({ api, esc, data, error }).catch(error);
+    renderAISettings({ api, esc, data, error, localMode }).catch(error);
   else if (view === "chat")
     renderAIChat({
+      localMode,
       api,
       esc,
       data,
@@ -1997,7 +2015,11 @@ async function openNote(id, { split = false, block = null } = {}) {
   localGraph?.destroy();
   localGraph = null;
   note = await api("notes/" + id);
-  workspaceId = workspaceOfNote(note) || workspaceId;
+  const noteWorkspace = workspaceOfNote(note);
+  if (noteWorkspace && noteWorkspace !== workspaceId) {
+    workspaceId = noteWorkspace;
+    await refresh();
+  }
   rememberRendered();
   dirty = false;
   conflict = false;
@@ -6136,7 +6158,7 @@ function importMarkdown() {
   formDialog(
     $t("Bring your notes along"),
     $t("Pages become notes, with their links, tags, pictures and files; folders come along when you can add folders here, and Notion tables become databases."),
-    `<label>${$t("Files")}<input type="file" name="file" accept=".md,.markdown,.txt,.zip,.enex,.textpack,.mht,.mhtml" multiple required></label><label>${$t("Into folder")}<select name="folder_id">${folderOptions()}</select></label><details class="import-help"><summary>${$t("Where to get an export")}</summary><ul><li><strong>${$t("Notion:")}</strong> ${$t("Settings → Export all workspace content (or ··· → Export on a page), format")} <em>${$t("Markdown &amp; CSV")}</em>${$t(", with subpages. Choose the downloaded zip.")}</li><li><strong>${$t("Obsidian:")}</strong> ${$t("zip your vault folder.")}</li><li><strong>${$t("Logseq:")}</strong> ${$t("zip your graph folder (with")} <code>pages</code>, <code>journals</code> and <code>assets</code>).</li><li><strong>${$t("Evernote:")}</strong> ${$t("right-click a notebook → Export notebook, as")} <em>${$t("ENEX")}</em>.</li><li><strong>${$t("Bear:")}</strong> ${$t("File → Export Notes, as")} <em>TextBundle</em> ${$t("(or Markdown), and choose the files or a zip of them.")}</li><li><strong>${$t("OneNote:")}</strong> ${$t("File → Export, a page or section as")} <em>${$t("Single File Web Page (.mht)")}</em>.</li><li><strong>${$t("Markdown:")}</strong> ${$t("choose one or more")} <code>.md</code> ${$t("files.")}</li></ul></details><p class="hint" id="import-progress" aria-live="polite"></p>`,
+    `<button type="button" class="btn" id="notion-api-import">${$t("Import from Notion directly")}</button><label>${$t("Files")}<input type="file" name="file" accept=".md,.markdown,.txt,.zip,.enex,.textpack,.mht,.mhtml" multiple required></label><label>${$t("Into folder")}<select name="folder_id">${folderOptions()}</select></label><details class="import-help"><summary>${$t("Where to get an export")}</summary><ul><li><strong>${$t("Notion:")}</strong> ${$t("Settings → Export all workspace content (or ··· → Export on a page), format")} <em>${$t("Markdown &amp; CSV")}</em>${$t(", with subpages. Choose the downloaded zip.")}</li><li><strong>${$t("Obsidian:")}</strong> ${$t("zip your vault folder.")}</li><li><strong>${$t("Logseq:")}</strong> ${$t("zip your graph folder (with")} <code>pages</code>, <code>journals</code> and <code>assets</code>).</li><li><strong>${$t("Evernote:")}</strong> ${$t("right-click a notebook → Export notebook, as")} <em>${$t("ENEX")}</em>.</li><li><strong>${$t("Bear:")}</strong> ${$t("File → Export Notes, as")} <em>TextBundle</em> ${$t("(or Markdown), and choose the files or a zip of them.")}</li><li><strong>${$t("OneNote:")}</strong> ${$t("File → Export, a page or section as")} <em>${$t("Single File Web Page (.mht)")}</em>.</li><li><strong>${$t("Markdown:")}</strong> ${$t("choose one or more")} <code>.md</code> ${$t("files.")}</li></ul></details><p class="hint" id="import-progress" aria-live="polite"></p>`,
     async (v) => {
       const files = [...$("[name=file]", modal).files];
       const progress = $("#import-progress", modal);
@@ -6184,6 +6206,22 @@ function importMarkdown() {
           .join(" "),
       );
       if (totals.notes === 1 && first) await openNote(first);
+      else navigate("folder", v.folder_id);
+    },
+    "Import",
+  );
+  $("#notion-api-import").onclick = importNotion;
+}
+function importNotion() {
+  formDialog(
+    $t("Import from Notion directly"),
+    $t("Share a page with your Notion connection, then enter its token and the page ID. Child pages come along. Databases and files stay as links to Notion; use an export to copy them. The token is not saved."),
+    `<label>${$t("Notion connection token")}<input name="token" type="password" autocomplete="off" required maxlength="500"></label><label>${$t("Notion page ID")}<input name="page_id" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></label><label>${$t("Into folder")}<select name="folder_id">${folderOptions()}</select></label><p>${$t("Large pages can take several minutes. Keep this window open until the import finishes.")}</p>`,
+    async (v) => {
+      const report = await api("import/notion", "POST", v);
+      await refresh();
+      toast([$t("Imported {count} notes.", { count: report.notes }), ...(report.warnings || [])].join(" "));
+      if (report.notes === 1 && report.first_note) await openNote(report.first_note);
       else navigate("folder", v.folder_id);
     },
     "Import",
@@ -6769,10 +6807,11 @@ async function renderSharing() {
     action(b, "click", () => shareWorkspace(b.dataset.manageWorkspace)),
   );
   $$("[data-open-workspace]").forEach((b) =>
-    action(b, "click", () => {
+    action(b, "click", async () => {
       workspaceId = b.dataset.openWorkspace;
       view = "home";
       folderId = null;
+      await refresh();
       shell();
     }),
   );
@@ -7696,6 +7735,7 @@ function workspaceMenu() {
           note = null;
           folderId = null;
           view = "home";
+          await refresh();
           shell();
           return;
         }
@@ -7730,6 +7770,7 @@ function workspaceMenu() {
         note = null;
         folderId = null;
         view = "home";
+        await refresh();
         shell();
         $("#workspace")?.focus();
       }),
@@ -7809,7 +7850,11 @@ function search() {
     const n = matches[i];
     if (!n) return;
     await flush();
-    workspaceId = workspaceOfNote(n) || workspaceId;
+    const targetWorkspace = workspaceOfNote(n);
+    if (targetWorkspace && targetWorkspace !== workspaceId) {
+      workspaceId = targetWorkspace;
+      await refresh();
+    }
     modal.close();
     if (n.kind === "record") {
       const base = await api("databases/" + n.database_id);
@@ -9941,7 +9986,7 @@ async function renderIntegrations() {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || $t("Unavailable workspace"))}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
       personal
-        ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ACCESS")}</th><th>${$t("CREATED")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}</td><td><span class="pill">${t.access === "read_only" ? $t("Read only") : $t("Read and write")}</span></td><td>${date(t.created_at)}</td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
+        ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ACCESS")}</th><th>${$t("CREATED")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}<small>${esc(t.workspace_id ? data.workspaces.find((w) => w.id === t.workspace_id)?.name || t.workspace_id : $t("All accessible workspaces"))}</small></td><td><span class="pill">${t.access === "read_only" ? $t("Read only") : $t("Read and write")}</span></td><td>${date(t.created_at)}</td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
         : ""
     }<div class="integration-tools"><h2>${$t("What your assistant can do")}</h2><div class="folder-grid"><div class="folder-card"><div><strong>${$t("Find knowledge")}</strong><small>${$t("Keyword search with document and block references")}</small></div></div><div class="folder-card"><div><strong>${$t("Read documents")}</strong><small>${$t("Permission-aware, paginated note content")}</small></div></div><div class="folder-card"><div><strong>${$t("Query databases")}</strong><small>${$t("Typed records, property filters, and pagination")}</small></div></div><div class="folder-card"><div><strong>${$t("Write, if you allow it")}</strong><small>${$t("Create notes, add blocks, add and update records. Nothing is deleted, and earlier versions stay in history")}</small></div></div></div><p class="subtitle">${$t("Supports MCP Streamable HTTP clients with bearer authentication. No AI provider receives your data until you connect a tool and use it.")}</p></div></section>`;
   $$("[data-revoke]").forEach((el) =>
@@ -9974,7 +10019,7 @@ async function renderIntegrations() {
   );
   if ($("#create-api-token"))
     action($("#create-api-token"), "click", () => {
-      modal.innerHTML = `<form id="api-token-form"><h2>${$t("New API token")}</h2><p>${$t("It acts as you. Give each script or computer its own token.")}</p><label>${$t("Name")}<input name="name" placeholder="${$t("e.g. Laptop backup")}" required maxlength="80"></label><label>${$t("Expires in")}<select name="expires_days"><option value="30">${$t("30 days")}</option><option value="90" selected>${$t("90 days")}</option><option value="365">${$t("1 year")}</option></select></label><label>${$t("Access")}<select name="access"><option value="read_write">${$t("Read and write")}</option><option value="read_only">${$t("Read only (for backups and reports)")}</option></select></label><div class="form-error"></div><footer><button type="button" class="btn" id="cancel-token">${$t("Cancel")}</button><button class="btn primary">${$t("Create token")}</button></footer></form>`;
+      modal.innerHTML = `<form id="api-token-form"><h2>${$t("New API token")}</h2><p>${$t("It acts as you. Give each script or computer its own token.")}</p><label>${$t("Name")}<input name="name" placeholder="${$t("e.g. Laptop backup")}" required maxlength="80"></label><label>${$t("Workspace")}<select name="workspace_id"><option value="">${$t("All accessible workspaces")}</option>${data.workspaces.map((w) => `<option value="${w.id}" ${w.id === workspaceId ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label><label>${$t("Expires in")}<select name="expires_days"><option value="30">${$t("30 days")}</option><option value="90" selected>${$t("90 days")}</option><option value="365">${$t("1 year")}</option></select></label><label>${$t("Access")}<select name="access"><option value="read_write">${$t("Read and write")}</option><option value="read_only">${$t("Read only (for backups and reports)")}</option></select></label><div class="form-error"></div><footer><button type="button" class="btn" id="cancel-token">${$t("Cancel")}</button><button class="btn primary">${$t("Create token")}</button></footer></form>`;
       modal.showModal();
       $("#cancel-token").onclick = () => modal.close();
       $("#api-token-form").onsubmit = async (e) => {
@@ -9986,6 +10031,7 @@ async function renderIntegrations() {
           const created = await api("api-tokens", "POST", {
             name: v.name,
             expires_days: Number(v.expires_days),
+            workspace_id: v.workspace_id || null,
             access: v.access,
           });
           await renderIntegrations();
