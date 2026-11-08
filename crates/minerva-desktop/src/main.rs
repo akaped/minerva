@@ -47,6 +47,21 @@ const SHORTCUTS: &str = r#"window.addEventListener("keydown", (e) => {
   }
 }, true);"#;
 
+/// WebKitGTK crashes the whole app when a request to the app's own scheme
+/// carries a `File`, `Blob` or `FormData` body (it reads the body through a
+/// blob registry that only exists in the network process). Pages send bytes
+/// instead; this turns any such body into bytes before it leaves the page.
+#[cfg(target_os = "linux")]
+const BODY_BYTES: &str = r#"(() => {
+  const send = window.fetch;
+  window.fetch = async function (input, init) {
+    const body = init && init.body;
+    if (!(body instanceof Blob || body instanceof FormData)) return send.call(this, input, init);
+    const request = new Request(input, init);
+    return send.call(this, input, { ...init, headers: request.headers, body: await request.arrayBuffer() });
+  };
+})();"#;
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("minerva: {e}");
@@ -172,6 +187,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Also in frames: notes open in note tabs, which are frames.
         .with_initialization_script_for_main_only(&video_script, false)
         .with_devtools(cfg!(debug_assertions));
+    // Also in frames: notes open in note tabs, which are frames.
+    #[cfg(target_os = "linux")]
+    let builder = builder.with_initialization_script_for_main_only(BODY_BYTES, false);
     #[cfg(windows)]
     let builder = {
         use wry::WebViewBuilderExtWindows;

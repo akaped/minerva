@@ -6176,7 +6176,9 @@ function importMarkdown() {
             {
               method: "POST",
               headers: { "X-Minerva-Client": "1" },
-              body: file,
+              // Bytes rather than the File, which crashes the Linux desktop
+              // app's webview.
+              body: await file.arrayBuffer(),
             },
           );
           const report = await r.json().catch(() => ({}));

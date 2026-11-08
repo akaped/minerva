@@ -106,7 +106,9 @@ async function attach(id, files) {
       {
         method: "POST",
         headers: { "X-Minerva-Client": "1" },
-        body: f.blob,
+        // Bytes rather than the Blob, which crashes the Linux desktop app's
+        // webview.
+        body: await f.blob.arrayBuffer(),
       },
     );
     const v = await r.json().catch(() => ({}));

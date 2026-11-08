@@ -292,7 +292,9 @@ export async function renderFlashcards({ api, esc, data, error }) {
         const r = await fetch(`/api/v1/flashcards/decks/${deck.id}/media`, {
           method: "POST",
           headers: { "X-Minerva-Client": "1" },
-          body: file,
+          // Bytes rather than the File, which crashes the Linux desktop
+          // app's webview.
+          body: await file.arrayBuffer(),
         });
         const v = await r.json().catch(() => ({}));
         if (!r.ok)
