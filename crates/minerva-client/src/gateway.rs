@@ -29,12 +29,16 @@ const DROPPED_RESPONSE_HEADERS: [&str; 5] = [
     "keep-alive",
 ];
 
+/// Opens an address in the system browser.
+type Browser = Box<dyn Fn(&str) + Send + Sync>;
+
 pub struct Gateway {
     transport: Transport,
     registry: Mutex<Registry>,
     credentials: Box<dyn CredentialStore>,
     tokens: Mutex<HashMap<String, Option<String>>>,
     verified: Mutex<HashSet<String>>,
+    browser: Option<Browser>,
 }
 impl Gateway {
     pub fn new(
@@ -48,7 +52,13 @@ impl Gateway {
             credentials: Box::new(credentials),
             tokens: Mutex::new(HashMap::new()),
             verified: Mutex::new(HashSet::new()),
+            browser: None,
         }
+    }
+    /// How to open the system browser, for single sign-on.
+    pub fn with_browser(mut self, open: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        self.browser = Some(Box::new(open));
+        self
     }
     pub fn connections(&self) -> Vec<Connection> {
         self.registry.lock().unwrap().connections().to_vec()
@@ -241,9 +251,17 @@ impl Gateway {
         if !self.verified.lock().unwrap().contains(id) {
             self.verify(id).await?;
         }
-        // Sign-in completes at /login, or at /login/2fa after a second factor.
+        // Single sign-on happens in the system browser; the page waits for it.
+        if method == Method::POST && parts.uri.path() == "/api/v1/login/sso/desktop" {
+            return self.browser_sign_in(&connection).await;
+        }
+        // Sign-in completes at /login, at /login/2fa after a second factor, or
+        // at /login/sso after single sign-on.
         let login = method == Method::POST
-            && matches!(parts.uri.path(), "/api/v1/login" | "/api/v1/login/2fa");
+            && matches!(
+                parts.uri.path(),
+                "/api/v1/login" | "/api/v1/login/2fa" | "/api/v1/login/sso"
+            );
         let logout = method == Method::POST && parts.uri.path() == "/api/v1/logout";
         let token = if login { None } else { self.token(id)? };
 
@@ -297,6 +315,71 @@ impl Gateway {
             .entry("cache-control")
             .or_insert(HeaderValue::from_static("no-store"));
         Ok(response)
+    }
+    /// Single sign-on in the system browser (see `sso.rs`): answers the page
+    /// as `/login` would, with the token kept here.
+    async fn browser_sign_in(&self, connection: &Connection) -> Result<Response<Vec<u8>>> {
+        let Some(open) = &self.browser else {
+            return Ok(error(
+                StatusCode::NOT_IMPLEMENTED,
+                "This app cannot open a web browser",
+            ));
+        };
+        let base = base(connection)?;
+        let (verifier, challenge) = crate::sso::verifier();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| Error::Invalid(format!("Cannot listen for the browser: {e}")))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| Error::Invalid(format!("Cannot listen for the browser: {e}")))?
+            .port();
+        let mut start = endpoint(&base, "auth/sso/start")?;
+        start
+            .query_pairs_mut()
+            .append_pair("client", "desktop")
+            .append_pair("port", &port.to_string())
+            .append_pair("challenge", &challenge);
+        open(start.as_str());
+        let answer = match tokio::time::timeout(crate::sso::WAIT, crate::sso::wait(&listener)).await
+        {
+            Ok(Ok(answer)) => answer,
+            Ok(Err(e)) => {
+                return Err(Error::Invalid(format!(
+                    "Cannot listen for the browser: {e}"
+                )))
+            }
+            Err(_) => {
+                return Ok(error(
+                    StatusCode::REQUEST_TIMEOUT,
+                    "The sign-in in your browser took too long. Try again.",
+                ))
+            }
+        };
+        let code = match answer {
+            Ok(code) => code,
+            Err(message) => return Ok(error(StatusCode::UNAUTHORIZED, &message)),
+        };
+        let upstream = self
+            .transport
+            .http
+            .post(endpoint(&base, "api/v1/login/sso")?)
+            .header("x-minerva-client", "1")
+            .json(&json!({ "code": code, "verifier": verifier }))
+            .send()
+            .await
+            .map_err(network)?;
+        let status = upstream.status();
+        let mut body = upstream.bytes().await.map_err(network)?.to_vec();
+        if status.is_success() {
+            body = self.capture_login(connection, &body)?;
+        }
+        Response::builder()
+            .status(status.as_u16())
+            .header("content-type", "application/json")
+            .header("cache-control", "no-store")
+            .body(body)
+            .map_err(|_| Error::Network("Invalid upstream response".into()))
     }
     /// Stores the issued token and removes it from what the page receives.
     fn capture_login(&self, connection: &Connection, body: &[u8]) -> Result<Vec<u8>> {

@@ -18,7 +18,10 @@ minerva-server = { path = "../minerva-server" }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-tokio = { version = "1", features = ["sync", "time", "macros"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "net", "io-util"] }
+# Single sign-on in the system browser: the loopback listener and its PKCE check.
+sha2 = "0.10"
+base64 = "0.22"
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 hmac = "0.12"

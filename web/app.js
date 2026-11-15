@@ -277,6 +277,8 @@ let data,
   layout = localStorage.getItem("minerva.layout") || "grid",
   note = null,
   mailEnabled = false,
+  // `{name, required}` when the server signs in with single sign-on.
+  sso = null,
   mode = "document",
   dirty = false,
   conflict = false,
@@ -1294,8 +1296,14 @@ function login() {
   note = null;
   data = null;
   $("#app").innerHTML =
-    `<div class="login-shell"><div class="login-art"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="eyebrow">${$t("A HOME FOR YOUR IDEAS")}</div><h1>${$t("Make room for")}<br>${$t("your next big thought.")}</h1><p>${$t("Notes, plans, and a little possibility.")}<br>${$t("A thoughtful workspace, on your own server.")}</p>${art()}</div><main class="login-main"><form class="login-form"><div class="eyebrow">${$t("YOUR SPACE, CONNECTED")}</div><h2>${$t("Welcome to Minerva")}</h2><p>${$t("Sign in to your server to pick up where you left off.")}</p><label>${$t("Email address")}<input name="email" type="email" autocomplete="username" placeholder="${$t("you@example.com")}" required></label><label>${$t("Password")}<input name="password" type="password" autocomplete="current-password" placeholder="${$t("Your password")}" required></label><div class="form-error" role="alert"></div><button class="btn primary" type="submit">${$t("Sign in")} ${icon("arrow")}</button>${mailEnabled ? `<p class="forgot"><button type="button" class="text-link" id="forgot-password">${$t("Forgot your password?")}</button></p>` : ""}<p class="footnote">${$t("Privately hosted · Powered by Rust")}<br>${$t("Ask your server administrator for an account.")}</p></form></main></div>`;
+    `<div class="login-shell"><div class="login-art"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="eyebrow">${$t("A HOME FOR YOUR IDEAS")}</div><h1>${$t("Make room for")}<br>${$t("your next big thought.")}</h1><p>${$t("Notes, plans, and a little possibility.")}<br>${$t("A thoughtful workspace, on your own server.")}</p>${art()}</div><main class="login-main"><form class="login-form"><div class="eyebrow">${$t("YOUR SPACE, CONNECTED")}</div><h2>${$t("Welcome to Minerva")}</h2><p>${$t("Sign in to your server to pick up where you left off.")}</p>${ssoChoice()}<div class="password-sign-in" ${sso?.required ? "hidden" : ""}><label>${$t("Email address")}<input name="email" type="email" autocomplete="username" placeholder="${$t("you@example.com")}" required></label><label>${$t("Password")}<input name="password" type="password" autocomplete="current-password" placeholder="${$t("Your password")}" required></label><button class="btn ${sso ? "" : "primary"}" type="submit">${$t("Sign in")} ${icon("arrow")}</button>${mailEnabled && !sso?.required ? `<p class="forgot"><button type="button" class="text-link" id="forgot-password">${$t("Forgot your password?")}</button></p>` : ""}</div><div class="form-error" role="alert"></div><p class="footnote">${$t("Privately hosted · Powered by Rust")}<br>${$t("Ask your server administrator for an account.")}</p></form></main></div>`;
   action($("#forgot-password"), "click", forgotPassword);
+  action($("#sso-sign-in"), "click", ssoSignIn);
+  action($("#show-password"), "click", () => {
+    $(".password-sign-in").hidden = false;
+    $("#show-password").closest("p").remove();
+    $(".login-form [name=email]").focus();
+  });
   $(".login-form").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("button", e.target);
@@ -1307,19 +1315,53 @@ function login() {
         Object.fromEntries(new FormData(e.target)),
       );
       if (result.two_factor_required) return secondFactor(result.challenge);
-      await refresh();
-      shell();
-      firstSignIn();
-      if (!localMode && !isPane) startWorker();
-      if (new URLSearchParams(location.search).get("next") === "capture")
-        return location.assign("/capture");
-      if (initialNote) await openNote(initialNote, { block: initialBlock });
+      await afterSignIn();
     } catch (err) {
       $(".form-error").textContent = err.message;
     } finally {
       btn.disabled = false;
     }
   };
+}
+/** Opens the app once a sign-in succeeded. */
+async function afterSignIn() {
+  await refresh();
+  shell();
+  firstSignIn();
+  if (!localMode && !isPane) startWorker();
+  if (new URLSearchParams(location.search).get("next") === "capture")
+    return location.assign("/capture");
+  if (initialNote) await openNote(initialNote, { block: initialBlock });
+}
+/** The single sign-on button, and how passwords sit next to it. */
+function ssoChoice() {
+  if (!sso) return "";
+  const button = `<button type="button" class="btn primary" id="sso-sign-in">${$t("Sign in with {name}", { name: esc(sso.name) })} ${icon("arrow")}</button><p class="sso-waiting" hidden>${$t("Finish signing in in your web browser, then come back here.")}</p>`;
+  return sso.required
+    ? `${button}<p class="forgot"><button type="button" class="text-link" id="show-password">${$t("Administrator? Sign in with your password")}</button></p>`
+    : `${button}<p class="login-or">${$t("or with your password")}</p>`;
+}
+/**
+ * Single sign-on. In a browser, the page goes to the provider and comes back
+ * signed in. In the desktop app the system browser signs in, never this
+ * window: the app waits for it, then holds the session as after a password.
+ */
+async function ssoSignIn() {
+  if (!window.ipc) return location.assign("/auth/sso/start?client=web");
+  const btn = $("#sso-sign-in");
+  const waiting = $(".sso-waiting");
+  btn.disabled = true;
+  waiting.hidden = false;
+  $(".form-error").textContent = "";
+  try {
+    await api("login/sso/desktop", "POST", {});
+    await afterSignIn();
+  } catch (err) {
+    $(".form-error").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    waiting.hidden = true;
+  }
 }
 /** Asks for a password-reset link by email. */
 function forgotPassword() {
@@ -1387,13 +1429,7 @@ function secondFactor(challenge) {
     btn.disabled = true;
     try {
       await api("login/2fa", "POST", { challenge, code: form.code.value });
-      await refresh();
-      shell();
-      firstSignIn();
-      if (!localMode && !isPane) startWorker();
-      if (new URLSearchParams(location.search).get("next") === "capture")
-        return location.assign("/capture");
-      if (initialNote) await openNote(initialNote, { block: initialBlock });
+      await afterSignIn();
     } catch (err) {
       $(".form-error", form).textContent = err.message;
       // An expired or exhausted challenge needs the password again.
@@ -6606,12 +6642,29 @@ async function renderAccount() {
   const status = await api("account/2fa");
   $("#breadcrumb").textContent = $t("Account security");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("Account security")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
+    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("Account security")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section>${ssoPanel()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
       status.enabled
         ? `<p>${$t("On since {date}. {recovery_remaining} of 10 recovery codes left.", { date: esc(new Date(status.enabled_at * 1000).toLocaleDateString()), recovery_remaining: status.recovery_remaining })}</p><div class="toolbar-group"><button class="btn" id="new-recovery">${$t("New recovery codes")}</button><button class="btn danger" id="disable-2fa">${$t("Turn off")}</button></div>`
         : `<p>${$t("Two-factor authentication protects your notes even if your password is stolen.")}</p><button class="btn primary" id="setup-2fa">${$t("Set up two-factor authentication")}</button>`
     }</div></section>${deviceHTML()}</section>`;
   bindDevice();
+  action($("#link-sso"), "click", () =>
+    location.assign("/auth/sso/start?client=link"),
+  );
+  action($("#unlink-sso"), "click", () =>
+    formDialog(
+      $t("Unlink single sign-on?"),
+      $t("You then sign in with your password. Signing in with {name} again links your account by its email address, unless you are an administrator.", { name: esc(sso.name) }),
+      "",
+      async () => {
+        await api("account/sso", "DELETE");
+        await refresh();
+        toast($t("Single sign-on is unlinked"));
+        await renderAccount();
+      },
+      "Unlink",
+    ),
+  );
   action($("#setup-2fa"), "click", setupTwoFactor);
   action($("#change-password"), "click", () =>
     formDialog(
@@ -6655,6 +6708,18 @@ async function renderAccount() {
       "Turn off",
     ),
   );
+}
+/** Settings: whether this account signs in with single sign-on. */
+function ssoPanel() {
+  if (!sso) return "";
+  const linked = !!data.sso_linked;
+  // The desktop app keeps no browser session, which linking needs.
+  const body = linked
+    ? `<button class="btn" id="unlink-sso">${$t("Unlink")}</button>`
+    : window.ipc
+      ? `<p>${$t("Link it from Minerva in your web browser.")}</p>`
+      : `<button class="btn primary" id="link-sso">${$t("Link {name}", { name: esc(sso.name) })}</button>`;
+  return `<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Single sign-on")}</h2><p>${$t("Sign in with {name} instead of your password.", { name: esc(sso.name) })}</p></div><span class="pill ${linked ? "pill-on" : ""}">${linked ? $t("Linked") : $t("Not linked")}</span></div><div class="security-body">${body}</div></section>`;
 }
 async function setupTwoFactor() {
   const setup = await api("account/2fa/setup", "POST", {});
@@ -7958,7 +8023,7 @@ async function renderAdmin() {
   ]);
   $("#breadcrumb").textContent = $t("Server administration");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR SERVER, YOUR RULES")}</div><div class="page-heading"><div><h1>${$t("People & permissions")}</h1><p class="subtitle">${$t("Give your team the right space to do their best work.")}</p></div><button class="btn primary" id="add-user">${icon("plus")}${$t("Add user")}</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>${$t("Server members")}</h2><p>${$t("{count} accounts on this server", { count: info.users.length })}</p></div><span class="pill">${$t("Self-hosted")}</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ROLE")}</th><th>${$t("STATUS")}</th><th>${$t("2FA")}</th><th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? $t("Administrator") : $t("Member")}</td><td>${u.admin ? `<span class="pill">${$t("Active")}</span>` : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>${$t("Active")}</option><option value="disabled" ${u.disabled ? "selected" : ""}>${$t("Disabled")}</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">${$t("On")}</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">${$t("Reset")}</button>` : ""}` : `<span class="pill">${$t("Off")}</span>`}</td><td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">${$t("Edit")}</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">${$t("Delete")}</button>` : `<small>${$t("You")}</small>`}</td></tr>`).join("")}</tbody></table></div></section></div>${storagePanel(storage)}</section>`;
+    `<section class="page"><div class="eyebrow">${$t("YOUR SERVER, YOUR RULES")}</div><div class="page-heading"><div><h1>${$t("People & permissions")}</h1><p class="subtitle">${$t("Give your team the right space to do their best work.")}</p></div><button class="btn primary" id="add-user">${icon("plus")}${$t("Add user")}</button></div><div class="admin-grid"><section class="panel"><div class="panel-heading"><div><h2>${$t("Server members")}</h2><p>${$t("{count} accounts on this server", { count: info.users.length })}</p></div><span class="pill">${$t("Self-hosted")}</span></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ROLE")}</th><th>${$t("STATUS")}</th><th>${$t("2FA")}</th>${sso ? `<th>${$t("SSO")}</th>` : ""}<th></th></tr></thead><tbody>${info.users.map((u) => `<tr><td>${esc(u.name)}<small>${esc(u.email)}</small></td><td>${u.admin ? $t("Administrator") : $t("Member")}</td><td>${u.admin ? `<span class="pill">${$t("Active")}</span>` : `<select data-status-user="${u.id}" aria-label="Account status for ${esc(u.name)}"><option value="active" ${!u.disabled ? "selected" : ""}>${$t("Active")}</option><option value="disabled" ${u.disabled ? "selected" : ""}>${$t("Disabled")}</option></select>`}</td><td>${u.two_factor ? `<span class="pill pill-on">${$t("On")}</span>${u.id !== data.user.id ? ` <button class="btn" data-reset-2fa="${u.id}" aria-label="Reset two-factor authentication for ${esc(u.name)}">${$t("Reset")}</button>` : ""}` : `<span class="pill">${$t("Off")}</span>`}</td>${sso ? `<td>${u.sso ? `<span class="pill pill-on">${$t("Linked")}</span>${u.id !== data.user.id ? ` <button class="btn" data-unlink-sso="${u.id}" aria-label="${$t("Unlink single sign-on for {name}", { name: esc(u.name) })}">${$t("Unlink")}</button>` : ""}` : `<span class="pill">${$t("Not linked")}</span>`}</td>` : ""}<td class="user-actions">${u.id !== data.user.id ? `<button class="btn" data-edit-user="${u.id}" aria-label="Edit ${esc(u.name)}">${$t("Edit")}</button><button class="btn danger" data-delete-user="${u.id}" aria-label="Delete ${esc(u.name)}">${$t("Delete")}</button>` : `<small>${$t("You")}</small>`}</td></tr>`).join("")}</tbody></table></div></section></div>${storagePanel(storage)}</section>`;
   action($("#add-user"), "click", () =>
     formDialog(
       $t("Welcome someone new"),
@@ -8038,6 +8103,21 @@ async function renderAdmin() {
         "Delete account",
       );
     }),
+  );
+  $$("[data-unlink-sso]").forEach((el) =>
+    action(el, "click", () =>
+      formDialog(
+        $t("Unlink single sign-on?"),
+        $t("Use this when someone's identity at the provider changed. Their next sign-in with single sign-on links the account again by its verified email address."),
+        "",
+        async () => {
+          await api("users/" + el.dataset.unlinkSso, "PATCH", { sso: null });
+          toast($t("Single sign-on is unlinked"));
+          await renderAdmin();
+        },
+        "Unlink",
+      ),
+    ),
   );
   $$("[data-reset-2fa]").forEach((el) =>
     action(el, "click", () =>
@@ -10224,6 +10304,7 @@ function sharedUnavailable() {
     const health = await api("health").catch(() => ({}));
     localMode = health.mode === "local";
     mailEnabled = !!health.mail;
+    sso = health.sso || null;
     const resetToken = new URLSearchParams(location.search).get("reset");
     if (resetToken) return choosePassword(resetToken);
     if (localMode) {

@@ -9,6 +9,7 @@ mod credentials;
 mod gateway;
 mod local;
 mod registry;
+mod sso;
 mod sync;
 mod transport;
 

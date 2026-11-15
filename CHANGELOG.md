@@ -12,6 +12,8 @@ turns that section into the next version.
 
 ### Added
 
+- **Single sign-on:** sign in with your organization's OpenID Connect provider (Keycloak, Authentik, Google Workspace, Entra ID, …), from the web app or the desktop app, which signs in through the system browser. The first sign-in finds the account by verified email, then binds it to the provider's permanent ID. Administrator accounts are linked only from Account security, never by email. Administrators can create member accounts on first sign-in for listed email domains, require single sign-on for everyone but themselves, and unlink accounts. Off unless `MINERVA_OIDC_ISSUER` and `MINERVA_OIDC_CLIENT_ID` are set; see `docs/setup.md`.
+
 - **Desktop release builds:** GitHub Actions packages Linux, Windows and universal macOS clients on relevant main-branch pushes or manual runs; versioned releases reuse the same builds.
 
 - **Private desktop AI:** personal API-key and unauthenticated self-hosted profiles, isolated from server providers and workspace sync. ChatGPT subscription OAuth uses a system-browser sign-in, encrypted local tokens, automatic refresh, model discovery and sign-out. Available in the personal workspace and offline copies; remote server pages retain their own providers.

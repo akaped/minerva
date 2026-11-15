@@ -79,14 +79,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let registry = Registry::load(config.join("connections.json"))?;
     // `memory` keeps sign-ins only until exit, for kiosks, tests, and systems
     // without a credential service.
-    let gateway = Arc::new(match std::env::var("MINERVA_CREDENTIAL_STORE").as_deref() {
-        Ok("memory") => Gateway::new(Transport::new()?, registry, MemoryStore::default()),
-        _ => Gateway::new(
-            Transport::new()?,
-            registry,
-            KeyringStore::new("minerva-desktop"),
-        ),
-    });
+    // Single sign-on opens the system browser, never this webview (RFC 8252).
+    let gateway = Arc::new(
+        match std::env::var("MINERVA_CREDENTIAL_STORE").as_deref() {
+            Ok("memory") => Gateway::new(Transport::new()?, registry, MemoryStore::default()),
+            _ => Gateway::new(
+                Transport::new()?,
+                registry,
+                KeyringStore::new("minerva-desktop"),
+            ),
+        }
+        .with_browser(open_external),
+    );
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)

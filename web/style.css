@@ -2714,6 +2714,30 @@ mark {
   margin: 4px 0 0;
   text-align: center;
 }
+/* Single sign-on first, then the password form under a divider. */
+.login-form .login-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+  text-align: center;
+}
+.login-form .login-or::before,
+.login-form .login-or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.login-form .sso-waiting {
+  margin: 12px 0 0;
+  text-align: center;
+}
+.login-form .password-sign-in[hidden] {
+  display: none;
+}
+.login-form .password-sign-in:not([hidden]) {
+  margin-top: 18px;
+}
 blockquote[class^="markdown-alert-"],
 .block .lp-callout {
   margin: 4px 0;

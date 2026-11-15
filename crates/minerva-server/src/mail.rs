@@ -219,6 +219,8 @@ pub(crate) fn reset_route(d: &mut Data, path: &str, v: &Value) -> Result<Option<
                 .users
                 .iter()
                 .find(|a| a.user.email == email && !a.user.disabled)
+                // Accounts that must sign in with SSO get no password to reset.
+                .filter(|a| crate::sso::password_refused(&a.user).is_none())
             {
                 let user = a.user.clone();
                 let link = reset_link(d, &user.id, 3600);
@@ -256,6 +258,9 @@ pub(crate) fn reset_route(d: &mut Data, path: &str, v: &Value) -> Result<Option<
                 .iter_mut()
                 .find(|a| a.user.id == reset.user_id && !a.user.disabled)
                 .ok_or_else(missing)?;
+            if let Some(name) = crate::sso::password_refused(&a.user) {
+                return Err(crate::sso::password_error(&name));
+            }
             a.password_hash = hash;
             a.must_change_password = false;
             let email = a.user.email.clone();

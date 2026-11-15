@@ -261,12 +261,12 @@ fn take_grant(db: &Connection, secret: &str, kind: &str) -> Option<Value> {
     let _ = db.execute("DELETE FROM oauth_grants WHERE hash=?1", [&hash]);
     found.and_then(|p| serde_json::from_str(&p).ok())
 }
-fn secret() -> String {
+pub(super) fn secret() -> String {
     format!("{}{}", id(), id()).replace('-', "")
 }
 
 /// The signed-in person, from the session cookie only (never a token).
-fn signed_in(d: &Data, headers: &HeaderMap) -> Option<User> {
+pub(super) fn signed_in(d: &Data, headers: &HeaderMap) -> Option<User> {
     let mut only_cookie = HeaderMap::new();
     if let Some(c) = headers.get("cookie") {
         only_cookie.insert("cookie", c.clone());
@@ -281,7 +281,7 @@ fn workspace_of(resource: &str, base: &str) -> Option<String> {
     let wid = rest.strip_suffix("/mcp")?;
     (!wid.is_empty() && !wid.contains('/')).then(|| wid.to_string())
 }
-fn page(lang: &str, title: &str, body: String) -> Response {
+pub(super) fn page(lang: &str, title: &str, body: String) -> Response {
     page_to(lang, title, body, "")
 }
 /// A page whose form may lead on to `also` (the client's origin, after consent).
@@ -302,7 +302,7 @@ fn page_to(lang: &str, title: &str, body: String, also: &str) -> Response {
     )
         .into_response()
 }
-fn escape(s: &str) -> String {
+pub(super) fn escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

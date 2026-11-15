@@ -56,7 +56,11 @@ impl LocalServer {
         // Signing in or out does not apply to the local owner.
         if matches!(
             parts.uri.path(),
-            "/api/v1/logout" | "/api/v1/login" | "/api/v1/login/2fa"
+            "/api/v1/logout"
+                | "/api/v1/login"
+                | "/api/v1/login/2fa"
+                | "/api/v1/login/sso"
+                | "/api/v1/login/sso/desktop"
         ) {
             return error(
                 StatusCode::FORBIDDEN,

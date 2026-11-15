@@ -153,6 +153,12 @@ Notes come in from Markdown files and from Notion, Obsidian, Logseq and Evernote
 | `MINERVA_LANGUAGE`              | the browser's         | `en` or `it`: the language of what the server makes for new accounts (their first folder and guide), and of emails to people who have not used the app yet. Unset, new accounts follow the browser of the administrator who makes them |
 | `MINERVA_TOTP_ISSUER`           | `Minerva`             | Name shown in authenticator apps                                                                              |
 | `MINERVA_MCP_OAUTH`             | unset                 | Set to `1` to let MCP clients that only support OAuth connect after a consent page (see `mcp.md`)            |
+| `MINERVA_OIDC_ISSUER`           | none                  | OpenID Connect provider; with `MINERVA_OIDC_CLIENT_ID` and `MINERVA_PUBLIC_URL`, turns on [single sign-on](#single-sign-on) |
+| `MINERVA_OIDC_CLIENT_ID`        | none                  | The client registered for Minerva at the provider                                                             |
+| `MINERVA_OIDC_CLIENT_SECRET`    | none                  | Its secret; leave unset for a public client                                                                   |
+| `MINERVA_OIDC_NAME`             | `single sign-on`      | The button's name: "Sign in with …"                                                                           |
+| `MINERVA_OIDC_CREATE_DOMAINS`   | none                  | Comma-separated email domains whose people get a member account on their first sign-in                      |
+| `MINERVA_OIDC_REQUIRED`         | unset                 | Set to `1` to refuse passwords for everyone except administrators                                             |
 | `MINERVA_ATTACHMENT_STORAGE_GB` | `10`                  | Total space for note files, in GiB (60 MiB per file, 500 MiB per note)                                        |
 | `MINERVA_SMTP_HOST`             | none                  | SMTP server; with `MINERVA_MAIL_FROM`, turns email on (see [Email](#email))                                   |
 | `MINERVA_SMTP_PORT`             | by security           | 587 for `starttls`, 465 for `tls`, 25 for `none`                                                              |
@@ -165,7 +171,26 @@ Notes come in from Markdown files and from Notion, Obsidian, Logseq and Evernote
 
 Run **one process per database**. The current store is a transactionally persisted JSON snapshot inside SQLite, loaded in memory; it is suitable for evaluation and small workspaces. It needs normalized tables, migrations, pagination, and indexed search before large deployments. Argon2 and database work run on Tokio's blocking pool; the store serializes operations with a mutex.
 
-For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/shared/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security. Audit logs, SSO, and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+For network access, terminate TLS at a reverse proxy and set `MINERVA_SECURE_COOKIE=1`. Do not expose the development listener directly to the internet. No CORS origins are allowed by default. Published pages under `/shared/` and site paths, and share links, are intentionally reachable without signing in. Two-factor authentication with authenticator apps is available from Account security, and [single sign-on](#single-sign-on) with an OpenID Connect provider is optional. Audit logs and end-to-end encryption are not implemented. Sign-in attempts are limited to 10 per account and 300 for the whole server per minute, and unknown accounts take as long to reject as wrong passwords. Add a reverse-proxy rate limit for public deployments.
+
+### Single sign-on
+
+People can sign in with your organization's identity provider instead of a Minerva password: Keycloak, Authentik, Google Workspace, Microsoft Entra ID, or any other OpenID Connect provider. One provider per server.
+
+1. At the provider, register a confidential web client (authorization code flow) with the redirect URI `https://notes.example.com/auth/sso/callback`, where the address is your `MINERVA_PUBLIC_URL`. Minerva asks for the `openid`, `email` and `profile` scopes and always uses PKCE.
+2. Set `MINERVA_OIDC_ISSUER` (the issuer URL, for example `https://keycloak.example.com/realms/acme` or `https://accounts.google.com`), `MINERVA_OIDC_CLIENT_ID`, `MINERVA_OIDC_CLIENT_SECRET` and `MINERVA_OIDC_NAME`, and restart. The sign-in page shows **Sign in with …**.
+
+**Which account someone gets.** The first time, Minerva finds the account by email, only if the provider says the email is verified. From then on the account is bound to the provider's permanent subject ID, so changing an email at the provider does not lose the account, and someone given another person's old email cannot take theirs. Administrator accounts are never linked by email: an administrator signs in with their password and links single sign-on from **Account security**. That way, whoever controls the provider cannot take over the server. An administrator can unlink anyone from **People & permissions**; the next sign-in then matches by email again.
+
+**New accounts.** By default only existing accounts can sign in this way, so administrators still create accounts. With `MINERVA_OIDC_CREATE_DOMAINS=example.com`, someone with a verified `@example.com` email who has no account gets a member account on their first sign-in.
+
+**Passwords.** Passwords keep working next to single sign-on. With `MINERVA_OIDC_REQUIRED=1`, members can only sign in with the provider: password sign-in and password resets are refused for them. Administrators keep their passwords, so you can still get in when the provider is down.
+
+**Two-factor authentication** is the provider's job for single sign-on: Minerva does not ask for its own code after the provider. Turn on multi-factor authentication at the provider.
+
+**Desktop app.** **Sign in with …** opens the system browser, not the app's window, as RFC 8252 asks of native apps. The browser comes back to the app on a temporary port of `127.0.0.1`, and the app collects its session with a secret only it knows. Linking an existing account to single sign-on is done in a web browser.
+
+Sign-ins that fail write the reason to the server log (never a token). Minerva caches the provider's settings and keys for an hour, and fetches the keys again at once when a token is signed with a key it does not know yet.
 
 ### Email
 

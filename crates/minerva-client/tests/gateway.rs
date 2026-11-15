@@ -491,3 +491,73 @@ async fn two_factor_sign_in_through_the_gateway_and_typed_client() {
         StatusCode::OK
     );
 }
+
+/// Single sign-on from the desktop app: the gateway opens the browser at the
+/// server's start address with a loopback port and a PKCE challenge, and passes
+/// what comes back to the page. (The provider side is tested in the server.)
+#[tokio::test]
+async fn single_sign_on_goes_through_the_system_browser() {
+    let url = server().await;
+    let credentials = Arc::new(MemoryStore::default());
+    // The "browser": checks where it was sent, then comes back as the server would.
+    let answers = Arc::new(std::sync::Mutex::new(vec![
+        "code=not-a-real-code",
+        "error=No%20account",
+    ]));
+    let opened = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let gateway = Gateway::new(
+        Transport::new().unwrap(),
+        Registry::in_memory(),
+        SharedStore(credentials.clone()),
+    )
+    .with_browser({
+        let answers = answers.clone();
+        let opened = opened.clone();
+        move |address: &str| {
+            opened.lock().unwrap().push(address.to_string());
+            let start = url::Url::parse(address).unwrap();
+            let q: std::collections::HashMap<String, String> =
+                start.query_pairs().into_owned().collect();
+            let port = q["port"].clone();
+            let answer = answers.lock().unwrap().pop().unwrap();
+            tokio::spawn(async move {
+                reqwest::get(format!("http://127.0.0.1:{port}/sso?{answer}"))
+                    .await
+                    .unwrap();
+            });
+        }
+    });
+    let id = gateway.add(&url, "Local", false).await.unwrap().id;
+
+    // The server said why the sign-in stopped: the page hears it.
+    let refused = gateway
+        .handle(
+            &id,
+            ORIGIN,
+            request("POST", "/api/v1/login/sso/desktop", json!({})),
+        )
+        .await;
+    assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(json_body(&refused)["error"], "No account");
+    let address = opened.lock().unwrap()[0].clone();
+    let start = url::Url::parse(&address).unwrap();
+    assert_eq!(
+        start.as_str().split('?').next().unwrap(),
+        format!("{url}/auth/sso/start")
+    );
+    let q: std::collections::HashMap<String, String> = start.query_pairs().into_owned().collect();
+    assert_eq!(q["client"], "desktop");
+    assert_eq!(q["challenge"].len(), 43);
+
+    // A code the server does not know signs nobody in, and stores nothing.
+    let unknown = gateway
+        .handle(
+            &id,
+            ORIGIN,
+            request("POST", "/api/v1/login/sso/desktop", json!({})),
+        )
+        .await;
+    assert_eq!(unknown.status(), StatusCode::UNAUTHORIZED);
+    assert!(!gateway.signed_in(&id));
+    assert!(credentials.get(&id).unwrap().is_none());
+}

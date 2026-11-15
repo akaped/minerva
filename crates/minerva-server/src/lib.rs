@@ -34,6 +34,7 @@ mod search;
 mod server_plugins;
 mod sharing;
 mod sites;
+mod sso;
 mod storage;
 mod tokens;
 mod twofactor;
@@ -78,6 +79,9 @@ struct Account {
     /// shows the default layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     dashboard: Option<Value>,
+    /// The single sign-on identity this account is bound to (see `sso.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sso: Option<sso::Link>,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Session {
@@ -120,6 +124,12 @@ struct Data {
     /// Pending second-factor sign-ins, by challenge hash (memory only).
     #[serde(skip)]
     login_challenges: HashMap<String, twofactor::Challenge>,
+    /// Single sign-ins at the provider, by state hash, and desktop sign-ins
+    /// waiting to be collected, by code hash (memory only; see `sso.rs`).
+    #[serde(skip)]
+    sso_pending: HashMap<String, sso::Pending>,
+    #[serde(skip)]
+    sso_handoffs: HashMap<String, sso::Handoff>,
     #[serde(default)]
     databases: Vec<Database>,
     #[serde(default)]
@@ -525,6 +535,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
             must_change_password: false,
             default_workspace: None,
             dashboard: None,
+            sso: None,
         }],
         workspaces: if local { vec![workspace] } else { vec![] },
         folders: if local { vec![folder] } else { vec![] },
@@ -1132,6 +1143,8 @@ pub fn app(store: Shared) -> Router {
         .route("/oauth/register", axum::routing::post(oauth::register))
         .route("/oauth/authorize", get(oauth::authorize).post(oauth::decide))
         .route("/oauth/token", axum::routing::post(oauth::token))
+        .route("/auth/sso/start", get(sso::start))
+        .route("/auth/sso/callback", get(sso::callback))
         .route("/api/workspaces/{workspace_id}/mcp", any(mcp::endpoint).layer(DefaultBodyLimit::max(15 * 1024 * 1024)))
         // Public sites (`/blog/...`); paths the server uses are reserved and win.
         .route("/{site}", get(sharing::public))
@@ -1201,6 +1214,8 @@ async fn api(
         // Failed second-factor attempts must still count, even though the
         // request's other changes are discarded.
         s.data.login_challenges = d.login_challenges.clone();
+        // A desktop sign-in code is used up by a wrong attempt too.
+        s.data.sso_handoffs = d.sso_handoffs.clone();
         let (result, cookie) = outcome?;
         // POSTs that only read (searching, rendering, embeds) change nothing,
         // so they skip saving; the editor renders a block at every change.
@@ -1272,7 +1287,7 @@ fn dispatch(
     };
     if path == "health" && method == "GET" {
         return Ok((
-            json!({"status":"ok","api_version":1,"server_id":d.server_id,"sync_protocol":1,"mode":if d.local {"local"} else {"server"},"mail":mail::enabled()}),
+            json!({"status":"ok","api_version":1,"server_id":d.server_id,"sync_protocol":1,"mode":if d.local {"local"} else {"server"},"mail":mail::enabled(),"sso":sso::health()}),
             None,
         ));
     }
@@ -1309,6 +1324,10 @@ fn dispatch(
             ));
         }
         let user = a.user.clone();
+        // Checked after the password, so it reveals nothing to someone without it.
+        if let Some(name) = sso::password_refused(&user) {
+            return Err(sso::password_error(&name));
+        }
         // With 2FA, a correct password only earns a challenge for the second step.
         if let Some(challenge) = twofactor::challenge(d, &user.id) {
             return Ok((challenge, None));
@@ -1319,6 +1338,15 @@ fn dispatch(
         let challenge = v["challenge"].as_str().unwrap_or("");
         attempts.check(&format!("2fa:{}", hash_token(challenge)))?;
         let user = twofactor::complete(d, &v)?;
+        return Ok(start_session(d, user, secure));
+    }
+    // The desktop app collects a single sign-on (see `sso.rs`).
+    if path == "login/sso" && method == "POST" {
+        attempts.check(&format!(
+            "sso:{}",
+            hash_token(v["code"].as_str().unwrap_or(""))
+        ))?;
+        let user = sso::redeem(d, &v)?;
         return Ok(start_session(d, user, secure));
     }
     if path.starts_with("password-reset") && method == "POST" {
@@ -1484,7 +1512,7 @@ fn dispatch(
                 })
                 .collect();
             let account = d.users.iter().find(|a| a.user.id == u.id);
-            json!({"notes_paged":v["omit_notes"] == true,"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()).filter(|w| tokens::within(&u, w)),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            json!({"notes_paged":v["omit_notes"] == true,"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"sso_linked":account.is_some_and(sso::linked),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()).filter(|w| tokens::within(&u, w)),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -1970,6 +1998,7 @@ fn dispatch(
                 .map(|a| {
                     let mut user = json!(a.user);
                     user["two_factor"] = json!(a.two_factor.enabled());
+                    user["sso"] = json!(sso::linked(a));
                     user
                 })
                 .collect();
@@ -2008,6 +2037,7 @@ fn dispatch(
                 must_change_password: true,
                 default_workspace: None,
                 dashboard: None,
+                sso: None,
             });
             // In the server's language, or else the administrator's.
             let lang = if std::env::var("MINERVA_LANGUAGE").is_ok() {
@@ -2062,6 +2092,9 @@ fn dispatch(
             }
             if v["two_factor"].as_bool() == Some(false) {
                 twofactor::reset(a);
+            }
+            if v.get("sso").is_some_and(Value::is_null) {
+                sso::unlink(a);
             }
             let user = json!(a.user);
             d.sessions.retain(|_, s| s.user_id != *uid);
@@ -2136,6 +2169,16 @@ fn dispatch(
                 .ok_or_else(missing)?;
             a.dashboard = widgets;
             json!({ "widgets": a.dashboard })
+        }
+        // Unlinks your single sign-on; linking happens at `/auth/sso/start?client=link`.
+        ("DELETE", ["account", "sso"]) => {
+            let a = d
+                .users
+                .iter_mut()
+                .find(|a| a.user.id == u.id)
+                .ok_or_else(missing)?;
+            sso::unlink(a);
+            json!({"ok":true})
         }
         // The language the app shows, for emails and new things.
         ("PUT", ["account", "language"]) => {

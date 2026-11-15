@@ -335,6 +335,21 @@ Accounts can require a code from an authenticator app (TOTP, RFC 6238: SHA-1, 6 
 
 Administrators see `two_factor` in `GET /admin` users and can reset it with `PATCH /users/{id}` `{two_factor: false}`. Recovery codes are stored as SHA-256 hashes. The TOTP secret is stored in the database, so protect the database file as you would password hashes. The desktop gateway captures the session from `/login/2fa`, and `minerva-client` provides `Transport::login_with_code`.
 
+## Single sign-on
+
+Optional OpenID Connect sign-in; setup and rules are in [setup.md](setup.md#single-sign-on). `GET /health` reports `sso: {name, required}`, or `null` when it is off.
+
+**Browser.** `GET /auth/sso/start?client=web` (outside `/api`) sends the browser to the provider. It uses the authorization code flow with PKCE and a nonce, and binds the sign-in to that browser with a 10-minute `minerva_sso` cookie (`HttpOnly`, `SameSite=Lax`, path `/auth/sso`). The provider comes back to `GET /auth/sso/callback`. A sign-in is used once, needs the same browser, and ends after 10 minutes. On success the callback sets the `minerva_session` cookie and answers with a page that moves on to `/` by itself, not with a redirect, so the browser keeps the `SameSite=Strict` cookie. On failure the page says why. `client=link`, opened by a signed-in browser, links the provider identity to that account instead.
+
+**Native apps** (RFC 8252). `GET /auth/sso/start?client=desktop&port={1024–65535}&challenge={base64url SHA-256 of a verifier, 43 characters}` comes back to `http://127.0.0.1:{port}/sso?code=…`, or `?error=…` with the reason. `POST /login/sso` with `{code, verifier}` returns the usual `{user, token}`. A code lasts 60 seconds and the first attempt uses it up, right or wrong. The desktop gateway does all of this when its page posts `/login/sso/desktop`, then keeps the token as after a password.
+
+| Method | Path           | Contract                                                                                    |
+| ------ | -------------- | ------------------------------------------------------------------------------------------- |
+| POST   | `/login/sso`   | `{code, verifier}` → `{user, token}`; counts toward the sign-in rate limit                  |
+| DELETE | `/account/sso` | Unlinks your account; your next single sign-on matches by verified email again              |
+
+`GET /bootstrap` includes `sso_linked`. Administrators see `sso` (linked or not) in `GET /admin` users and unlink an account with `PATCH /users/{id}` `{sso: null}`. With `MINERVA_OIDC_REQUIRED=1`, `POST /login` with a member's correct password answers 403 "Sign in with {name}: …", and password resets are refused for members.
+
 ## Writing actions
 
 `POST /ai/transform` with `{provider_id, action, text, language?}` returns `{text}`: `action` is `improve`, `fix`, `shorter`, `longer`, `translate` (with `language`, letters only) or `continue`. `text` is 1–12,000 bytes and is sent to the provider with that instruction only; nothing is stored. One AI request per user runs at a time.

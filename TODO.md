@@ -20,6 +20,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.
 - [ ] **Web clipper** browser extension, saving a page or selection to an inbox note.
 - [ ] **AI**: semantic retrieval (embeddings stored next to the search index), per-person provider keys and usage limits, scheduled agents, AI actions on several selected blocks, streaming in the selection assistant.
-- [ ] **Identity**: SSO (OIDC), passkeys, an audit log.
+- [ ] **Identity**: passkeys, an audit log (single sign-on with OpenID Connect shipped).
 - [ ] **Markdown folder copy** in the desktop app: keep a plain Markdown copy of local workspaces in a folder, as Logseq's Markdown Mirror does (read-only first).
 - [ ] **Translations, what is left**: a third language.
