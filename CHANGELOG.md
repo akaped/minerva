@@ -48,6 +48,22 @@ turns that section into the next version.
 - **Reminder notifications:** Account → This device → **Notify me of reminders on this device** shows a notification when a reminder is due (besides the email, and also on servers without email); a click opens it.
 - **Faster on large servers:** opening and editing notes take about half the time on servers with thousands of notes, and searching or previewing a block no longer goes through saving. `docs/storage.md` has the measurements, and the way to relational tables and PostgreSQL.
 
+### Changed
+
+- **Only a workspace's owner chooses who has access** to it and its folders; editors still manage folders, notes, the journal, sites and note sharing.
+- **Inviting to a workspace is by email.** The share dialog no longer lists every account on the server: the owner types the email of someone's account, and is offered the people they already share a workspace with.
+- **Deleting a folder** needs edit access to the whole workspace, as adding, renaming and moving folders do; someone given one folder can no longer delete it.
+
+### Security
+
+- **Nobody can lock everyone out of signing in.** The server-wide limit of 300 sign-ins a minute is gone. Wrong passwords are now limited per account and per client address (10 per account from one address, 30 from one address, 100 per account in all), successful sign-ins do not count, and passwords are checked without holding up other requests. Behind a proxy, set `MINERVA_CLIENT_IP_HEADER` (see `docs/setup.md`). Two-factor, single sign-on codes and password-reset links follow the same rules.
+- **Password and code checks by a signed-in account are limited** to 10 a minute (changing the password, turning off or renewing two-factor authentication), so a stolen session cannot guess the password.
+- **Session cookies are HTTPS only whenever `MINERVA_PUBLIC_URL` is an `https://` address**, without setting `MINERVA_SECURE_COOKIE=1`; set it to `0` to opt out.
+- **A new password revokes API tokens and MCP connections**, not only sessions, so a token made by whoever knew the old password stops working.
+- **Nobody can list the server's accounts.** Members, including those created by single sign-on for a whole domain, see only the people of their own workspaces.
+- **Imports are unpacked two at a time** (each may use up to 1 GiB of memory), and **Anki collections are read with SQLite's defensive settings**, so a crafted file cannot run the SQL stored in its schema.
+- **Synced notes can no longer claim another workspace's database record** as their page, which let them read its name and take its page.
+
 ## [0.6.0] - 2026-11-03
 
 ### Added

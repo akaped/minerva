@@ -59,14 +59,24 @@ pub(super) fn route(
             if !member {
                 return Err(forbidden());
             }
+            // The owner of a workspace that can be shared is also offered the
+            // people they already work with, to invite them. Anyone else is
+            // invited by their exact email, so no one can list the server's
+            // accounts.
+            let manage = owns(d, u, wid) && !w.personal;
+            let colleagues = if manage {
+                colleagues(d, &u.id)
+            } else {
+                HashSet::new()
+            };
             let members:Vec<_>=d.users.iter().filter(|a|!a.user.admin && !a.user.disabled).filter_map(|a|{
                 let owner=a.user.id==w.owner_id;
                 let role=if owner {Some(Role::Editor)}else{d.workspace_grants.iter().find(|g|g.workspace_id==*wid && g.user_id==a.user.id).map(|g|g.role.clone())};
-                if role.is_none() && !edits_workspace(d,u,wid){return None;}
+                if role.is_none() && !owner && !colleagues.contains(a.user.id.as_str()) {return None;}
                 Some(json!({"id":a.user.id,"name":a.user.name,"email":a.user.email,"role":role,"owner":owner}))
             }).collect();
             Ok(Some(
-                json!({"members":members,"can_edit":edits_workspace(d,u,wid),"personal":w.personal}),
+                json!({"members":members,"can_edit":edits_workspace(d,u,wid),"can_manage":manage,"personal":w.personal}),
             ))
         }
         ("POST", ["admin", "workspaces", wid, "transfer"]) => {
@@ -105,6 +115,33 @@ pub(super) fn route(
         }
         _ => Ok(None),
     }
+}
+/// Everyone who shares a workspace with `user_id`: its owner and its members.
+fn colleagues<'a>(d: &'a Data, user_id: &str) -> HashSet<&'a str> {
+    let shared: HashSet<&str> = d
+        .workspaces
+        .iter()
+        .filter(|w| w.owner_id == user_id)
+        .map(|w| w.id.as_str())
+        .chain(
+            d.workspace_grants
+                .iter()
+                .filter(|g| g.user_id == user_id)
+                .map(|g| g.workspace_id.as_str()),
+        )
+        .collect();
+    d.workspaces
+        .iter()
+        .filter(|w| shared.contains(w.id.as_str()))
+        .map(|w| w.owner_id.as_str())
+        .chain(
+            d.workspace_grants
+                .iter()
+                .filter(|g| shared.contains(g.workspace_id.as_str()))
+                .map(|g| g.user_id.as_str()),
+        )
+        .filter(|id| *id != user_id)
+        .collect()
 }
 pub(super) async fn overview(
     State(store): State<Shared>,

@@ -55,7 +55,7 @@ Replicas choose the IDs of entities they create. These must be canonical UUIDs, 
 All endpoints are under `/api/v1`, need a session, and need `X-Minerva-Client: 1` for writes.
 
 - `GET sync/changes?workspace=&since=&limit=` returns `{revoked, server_id, hlc, access, cursor, more, changes: [entry]}`. An entry is `{seq, kind, id, fields, clocks, role, crdt?}`, or a tombstone `{seq, kind, id, deleted: true, clocks: {deleted}}`. `kind` is `workspace`, `folder`, `note`, `database`, or `record`. Record cells are fields named `cells/{property_id}`.
-- `POST sync/push {workspace_id, ops: [entry + {op_id, changed}]}` returns one result per operation: `applied`, `merged` (with `lost` fields), `conflict` (with `copy_id`, or `kept: true` and the current `entity`), `forbidden`, `invalid`, or `missing`. `changed` lists the fields this replica edited; only those can produce conflict copies.
+- `POST sync/push {workspace_id, ops: [entry + {op_id, changed}]}` returns one result per operation: `applied`, `merged` (with `lost` fields), `conflict` (with `copy_id`, or `kept: true` and the current `entity`), `forbidden`, `invalid`, or `missing`. `changed` lists the fields this replica edited; only those can produce conflict copies. A note pushed as the page of a record (`record`) must be in that database's folder, and the pusher must edit there; otherwise it is `forbidden`. A database not on the server yet (a later batch may bring it) is accepted.
 - `GET /health` reports `sync_protocol: 1` and `mode: "server" | "local"`.
 
 These endpoints exist only on a desktop app's local server:

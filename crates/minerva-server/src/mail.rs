@@ -266,6 +266,7 @@ pub(crate) fn reset_route(d: &mut Data, path: &str, v: &Value) -> Result<Option<
             let email = a.user.email.clone();
             d.password_resets.retain(|_, r| r.user_id != reset.user_id);
             d.sessions.retain(|_, s| s.user_id != reset.user_id);
+            crate::revoke_credentials(d, &reset.user_id);
             Ok(Some(json!({"ok":true,"email":email})))
         }
         _ => Ok(None),

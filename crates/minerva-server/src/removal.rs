@@ -92,10 +92,17 @@ pub(super) fn route(d: &mut Data, u: &User, parts: &[&str]) -> Result<Value, Api
             Ok(json!({"ok":true}))
         }
         ["folders", fid] => {
-            if !d.folders.iter().any(|f| f.id == *fid) {
-                return Err(missing());
+            let workspace = d
+                .folders
+                .iter()
+                .find(|f| f.id == *fid)
+                .map(|f| f.workspace_id.clone())
+                .ok_or_else(missing)?;
+            // As for adding, renaming and moving folders: whoever edits the whole
+            // workspace. Someone given one folder cannot destroy it.
+            if !edits_workspace(d, u, &workspace) {
+                return Err(forbidden());
             }
-            access(d, u, fid, true)?;
             // Subfolders go with their parent.
             let doomed: HashSet<String> = d
                 .folders

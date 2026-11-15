@@ -28,7 +28,10 @@ services:
       # Public origin, e.g. https://notes.example.com (MCP origin checks, feed links).
       MINERVA_PUBLIC_URL: ${MINERVA_PUBLIC_URL:-}
       # Set to 1 whenever users reach Minerva over HTTPS (always with the https profile).
-      MINERVA_SECURE_COOKIE: ${MINERVA_SECURE_COOKIE:-0}
+      MINERVA_SECURE_COOKIE: ${MINERVA_SECURE_COOKIE:-}
+      # The header your proxy puts the client's address in (X-Forwarded-For,
+      # or CF-Connecting-IP for a Cloudflare Tunnel), for sign-in limits.
+      MINERVA_CLIENT_IP_HEADER: ${MINERVA_CLIENT_IP_HEADER:-}
       MINERVA_SITE_NAME: ${MINERVA_SITE_NAME:-}
       MINERVA_TOTP_ISSUER: ${MINERVA_TOTP_ISSUER:-}
       MINERVA_ATTACHMENT_STORAGE_GB: ${MINERVA_ATTACHMENT_STORAGE_GB:-}

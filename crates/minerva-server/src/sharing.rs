@@ -487,7 +487,7 @@ pub(super) async fn shared(
             let token = json_body()?["token"].as_str().unwrap_or("").to_string();
             let (share, _) = link(&s.data, &token)
                 .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "This link is no longer available".into()))?;
-            let secure = if std::env::var("MINERVA_SECURE_COOKIE").as_deref() == Ok("1") { "; Secure" } else { "" };
+            let secure = secure_flag();
             let mut response = axum::Json(json!({"role":share.role})).into_response();
             response.headers_mut().insert(
                 "set-cookie",
@@ -607,11 +607,7 @@ pub(super) fn site_url(headers: &HeaderMap) -> String {
     if let Ok(url) = std::env::var("MINERVA_PUBLIC_URL") {
         return url.trim_end_matches('/').to_string();
     }
-    let scheme = if std::env::var("MINERVA_SECURE_COOKIE").as_deref() == Ok("1") {
-        "https"
-    } else {
-        "http"
-    };
+    let scheme = if secure_cookies() { "https" } else { "http" };
     let host = headers
         .get("host")
         .and_then(|h| h.to_str().ok())

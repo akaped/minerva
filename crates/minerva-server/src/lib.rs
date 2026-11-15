@@ -216,6 +216,8 @@ pub struct Store {
     /// `data`'s row in the `settings` table as last saved (see `storage.rs`).
     saved: String,
     attempts: Limiter,
+    /// How many imported files are being unpacked (see `import::unpacking`).
+    unpacking: Arc<std::sync::atomic::AtomicUsize>,
     ai: ai::Runtime,
     plugin_tasks: HashMap<String, tokio::task::AbortHandle>,
     /// IDs of notes that changed, for open pages (see `live.rs`).
@@ -314,6 +316,7 @@ impl Store {
             data,
             saved,
             attempts: Limiter::default(),
+            unpacking: Default::default(),
             ai,
             plugin_tasks: HashMap::new(),
             events: live::channel(),
@@ -1161,6 +1164,8 @@ pub fn app(store: Shared) -> Router {
         .layer(axum::middleware::from_fn_with_state(store.clone(), administration::restrict))
         // Tokens: their last use, and read-only ones kept to reading.
         .layer(axum::middleware::from_fn_with_state(store.clone(), tokens::guard))
+        // Outermost, so every handler sees the client address the server set.
+        .layer(axum::middleware::from_fn(mark_peer))
         .with_state(store)
 }
 async fn api(
@@ -1171,8 +1176,6 @@ async fn api(
     body: axum::body::Bytes,
 ) -> Result<Response, ApiError> {
     tokio::task::spawn_blocking(move || {
-        let mut s = store.lock().map_err(|_| internal())?;
-        let mut d = s.data.clone();
         let write = method != Method::GET;
         if write
             && headers
@@ -1188,6 +1191,11 @@ async fn api(
             serde_json::from_slice(&body).map_err(|_| bad("Invalid JSON"))?
         };
         let path = uri.path().trim_start_matches("/api/v1/");
+        if method == Method::POST && path == "login" {
+            return login(&store, &headers, &value);
+        }
+        let mut s = store.lock().map_err(|_| internal())?;
+        let mut d = s.data.clone();
         if method == Method::GET && path == "bootstrap" {
             value = json!({"omit_notes": url::form_urlencoded::parse(
                 uri.query().unwrap_or("").as_bytes()
@@ -1236,34 +1244,209 @@ async fn api(
     .await
     .map_err(|_| internal())?
 }
-/// Sign-in throttling per account, so one attacker cannot lock everyone out, plus
-/// a generous server-wide ceiling against credential stuffing.
+/// Sign-in throttling over the last minute, by key: an account, a client
+/// address, or both. There is no server-wide ceiling, so nobody can lock
+/// everyone out; sign-ins count only when they fail.
 #[derive(Default)]
 struct Limiter {
-    global: Vec<u64>,
-    accounts: HashMap<String, Vec<u64>>,
+    hits: HashMap<String, Vec<u64>>,
 }
+/// A key and how many attempts it allows per minute.
+type Limit = (String, usize);
 impl Limiter {
-    const PER_ACCOUNT: usize = 10;
-    const SERVER: usize = 300;
-    fn check(&mut self, key: &str) -> Result<(), ApiError> {
+    fn prune(&mut self) {
         let at = now();
-        self.global.retain(|t| *t + 60 > at);
-        self.accounts.retain(|_, times| {
+        self.hits.retain(|_, times| {
             times.retain(|t| *t + 60 > at);
             !times.is_empty()
         });
-        let account = self.accounts.get(key).map_or(0, Vec::len);
-        if account >= Self::PER_ACCOUNT || self.global.len() >= Self::SERVER {
+    }
+    /// Refuses when any key has reached its limit; records nothing.
+    fn check(&mut self, limits: &[Limit]) -> Result<(), ApiError> {
+        self.prune();
+        if limits
+            .iter()
+            .any(|(key, limit)| self.hits.get(key).map_or(0, Vec::len) >= *limit)
+        {
             return Err(ApiError(
                 StatusCode::TOO_MANY_REQUESTS,
                 "Too many sign-in attempts. Try again in a minute.".into(),
             ));
         }
-        self.global.push(at);
-        self.accounts.entry(key.to_string()).or_default().push(at);
         Ok(())
     }
+    /// Counts one attempt against every key.
+    fn record(&mut self, limits: &[Limit]) {
+        let at = now();
+        for (key, _) in limits {
+            self.hits.entry(key.clone()).or_default().push(at);
+        }
+    }
+    /// Checks and counts at once, for attempts that count whatever their outcome.
+    fn hit(&mut self, limits: &[Limit]) -> Result<(), ApiError> {
+        self.check(limits)?;
+        self.record(limits);
+        Ok(())
+    }
+}
+/// Password and authenticator-code checks by a signed-in account: 10 a minute.
+fn account_limits(u: &User) -> Vec<Limit> {
+    vec![(format!("account:{}", u.id), 10)]
+}
+/// Failed attempts allowed per minute from one client address.
+const PER_ADDRESS: usize = 30;
+/// The limits for an attempt on `subject` (an account, a code): 10 a minute,
+/// and with a known client address 10 from that address, 30 from it in all,
+/// and 100 on the subject from everywhere. Without an address, only the 10 on
+/// the subject apply.
+fn limits(kind: &str, subject: &str, headers: &HeaderMap) -> Vec<Limit> {
+    match peer(headers) {
+        Some(address) => vec![
+            (format!("{kind}:{subject}"), 100),
+            (format!("{kind}:{subject}@{address}"), 10),
+            (format!("address:{address}"), PER_ADDRESS),
+        ],
+        None => vec![(format!("{kind}:{subject}"), 10)],
+    }
+}
+
+/// Set by the server on every request (any copy the client sent is removed):
+/// the client's address, or a 64-bit IPv6 prefix, when it is known.
+const PEER: &str = "x-minerva-peer";
+fn peer(headers: &HeaderMap) -> Option<&str> {
+    headers.get(PEER).and_then(|h| h.to_str().ok())
+}
+/// The client's address. Behind a reverse proxy it comes from the header named
+/// by `MINERVA_CLIENT_IP_HEADER` (the last entry of `X-Forwarded-For`, which
+/// the proxy adds); otherwise it is the connection's address, unless that is a
+/// private or loopback one, which is likely a proxy everyone shares.
+fn client_address(
+    headers: &HeaderMap,
+    socket: Option<std::net::IpAddr>,
+    header: Option<&str>,
+) -> Option<String> {
+    let ip: std::net::IpAddr = match header.map(str::trim).filter(|h| !h.is_empty()) {
+        Some(name) => headers
+            .get(name)?
+            .to_str()
+            .ok()?
+            .rsplit(',')
+            .next()?
+            .trim()
+            .parse()
+            .ok()?,
+        None => socket.filter(|ip| previews::public_address(*ip))?,
+    };
+    Some(match ip {
+        std::net::IpAddr::V6(v6) if v6.to_ipv4_mapped().is_none() => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        std::net::IpAddr::V6(v6) => v6.to_ipv4_mapped().unwrap().to_string(),
+        v4 => v4.to_string(),
+    })
+}
+async fn mark_peer(mut request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let socket = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0.ip());
+    let header = std::env::var("MINERVA_CLIENT_IP_HEADER").ok();
+    let address = client_address(request.headers(), socket, header.as_deref());
+    let headers = request.headers_mut();
+    headers.remove(PEER);
+    if let Some(value) = address.and_then(|a| a.parse().ok()) {
+        headers.insert(PEER, value);
+    }
+    next.run(request).await
+}
+/// Revokes an account's API tokens and MCP (and OAuth) credentials, so a new
+/// password locks out whoever learnt the old one and made a token with it.
+pub(crate) fn revoke_credentials(d: &mut Data, user_id: &str) {
+    tokens::forget_user(d, user_id);
+    mcp::forget_user(d, user_id);
+}
+/// Whether cookies are sent over HTTPS only: `MINERVA_SECURE_COOKIE=1` or `0`
+/// when set, otherwise whenever `MINERVA_PUBLIC_URL` is an https address.
+pub(crate) fn secure_cookies() -> bool {
+    secure_setting(
+        std::env::var("MINERVA_SECURE_COOKIE").ok().as_deref(),
+        std::env::var("MINERVA_PUBLIC_URL").ok().as_deref(),
+    )
+}
+fn secure_setting(setting: Option<&str>, public: Option<&str>) -> bool {
+    match setting.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => public.is_some_and(|url| url.trim().to_ascii_lowercase().starts_with("https://")),
+    }
+}
+pub(crate) fn secure_flag() -> &'static str {
+    if secure_cookies() {
+        "; Secure"
+    } else {
+        ""
+    }
+}
+/// `POST /login`. The password is checked without holding the server's lock,
+/// so slow hashing does not hold up everyone else's requests.
+fn login(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Response, ApiError> {
+    let email = field(v, "email")?.to_lowercase();
+    let password = v["password"]
+        .as_str()
+        .filter(|s| s.len() <= 256)
+        .ok_or_else(|| bad("Invalid password"))?;
+    let limits = limits("login", &email, headers);
+    let stored = {
+        let mut s = store.lock().map_err(|_| internal())?;
+        s.attempts.check(&limits)?;
+        s.data
+            .users
+            .iter()
+            .find(|a| a.user.email == email && !a.user.disabled)
+            .map(|a| (a.user.id.clone(), a.password_hash.clone()))
+    };
+    // Unknown accounts take as long as wrong passwords.
+    let hash = stored.as_ref().map_or(dummy_hash(), |(_, h)| h.as_str());
+    let verified = PasswordHash::new(hash).is_ok_and(|h| {
+        Argon2::default()
+            .verify_password(password.as_bytes(), &h)
+            .is_ok()
+    }) && stored.is_some();
+    let mut s = store.lock().map_err(|_| internal())?;
+    // The account must still be the one whose password was checked.
+    let user = stored.filter(|_| verified).and_then(|(id, hash)| {
+        s.data
+            .users
+            .iter()
+            .find(|a| a.user.id == id && a.password_hash == hash && !a.user.disabled)
+            .map(|a| a.user.clone())
+    });
+    let Some(user) = user else {
+        s.attempts.record(&limits);
+        return Err(ApiError(
+            StatusCode::UNAUTHORIZED,
+            "Invalid email or password".into(),
+        ));
+    };
+    // Checked after the password, so it reveals nothing to someone without it.
+    if let Some(name) = sso::password_refused(&user) {
+        return Err(sso::password_error(&name));
+    }
+    let mut d = s.data.clone();
+    // With 2FA, a correct password only earns a challenge for the second step.
+    let (result, cookie) = match twofactor::challenge(&mut d, &user.id) {
+        Some(challenge) => (challenge, None),
+        None => start_session(&mut d, user, secure_flag()),
+    };
+    persist(&mut s, d)?;
+    let mut response = axum::Json(result).into_response();
+    if let Some(cookie) = cookie {
+        response
+            .headers_mut()
+            .insert("set-cookie", cookie.parse().map_err(|_| internal())?);
+    }
+    Ok(response)
 }
 /// A real Argon2 hash to verify against when the account does not exist, so
 /// response time does not reveal which email addresses have accounts.
@@ -1280,78 +1463,48 @@ fn dispatch(
     headers: &HeaderMap,
     v: Value,
 ) -> Result<(Value, Option<String>), ApiError> {
-    let secure = if std::env::var("MINERVA_SECURE_COOKIE").as_deref() == Ok("1") {
-        "; Secure"
-    } else {
-        ""
-    };
+    let secure = secure_flag();
     if path == "health" && method == "GET" {
         return Ok((
             json!({"status":"ok","api_version":1,"server_id":d.server_id,"sync_protocol":1,"mode":if d.local {"local"} else {"server"},"mail":mail::enabled(),"sso":sso::health()}),
             None,
         ));
     }
-    if path == "login" && method == "POST" {
-        let email = field(&v, "email")?.to_lowercase();
-        attempts.check(&format!("login:{email}"))?;
-        let password = v["password"]
-            .as_str()
-            .filter(|s| s.len() <= 256)
-            .ok_or_else(|| bad("Invalid password"))?;
-        let Some(a) = d
-            .users
-            .iter()
-            .find(|a| a.user.email == email && !a.user.disabled)
-        else {
-            if let Ok(hash) = PasswordHash::new(dummy_hash()) {
-                let _ = Argon2::default().verify_password(password.as_bytes(), &hash);
-            }
-            return Err(ApiError(
-                StatusCode::UNAUTHORIZED,
-                "Invalid email or password".into(),
-            ));
-        };
-        if Argon2::default()
-            .verify_password(
-                password.as_bytes(),
-                &PasswordHash::new(&a.password_hash).map_err(|_| internal())?,
-            )
-            .is_err()
-        {
-            return Err(ApiError(
-                StatusCode::UNAUTHORIZED,
-                "Invalid email or password".into(),
-            ));
-        }
-        let user = a.user.clone();
-        // Checked after the password, so it reveals nothing to someone without it.
-        if let Some(name) = sso::password_refused(&user) {
-            return Err(sso::password_error(&name));
-        }
-        // With 2FA, a correct password only earns a challenge for the second step.
-        if let Some(challenge) = twofactor::challenge(d, &user.id) {
-            return Ok((challenge, None));
-        }
-        return Ok(start_session(d, user, secure));
-    }
+    // `login` itself is handled before the lock is taken (see `login`).
     if path == "login/2fa" && method == "POST" {
         let challenge = v["challenge"].as_str().unwrap_or("");
-        attempts.check(&format!("2fa:{}", hash_token(challenge)))?;
-        let user = twofactor::complete(d, &v)?;
+        let limits = limits("2fa", &hash_token(challenge), headers);
+        attempts.check(&limits)?;
+        let user = twofactor::complete(d, &v).inspect_err(|_| attempts.record(&limits))?;
         return Ok(start_session(d, user, secure));
     }
     // The desktop app collects a single sign-on (see `sso.rs`).
     if path == "login/sso" && method == "POST" {
-        attempts.check(&format!(
-            "sso:{}",
-            hash_token(v["code"].as_str().unwrap_or(""))
-        ))?;
-        let user = sso::redeem(d, &v)?;
+        let code = hash_token(v["code"].as_str().unwrap_or(""));
+        let limits = limits("sso", &code, headers);
+        attempts.check(&limits)?;
+        let user = sso::redeem(d, &v).inspect_err(|_| attempts.record(&limits))?;
         return Ok(start_session(d, user, secure));
     }
-    if path.starts_with("password-reset") && method == "POST" {
-        attempts.check(&format!("reset:{}", v["email"].as_str().unwrap_or("token")))?;
+    // Every request for a reset sends an email, so each one counts.
+    if path == "password-reset" && method == "POST" {
+        let email = v["email"].as_str().unwrap_or("").trim().to_lowercase();
+        let mut limits = vec![(format!("reset:{email}"), 5)];
+        if let Some(address) = peer(headers) {
+            limits.push((format!("address:{address}"), PER_ADDRESS));
+        }
+        attempts.hit(&limits)?;
         if let Some(result) = mail::reset_route(d, path, &v)? {
+            return Ok((result, None));
+        }
+    }
+    if path == "password-reset/complete" && method == "POST" {
+        let token = hash_token(v["token"].as_str().unwrap_or(""));
+        let limits = limits("reset-link", &token, headers);
+        attempts.check(&limits)?;
+        if let Some(result) =
+            mail::reset_route(d, path, &v).inspect_err(|_| attempts.record(&limits))?
+        {
             return Ok((result, None));
         }
     }
@@ -1420,6 +1573,16 @@ fn dispatch(
         return Ok((mcp::credentials(db, d, &u, method, &parts, v)?, None));
     }
     if parts.first() == Some(&"account") {
+        // These check a password or an authenticator code: someone holding a
+        // stolen session must not guess them without limit.
+        if method == "POST"
+            && matches!(
+                parts.as_slice(),
+                ["account", "2fa", "disable" | "recovery" | "enable"]
+            )
+        {
+            attempts.hit(&account_limits(&u))?;
+        }
         let current = session_token(headers).map(String::from);
         if let Some(result) = twofactor::route(d, &u, method, &parts, &v, current)? {
             return Ok((result, None));
@@ -2086,6 +2249,7 @@ fn dispatch(
             if let Some(b) = v["disabled"].as_bool() {
                 a.user.disabled = b;
             }
+            let new_password = v["password"].as_str().is_some();
             if let Some(p) = v["password"].as_str() {
                 a.password_hash = password_hash(p)?;
                 a.must_change_password = true;
@@ -2098,6 +2262,9 @@ fn dispatch(
             }
             let user = json!(a.user);
             d.sessions.retain(|_, s| s.user_id != *uid);
+            if new_password {
+                revoke_credentials(d, uid);
+            }
             // Half-finished second-factor sign-ins do not survive account changes.
             twofactor::forget(d, uid);
             user
@@ -2191,7 +2358,7 @@ fn dispatch(
         }
         // Changes your own password; other sessions end, this one stays.
         ("POST", ["account", "password"]) => {
-            attempts.check(&format!("password:{}", u.id))?;
+            attempts.hit(&account_limits(&u))?;
             let a = d
                 .users
                 .iter_mut()
@@ -2216,18 +2383,33 @@ fn dispatch(
             let keep = session_token(headers).map(hash_token);
             d.sessions
                 .retain(|key, s| s.user_id != u.id || keep.as_ref() == Some(key));
+            revoke_credentials(d, &u.id);
             twofactor::forget(d, &u.id);
             json!({"ok":true,"workspace_id":created})
         }
         ("PUT", ["workspace-access"]) => {
-            // Owners share their own workspaces; administrators too, but
-            // only the workspaces they own.
+            // Owners share their own workspaces; editors do not.
             let wid = field(&v, "workspace_id")?;
-            let uid = field(&v, "user_id")?;
-            // Refused before anything else, so nothing is revealed.
-            if !edits_workspace(d, &u, &wid) {
+            // Only the owner decides who has access. Refused before anything
+            // else, so nothing is revealed.
+            if !owns(d, &u, &wid) {
                 return Err(forbidden());
             }
+            // A person is named by ID, or by their exact email when invited.
+            let uid = match v["email"].as_str().map(|e| e.trim().to_lowercase()) {
+                Some(email) if v.get("user_id").is_none() => d
+                    .users
+                    .iter()
+                    .find(|a| a.user.email == email && !a.user.admin && !a.user.disabled)
+                    .map(|a| a.user.id.clone())
+                    .ok_or_else(|| {
+                        ApiError(
+                            StatusCode::NOT_FOUND,
+                            "No active member on this server uses that email".into(),
+                        )
+                    })?,
+                _ => field(&v, "user_id")?,
+            };
             if d.workspaces.iter().any(|w| w.id == wid && w.personal) {
                 return Err(bad("A personal workspace cannot be shared"));
             }
@@ -2280,8 +2462,7 @@ fn dispatch(
             json!({"ok":true})
         }
         ("PUT", ["permissions"]) => {
-            // Owners share their own workspaces; administrators too, but
-            // only the workspaces they own.
+            // Folder access, given by the workspace's owner only.
             let fid = field(&v, "folder_id")?;
             let uid = field(&v, "user_id")?;
             let workspace = d
@@ -2290,7 +2471,8 @@ fn dispatch(
                 .find(|f| f.id == fid)
                 .map(|f| f.workspace_id.clone())
                 .unwrap_or_default();
-            if !edits_workspace(d, &u, &workspace) {
+            // Only the owner decides who has access.
+            if !owns(d, &u, &workspace) {
                 return Err(forbidden());
             }
             if d.workspaces.iter().any(|w| w.id == workspace && w.personal) {
@@ -2352,6 +2534,51 @@ fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cookies_are_secure_behind_an_https_address_unless_turned_off() {
+        assert!(secure_setting(None, Some("https://notes.example.com")));
+        assert!(secure_setting(Some(""), Some("HTTPS://notes.example.com")));
+        assert!(!secure_setting(None, Some("http://localhost:3000")));
+        assert!(!secure_setting(None, None));
+        assert!(secure_setting(Some("1"), None));
+        assert!(!secure_setting(
+            Some("0"),
+            Some("https://notes.example.com")
+        ));
+    }
+    #[test]
+    fn the_client_address_comes_from_the_proxy_or_a_public_connection() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "6.6.6.6, 203.0.113.9 , 8.8.4.4".parse().unwrap(),
+        );
+        headers.insert("cf-connecting-ip", "2001:4860:1:2:3:4:5:6".parse().unwrap());
+        let local = Some("172.17.0.1".parse().unwrap());
+        // The last hop of X-Forwarded-For is the one the proxy added.
+        assert_eq!(
+            client_address(&headers, local, Some("X-Forwarded-For")).as_deref(),
+            Some("8.8.4.4")
+        );
+        // IPv6 clients count by their /64, which one person can hold whole.
+        assert_eq!(
+            client_address(&headers, local, Some("CF-Connecting-IP")).as_deref(),
+            Some("2001:4860:1:2::/64")
+        );
+        // A named header that is missing or invalid gives no address.
+        assert_eq!(client_address(&headers, local, Some("X-Real-IP")), None);
+        // Without a header: a public connection counts, a private one (a proxy
+        // everyone shares) does not.
+        assert_eq!(client_address(&headers, local, None), None);
+        assert_eq!(
+            client_address(&headers, Some("1.1.1.1".parse().unwrap()), None).as_deref(),
+            Some("1.1.1.1")
+        );
+        assert_eq!(
+            client_address(&headers, Some("::ffff:1.1.1.1".parse().unwrap()), None).as_deref(),
+            Some("1.1.1.1")
+        );
+    }
     /// Fails when `Note` gains a field that `note_summary` leaves out.
     #[test]
     fn note_summary_is_the_note_without_blocks() {

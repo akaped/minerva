@@ -139,13 +139,6 @@ pub(super) struct Handoff {
 fn off() -> Response {
     (StatusCode::NOT_FOUND, "Not found").into_response()
 }
-fn secure() -> &'static str {
-    if std::env::var("MINERVA_SECURE_COOKIE").as_deref() == Ok("1") {
-        "; Secure"
-    } else {
-        ""
-    }
-}
 fn http() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -336,7 +329,7 @@ pub(super) async fn start(
     let cookie = format!(
         "{COOKIE}={}; HttpOnly; SameSite=Lax; Path=/auth/sso; Max-Age={PENDING_SECONDS}{}",
         state.secret(),
-        secure()
+        secure_flag()
     );
     let mut response = found(url.as_str());
     if let Ok(value) = cookie.parse() {
@@ -593,7 +586,7 @@ pub(super) async fn callback(
     };
     let clear = format!(
         "{COOKIE}=; HttpOnly; SameSite=Lax; Path=/auth/sso; Max-Age=0{}",
-        secure()
+        secure_flag()
     );
     if let Ok(value) = clear.parse() {
         response.headers_mut().append("set-cookie", value);
@@ -632,7 +625,7 @@ async fn finish(
     })?;
     Ok(match pending.intent {
         Intent::Web => {
-            let (_, cookie) = start_session(&mut d, user, secure());
+            let (_, cookie) = start_session(&mut d, user, secure_flag());
             persist(&mut s, d).map_err(|_| BROKEN)?;
             let mut response = moving_on(lang, &i18n::tr(lang, "Signed in"), "/");
             if let Some(value) = cookie.and_then(|c| c.parse().ok()) {

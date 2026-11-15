@@ -172,6 +172,35 @@ fn record_page(fields: &Fields) -> Result<Option<RecordPage>, ApiError> {
         }
     }
 }
+/// A note is the page of a record only in that record's database folder, as
+/// `record_pages::open` makes it, and only for someone who edits there.
+/// Otherwise a push could tie a note to a record in a workspace the pusher
+/// cannot open, and its title would then follow the record's name, and the
+/// owner opening the record could be sent to it. A database not pushed yet
+/// (it may follow in a later batch) has a fresh random ID, so it cannot be
+/// someone else's.
+fn record_claim(
+    d: &Data,
+    u: &User,
+    folder: &str,
+    page: Option<RecordPage>,
+    upstream: bool,
+) -> Result<Option<RecordPage>, ApiError> {
+    let Some(page) = page else {
+        return Ok(None);
+    };
+    // The upstream server already checked what it sends.
+    if upstream {
+        return Ok(Some(page));
+    }
+    if let Some(db) = d.databases.iter().find(|db| db.id == page.database_id) {
+        if db.folder_id != folder {
+            return Err(forbidden());
+        }
+        access(d, u, &db.folder_id, true)?;
+    }
+    Ok(Some(page))
+}
 fn database_entity(d: &Data, db: &Database) -> Option<Entity> {
     Some(Entity {
         kind: "database",
@@ -828,6 +857,7 @@ fn apply_note(
         if crdt.len() > 2_500_000 {
             return Err(bad("Collaborative document reached its storage limit"));
         }
+        let record = record_claim(d, u, &folder, record_page(fields)?, upstream)?;
         d.notes.push(Arc::new(Note {
             id: id.into(),
             folder_id: folder,
@@ -844,7 +874,7 @@ fn apply_note(
             journal: string(fields, "journal").filter(|j| databases::valid_date(j)),
             metadata: normalize_metadata(fields.get("metadata").unwrap_or(&Value::Null))?,
             print_template: template(fields, upstream)?,
-            record: record_page(fields)?,
+            record,
             folded: folded_blocks(fields),
         }));
         Arc::make_mut(&mut d.collaboration).insert(id.into(), Arc::new(crdt.into()));
@@ -875,7 +905,8 @@ fn apply_note(
     let metadata = win.get("metadata").map(normalize_metadata).transpose()?;
     // Which record a page belongs to is fixed once known.
     let record = if n.record.is_none() {
-        record_page(&win)?
+        let folder = target.as_deref().unwrap_or(&n.folder_id);
+        record_claim(d, u, folder, record_page(&win)?, upstream)?
     } else {
         None
     };

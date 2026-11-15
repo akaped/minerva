@@ -1504,26 +1504,24 @@ async function shareWorkspace(wid = workspaceId) {
           `<li class="share-person">${avatar(m)}<div class="share-person-name"><strong>${esc(m.name)}${m.id === data.user.id ? ` <small>${$t("(you)")}</small>` : ""}</strong><small>${esc(m.email)}</small></div>${
             m.owner
               ? `<span class="pill">${$t("Owner")}</span>`
-              : info.can_edit
+              : info.can_manage
                 ? `${roleSelect(`data-member-role="${m.id}" aria-label="Access for ${esc(m.name)}"`, m.role)}<button type="button" class="share-remove" data-member-remove="${m.id}" aria-label="Remove ${esc(m.name)}" title="${$t("Remove access")}">×</button>`
                 : `<span class="pill">${m.role === "editor" ? $t("Edit") : $t("Read only")}</span>`
           }</li>`,
       )
       .join("");
-    modal.innerHTML = `<div class="share-workspace"><header><h2>${$t("Share {name}", { name: esc(name) })}</h2><p>${info.can_edit ? `People with <strong>${$t("Edit")}</strong> ${$t("manage folders, notes, the journal, sites and sharing, like you.")} <strong>${$t("Read only")}</strong> lets them read everything.` : $t("You can read this workspace. People who can edit it manage who has access.")}</p></header>${
-      info.can_edit
-        ? outside.length
-          ? `<form class="share-invite" id="share-invite"><select name="user_id" aria-label="${$t("Person to invite")}" required>${outside.map((m) => `<option value="${m.id}">${esc(m.name)} · ${esc(m.email)}</option>`).join("")}</select>${roleSelect('name="role" aria-label="Access"', "editor")}<button class="btn primary" ${busy ? "disabled" : ""}>${$t("Invite")}</button></form>`
-          : `<p class="share-hint">${$t("Everyone on this server already has access. Ask your administrator to add accounts.")}</p>`
+    modal.innerHTML = `<div class="share-workspace"><header><h2>${$t("Share {name}", { name: esc(name) })}</h2><p>${info.can_manage ? `People with <strong>${$t("Edit")}</strong> ${$t("manage folders, notes, the journal, sites and sharing of notes.")} <strong>${$t("Read only")}</strong> lets them read everything. ${$t("Only you, the owner, choose who has access.")}` : $t("Only the owner of this workspace chooses who has access.")}</p></header>${
+      info.can_manage
+        ? `<form class="share-invite" id="share-invite"><input type="email" name="email" list="share-known" placeholder="${$t("Email address")}" aria-label="${$t("Person to invite")}" autocomplete="off" required><datalist id="share-known">${outside.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</datalist>${roleSelect('name="role" aria-label="Access"', "editor")}<button class="btn primary" ${busy ? "disabled" : ""}>${$t("Invite")}</button></form><p class="share-hint">${$t("Invite someone by the email of their account on this server.")}</p>`
         : ""
     }<h3 class="share-subtitle">${$t("People with access")} <span>${inside.length}</span></h3><ul class="share-people">${rows}</ul><div class="form-error" role="alert"></div><footer><button type="button" class="btn primary" id="share-done">${$t("Done")}</button></footer></div>`;
     $("#share-done").onclick = () => modal.close();
-    const save = async (user_id, role, message) => {
+    const save = async (person, role, message) => {
       busy = true;
       try {
         await api("workspace-access", "PUT", {
           workspace_id: wid,
-          user_id,
+          ...person,
           role,
         });
         info = await api(`workspaces/${wid}/members`);
@@ -1539,17 +1537,24 @@ async function shareWorkspace(wid = workspaceId) {
     if (form)
       form.onsubmit = (e) => {
         e.preventDefault();
-        const who = info.members.find((m) => m.id === form.user_id.value);
+        const email = form.email.value.trim();
+        const who = info.members.find(
+          (m) => m.email.toLowerCase() === email.toLowerCase(),
+        );
         save(
-          form.user_id.value,
+          { email },
           form.role.value,
-          $t("{who} can now open {name}", { who: who?.name || $t("They"), name }),
+          $t("{who} can now open {name}", { who: who?.name || email, name }),
         );
       };
     $$("[data-member-role]", modal).forEach(
       (select) =>
         (select.onchange = () =>
-          save(select.dataset.memberRole, select.value, $t("Access updated"))),
+          save(
+            { user_id: select.dataset.memberRole },
+            select.value,
+            $t("Access updated"),
+          )),
     );
     $$("[data-member-remove]", modal).forEach(
       (button) =>
@@ -1558,7 +1563,7 @@ async function shareWorkspace(wid = workspaceId) {
             (m) => m.id === button.dataset.memberRemove,
           );
           save(
-            button.dataset.memberRemove,
+            { user_id: button.dataset.memberRemove },
             "none",
             $t("{who} no longer has access", { who: who?.name || $t("They") }),
           );
@@ -1892,7 +1897,7 @@ function overview() {
         : view === "folder" && folderChildren(treeFolders(), folderId).length
           ? `<div class="section-title"><h2>${$t("Subfolders")}</h2></div><div class="folder-grid">${folderChildren(treeFolders(), folderId).map(folderCard).join("")}</div>`
           : ""
-    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? $t("Recently updated") : view === "trash" ? $t("Deleted notes") : view === "archive" ? $t("Archived notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && data.roles[folderId] === "editor" ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view === "archive" ? "" : view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq, Evernote, Bear or OneNote")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : view === "archive" ? $t("Nothing archived.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : view === "archive" ? $t("Archive a note from its ⋯ menu to put it away without deleting it.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
+    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? $t("Recently updated") : view === "trash" ? $t("Deleted notes") : view === "archive" ? $t("Archived notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && editsWorkspace() ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view === "archive" ? "" : view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq, Evernote, Bear or OneNote")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : view === "archive" ? $t("Nothing archived.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : view === "archive" ? $t("Archive a note from its ⋯ menu to put it away without deleting it.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
   action($("#ask-folder"), "click", () =>
     askAI({ kind: "folder", id: folderId }),
   );

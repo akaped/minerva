@@ -16,6 +16,7 @@ mod notion;
 pub(super) use notion::endpoint as notion_endpoint;
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The largest file accepted, and what an archive may unpack to.
 pub(super) const IMPORT_LIMIT: usize = 200 * 1024 * 1024;
@@ -51,6 +52,36 @@ struct Export {
 }
 
 /// `POST /api/v1/import?folder_id=…&name=…`.
+/// How many large files a server unpacks at once. Each can use up to
+/// `UNPACKED_LIMIT` of memory, so more are refused until one is done.
+const UNPACKING_AT_ONCE: usize = 2;
+/// A place among the files being unpacked, given back when dropped.
+pub(super) struct Unpacking(Arc<AtomicUsize>);
+impl Drop for Unpacking {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+/// Takes a place to unpack an imported file, or refuses when the server is
+/// already unpacking as many as it allows.
+pub(super) fn unpacking(store: &Shared) -> Result<Unpacking, ApiError> {
+    let count = store.lock().map_err(|_| internal())?.unpacking.clone();
+    take_place(count)
+}
+fn take_place(count: Arc<AtomicUsize>) -> Result<Unpacking, ApiError> {
+    count
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+            (n < UNPACKING_AT_ONCE).then_some(n + 1)
+        })
+        .map_err(|_| {
+            ApiError(
+                StatusCode::TOO_MANY_REQUESTS,
+                "The server is busy with other imports. Try again in a minute.".into(),
+            )
+        })?;
+    Ok(Unpacking(count))
+}
+
 pub(super) async fn endpoint(
     State(store): State<Shared>,
     uri: Uri,
@@ -76,7 +107,10 @@ pub(super) async fn endpoint(
         let u = authenticate(&s.data, &headers)?;
         access(&s.data, &u, &folder, true)?;
     }
+    let place = unpacking(&store)?;
     tokio::task::spawn_blocking(move || {
+        // Held until the unpacked files are saved and freed.
+        let _place = place;
         let export = read(&name, &body)?;
         let mut s = store.lock().map_err(|_| internal())?;
         let u = authenticate(&s.data, &headers)?;
@@ -1949,6 +1983,19 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_a_few_files_are_unpacked_at_once() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let places: Vec<_> = (0..UNPACKING_AT_ONCE)
+            .map(|_| take_place(count.clone()).unwrap())
+            .collect();
+        assert_eq!(
+            take_place(count.clone()).err().unwrap().0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        drop(places);
+        assert!(take_place(count).is_ok(), "places are given back");
+    }
     #[test]
     fn markdown_becomes_blocks_as_if_typed() {
         let md = "# Title\n\nIntro line\n- one\n\t- two\n\t\t- three\n\t\t\t\t- deep\n\t\t\t\t  continued\n- [ ] task\n\n```rust\nlet a = 1;\n\nlet b = 2;\n```\n| a | b |\n| - | - |\n> quote\n> more\n1. first\n2) second";

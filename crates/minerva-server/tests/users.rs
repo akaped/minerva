@@ -615,28 +615,38 @@ async fn administrators_manage_and_members_share_workspaces() {
         "the members' own My Workspaces"
     );
 
-    // A member creates a workspace and picks a colleague from the members list.
+    // A member creates a workspace and invites a colleague by email; the
+    // members list does not show the server's other accounts.
     let (_, gil) = login(&r, "gil@test.local", "member-password-1").await;
     let (_, hana) = login(&r, "hana@test.local", "member-password-1").await;
     let (status, project) = call(&r, "POST", "workspaces", &gil, json!({"name":"Project"})).await;
     assert_eq!(status, StatusCode::OK);
     let wid = project["id"].as_str().unwrap();
-    let (_, members) = call(
+    let emails = |members: &Value| -> Vec<String> {
+        members["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["email"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let path = format!("workspaces/{wid}/members");
+    let (_, members) = call(&r, "GET", &path, &gil, json!({})).await;
+    assert_eq!(emails(&members), vec!["gil@test.local"]);
+    let (status, _) = call(
         &r,
-        "GET",
-        &format!("workspaces/{wid}/members"),
+        "PUT",
+        "workspace-access",
         &gil,
-        json!({}),
+        json!({"workspace_id":wid,"email":"hana@test.local","role":"editor"}),
     )
     .await;
-    let people: Vec<_> = members["members"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m["email"].as_str().unwrap())
-        .collect();
+    assert_eq!(status, StatusCode::OK);
+    let (_, members) = call(&r, "GET", &path, &gil, json!({})).await;
+    let people = emails(&members);
     assert!(
-        people.contains(&"hana@test.local") && !people.contains(&"admin@test.local"),
+        people.contains(&"hana@test.local".to_string())
+            && !people.contains(&"admin@test.local".to_string()),
         "{people:?}"
     );
     let hana_id = members["members"]
@@ -646,15 +656,6 @@ async fn administrators_manage_and_members_share_workspaces() {
         .find(|m| m["email"] == "hana@test.local")
         .unwrap()["id"]
         .clone();
-    let (status, _) = call(
-        &r,
-        "PUT",
-        "workspace-access",
-        &gil,
-        json!({"workspace_id":wid,"user_id":hana_id,"role":"editor"}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
 
     // The editor manages folders and the workspace's public sites.
     let (status, folder) = call(
@@ -739,27 +740,12 @@ async fn mentions_offer_people_who_can_open_the_note() {
     let (_, ivo) = login(&r, "ivo@test.local", "member-password-1").await;
     let (_, project) = call(&r, "POST", "workspaces", &gil, json!({"name":"Project"})).await;
     let wid = project["id"].as_str().unwrap();
-    let (_, members) = call(
-        &r,
-        "GET",
-        &format!("workspaces/{wid}/members"),
-        &gil,
-        json!({}),
-    )
-    .await;
-    let hana_id = members["members"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["name"] == "Hana")
-        .unwrap()["id"]
-        .clone();
     call(
         &r,
         "PUT",
         "workspace-access",
         &gil,
-        json!({"workspace_id":wid,"user_id":hana_id,"role":"editor"}),
+        json!({"workspace_id":wid,"email":"hana@test.local","role":"editor"}),
     )
     .await;
     let (_, boot) = call(&r, "GET", "bootstrap", &gil, json!({})).await;

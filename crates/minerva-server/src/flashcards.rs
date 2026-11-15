@@ -1249,9 +1249,14 @@ pub(super) async fn import(
     let file = query.get("name").cloned().unwrap_or_default();
     let progress = query.get("progress").map(String::as_str) != Some("0");
     let name = file.clone();
-    let imported = tokio::task::spawn_blocking(move || anki::read(&body, &name, progress))
-        .await
-        .map_err(|_| internal())??;
+    let place = import::unpacking(&store)?;
+    let imported = tokio::task::spawn_blocking(move || {
+        let imported = anki::read(&body, &name, progress);
+        drop(place);
+        imported
+    })
+    .await
+    .map_err(|_| internal())??;
     let mut parts = vec![];
     for deck in imported.decks {
         let name = deck.name.replace("::", " › ");

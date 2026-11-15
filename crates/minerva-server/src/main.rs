@@ -31,9 +31,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let address = std::env::var("MINERVA_BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("Minerva listening on http://{address}");
-    axum::serve(listener, app(state))
-        .with_graceful_shutdown(shutdown())
-        .await?;
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await?;
     Ok(())
 }
 

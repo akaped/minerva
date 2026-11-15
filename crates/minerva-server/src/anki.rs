@@ -88,6 +88,17 @@ fn package(bytes: &[u8], keep_progress: bool) -> Result<Import, ApiError> {
     std::fs::write(&file.0, &database).map_err(|_| internal())?;
     let db = Connection::open_with_flags(&file.0, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|_| bad("The Anki collection could not be read"))?;
+    // The file comes from the uploader: never run SQL from its schema (views,
+    // triggers, defaults), refuse changes to it, and check pages as they are read.
+    db.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
+        .and_then(|_| {
+            db.set_db_config(
+                rusqlite::config::DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA,
+                false,
+            )
+        })
+        .and_then(|_| db.execute_batch("PRAGMA cell_size_check=ON; PRAGMA query_only=ON;"))
+        .map_err(|_| internal())?;
     let mut import = collection(&db, keep_progress).map_err(|e| match e {
         Some(error) => error,
         None => bad(
