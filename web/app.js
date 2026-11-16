@@ -286,6 +286,24 @@ let data,
   closing = Promise.resolve(),
   toastTimer;
 const modal = $("#modal");
+// The web clipper extension asks to connect at /clipper/connect. Its request
+// is kept for this tab, so it survives signing in (also with single sign-on).
+const CLIPPER = "minerva-clipper-connect";
+if (location.pathname === "/clipper/connect") {
+  const q = new URLSearchParams(location.search);
+  try {
+    sessionStorage.setItem(
+      CLIPPER,
+      JSON.stringify({
+        redirect_uri: q.get("redirect_uri") || "",
+        state: q.get("state") || "",
+        challenge: q.get("challenge") || "",
+        browser: q.get("browser") || "",
+      }),
+    );
+  } catch {}
+  window.history.replaceState(null, "", "/");
+}
 // A tab that shows only an AI chat, usually beside the note it is about.
 const chatPane =
   isPane && /^(note|folder):[a-f0-9-]{36}$/i.test(initialChat || "");
@@ -1323,11 +1341,61 @@ function login() {
     }
   };
 }
+/** Asks whether to connect the web clipper that opened this tab, if one did. */
+function offerClipper() {
+  let ask;
+  try {
+    ask = JSON.parse(sessionStorage.getItem(CLIPPER) || "null");
+  } catch {}
+  if (!ask || data?.must_change_password) return;
+  const browser =
+    { firefox: "Firefox", chrome: "Chrome", edge: "Edge" }[ask.browser] ||
+    $t("your browser");
+  const done = (address) => {
+    try {
+      sessionStorage.removeItem(CLIPPER);
+    } catch {}
+    if (address) location.replace(address);
+  };
+  modal.innerHTML = `<form id="clipper-connect"><h2>${$t("Connect the web clipper?")}</h2><p>${$t("The Minerva web clipper in {browser} will add the pages, selections and links you clip as notes, signed in as {name}.", { browser: esc(browser), name: esc(data.user.name) })}</p><p>${$t("It sees only the names of the folders you can add notes to. It cannot open, change or delete your notes. Disconnect it any time by revoking its token in Account.")}</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="clipper-cancel">${$t("Cancel")}</button><button class="btn primary">${$t("Connect")}</button></footer></form>`;
+  modal.showModal();
+  $("#clipper-cancel").onclick = () => {
+    modal.close();
+    // Tells the extension, so its sign-in window closes.
+    let back = "";
+    try {
+      const url = new URL(ask.redirect_uri);
+      if (
+        url.protocol === "https:" &&
+        /\.(chromiumapp|extensions\.allizom)\.org$/.test(url.hostname)
+      ) {
+        url.searchParams.set("error", "access_denied");
+        url.searchParams.set("state", ask.state);
+        back = url.href;
+      }
+    } catch {}
+    done(back);
+  };
+  $("#clipper-connect").onsubmit = async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("button.primary");
+    button.disabled = true;
+    try {
+      const { redirect } = await api("clipper/approve", "POST", ask);
+      modal.close();
+      done(redirect);
+    } catch (err) {
+      $(".form-error", modal).textContent = err.message;
+      button.disabled = false;
+    }
+  };
+}
 /** Opens the app once a sign-in succeeded. */
 async function afterSignIn() {
   await refresh();
   shell();
   firstSignIn();
+  offerClipper();
   if (!localMode && !isPane) startWorker();
   if (new URLSearchParams(location.search).get("next") === "capture")
     return location.assign("/capture");
@@ -1399,7 +1467,7 @@ function choosePassword(token) {
         token,
         password: form.password.value,
       });
-      history.replaceState(null, "", "/");
+      window.history.replaceState(null, "", "/");
       login();
       $(".login-form").email.value = result.email || "";
       $(".login-form p").textContent =
@@ -10073,7 +10141,7 @@ async function renderIntegrations() {
   $("#content").innerHTML =
     `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || $t("Unavailable workspace"))}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
       personal
-        ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ACCESS")}</th><th>${$t("CREATED")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}<small>${esc(t.workspace_id ? data.workspaces.find((w) => w.id === t.workspace_id)?.name || t.workspace_id : $t("All accessible workspaces"))}</small></td><td><span class="pill">${t.access === "read_only" ? $t("Read only") : $t("Read and write")}</span></td><td>${date(t.created_at)}</td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
+        ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ACCESS")}</th><th>${$t("CREATED")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}<small>${esc(t.workspace_id ? data.workspaces.find((w) => w.id === t.workspace_id)?.name || t.workspace_id : $t("All accessible workspaces"))}</small></td><td><span class="pill">${t.access === "clipper" ? $t("Adds clipped notes") : t.access === "read_only" ? $t("Read only") : $t("Read and write")}</span></td><td>${date(t.created_at)}</td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
         : ""
     }<div class="integration-tools"><h2>${$t("What your assistant can do")}</h2><div class="folder-grid"><div class="folder-card"><div><strong>${$t("Find knowledge")}</strong><small>${$t("Keyword search with document and block references")}</small></div></div><div class="folder-card"><div><strong>${$t("Read documents")}</strong><small>${$t("Permission-aware, paginated note content")}</small></div></div><div class="folder-card"><div><strong>${$t("Query databases")}</strong><small>${$t("Typed records, property filters, and pagination")}</small></div></div><div class="folder-card"><div><strong>${$t("Write, if you allow it")}</strong><small>${$t("Create notes, add blocks, add and update records. Nothing is deleted, and earlier versions stay in history")}</small></div></div></div><p class="subtitle">${$t("Supports MCP Streamable HTTP clients with bearer authentication. No AI provider receives your data until you connect a tool and use it.")}</p></div></section>`;
   $$("[data-revoke]").forEach((el) =>
@@ -10334,6 +10402,7 @@ function sharedUnavailable() {
     shell();
     if (localMode) showStartNotice();
     firstSignIn();
+    offerClipper();
     const requested = initialNote
       ? { note: initialNote, block: initialBlock }
       : noteTarget(location.hash);

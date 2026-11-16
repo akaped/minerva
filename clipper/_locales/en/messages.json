@@ -1,0 +1,201 @@
+{
+  "name": {
+    "message": "Minerva Web Clipper"
+  },
+  "description": {
+    "message": "Save pages, selections, links and pictures to your Minerva notes."
+  },
+  "actionTitle": {
+    "message": "Clip to Minerva"
+  },
+  "popupTitle": {
+    "message": "Clip to Minerva"
+  },
+  "settings": {
+    "message": "Settings"
+  },
+  "connectFirst": {
+    "message": "Connect the clipper to your Minerva server first."
+  },
+  "connectButton": {
+    "message": "Connect"
+  },
+  "cannotClipHere": {
+    "message": "This page can't be clipped. Open a web page and try again."
+  },
+  "kindPage": {
+    "message": "Article"
+  },
+  "kindSelection": {
+    "message": "Selection"
+  },
+  "kindBookmark": {
+    "message": "Link only"
+  },
+  "titleLabel": {
+    "message": "Title"
+  },
+  "folderLabel": {
+    "message": "Folder"
+  },
+  "tagsLabel": {
+    "message": "Tags"
+  },
+  "tagsPlaceholder": {
+    "message": "Optional, e.g. reading research"
+  },
+  "save": {
+    "message": "Save to Minerva"
+  },
+  "saving": {
+    "message": "Saving…"
+  },
+  "openNote": {
+    "message": "Open the note"
+  },
+  "savedTo": {
+    "message": "Saved to $FOLDER$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1"
+      }
+    }
+  },
+  "savedShort": {
+    "message": "Saved to Minerva"
+  },
+  "signedInAs": {
+    "message": "$NAME$ on $SERVER$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "server": {
+        "content": "$2"
+      }
+    }
+  },
+  "previewWords": {
+    "message": "About $COUNT$ words, with links and pictures from the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "previewBookmark": {
+    "message": "The page's address and description."
+  },
+  "noArticle": {
+    "message": "No article found on this page: only its address and description will be saved."
+  },
+  "noFolders": {
+    "message": "You can't add notes to any folder on this server."
+  },
+  "notConnected": {
+    "message": "The clipper is not connected. Connect it in its settings."
+  },
+  "unreachable": {
+    "message": "Can't reach $SERVER$. Check your connection.",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      }
+    }
+  },
+  "expired": {
+    "message": "The connection to Minerva has ended. Connect again in the settings."
+  },
+  "notMinerva": {
+    "message": "No Minerva server answers at $SERVER$.",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      }
+    }
+  },
+  "connectCancelled": {
+    "message": "Connecting was cancelled."
+  },
+  "cannotRead": {
+    "message": "This page can't be read."
+  },
+  "clippedFrom": {
+    "message": "Clipped from $SOURCE$",
+    "placeholders": {
+      "source": {
+        "content": "$1"
+      }
+    }
+  },
+  "foundOn": {
+    "message": "Found on $PAGE$",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "cutShort": {
+    "message": "The rest of the page was too long to clip."
+  },
+  "optionsTitle": {
+    "message": "Minerva Web Clipper"
+  },
+  "optionsIntro": {
+    "message": "Enter the address of your Minerva server. You'll sign in there and approve the clipper."
+  },
+  "serverLabel": {
+    "message": "Server address"
+  },
+  "serverPlaceholder": {
+    "message": "notes.example.com"
+  },
+  "connectHint": {
+    "message": "The clipper can only see the names of the folders you can add notes to and add new notes. It can't open, change or delete your notes."
+  },
+  "badServer": {
+    "message": "Enter a web address, such as notes.example.com."
+  },
+  "permissionRefused": {
+    "message": "The clipper needs permission to reach your server."
+  },
+  "connecting": {
+    "message": "Connecting…"
+  },
+  "connectedTo": {
+    "message": "Connected to $SERVER$ as $NAME$ ($EMAIL$).",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      },
+      "name": {
+        "content": "$2"
+      },
+      "email": {
+        "content": "$3"
+      }
+    }
+  },
+  "connectedHint": {
+    "message": "Clip from the toolbar button, or right-click a page, a selection, a link or a picture. Right-click clips go to the folder you used last."
+  },
+  "disconnect": {
+    "message": "Disconnect"
+  },
+  "menuPage": {
+    "message": "Clip page to Minerva"
+  },
+  "menuSelection": {
+    "message": "Clip selection to Minerva"
+  },
+  "menuLink": {
+    "message": "Clip link to Minerva"
+  },
+  "menuImage": {
+    "message": "Clip picture to Minerva"
+  },
+  "chooseFolderFirst": {
+    "message": "Choose a folder in the clipper first, then right-click clips go there."
+  }
+}

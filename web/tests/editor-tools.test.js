@@ -99,7 +99,7 @@ test("pasted HTML becomes Markdown, including Google Docs styling", () => {
     htmlToMarkdown(
       "<h2>Title</h2><p>Some <strong>bold</strong>, <em>italic</em>, <mark>marked</mark> and <a href='https://x.example'>link</a>.</p><ul><li>one</li><li>two</li></ul>",
     ),
-    "## Title\n\nSome **bold**, *italic*, ==marked== and [link](https://x.example).\n\n-   one\n-   two",
+    "## Title\n\nSome **bold**, *italic*, ==marked== and [link](https://x.example).\n\n- one\n- two",
   );
   assert.equal(
     htmlToMarkdown(
@@ -119,6 +119,13 @@ test("pasted HTML becomes Markdown, including Google Docs styling", () => {
   );
   assert.ok(
     !htmlToMarkdown("<p>ok</p><script>alert(1)</script>").includes("alert"),
+  );
+  // List markers as Minerva writes them, except inside code.
+  assert.equal(
+    htmlToMarkdown(
+      "<ol><li>one<ul><li>inner</li></ul></li></ol><pre><code>-   kept</code></pre>",
+    ),
+    "1. one\n    - inner\n\n```\n-   kept\n```",
   );
 });
 

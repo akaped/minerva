@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="clipper.css" />
+    <script src="popup.js" defer></script>
+  </head>
+  <body class="popup">
+    <header>
+      <img src="icons/icon-32.png" alt="" width="20" height="20" />
+      <h1 data-i18n="popupTitle"></h1>
+      <button type="button" class="icon" id="settings">⚙</button>
+    </header>
+
+    <section id="disconnected" hidden>
+      <p data-i18n="connectFirst"></p>
+      <button type="button" class="primary" id="open-settings" data-i18n="connectButton"></button>
+    </section>
+
+    <section id="blocked" hidden>
+      <p data-i18n="cannotClipHere"></p>
+    </section>
+
+    <form id="clip" hidden>
+      <div class="kinds" role="radiogroup">
+        <label><input type="radio" name="kind" value="page" checked /><span data-i18n="kindPage"></span></label>
+        <label><input type="radio" name="kind" value="selection" /><span data-i18n="kindSelection"></span></label>
+        <label><input type="radio" name="kind" value="bookmark" /><span data-i18n="kindBookmark"></span></label>
+      </div>
+      <label>
+        <span data-i18n="titleLabel"></span>
+        <input name="title" maxlength="300" />
+      </label>
+      <label>
+        <span data-i18n="folderLabel"></span>
+        <select name="folder" required></select>
+      </label>
+      <label>
+        <span data-i18n="tagsLabel"></span>
+        <input name="tags" data-i18n-placeholder="tagsPlaceholder" autocomplete="off" />
+      </label>
+      <p class="preview" id="preview"></p>
+      <p class="error" role="alert" id="error"></p>
+      <button class="primary" id="save" data-i18n="save"></button>
+    </form>
+
+    <section id="saved" hidden>
+      <p class="done" id="saved-text"></p>
+      <button type="button" class="primary" id="open-note" data-i18n="openNote"></button>
+    </section>
+
+    <footer id="account"></footer>
+  </body>
+</html>

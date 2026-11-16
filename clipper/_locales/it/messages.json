@@ -1,0 +1,201 @@
+{
+  "name": {
+    "message": "Minerva Web Clipper"
+  },
+  "description": {
+    "message": "Salva pagine, selezioni, link e immagini nelle tue note di Minerva."
+  },
+  "actionTitle": {
+    "message": "Ritaglia in Minerva"
+  },
+  "popupTitle": {
+    "message": "Ritaglia in Minerva"
+  },
+  "settings": {
+    "message": "Impostazioni"
+  },
+  "connectFirst": {
+    "message": "Prima collega il clipper al tuo server Minerva."
+  },
+  "connectButton": {
+    "message": "Collega"
+  },
+  "cannotClipHere": {
+    "message": "Questa pagina non si può ritagliare. Apri una pagina web e riprova."
+  },
+  "kindPage": {
+    "message": "Articolo"
+  },
+  "kindSelection": {
+    "message": "Selezione"
+  },
+  "kindBookmark": {
+    "message": "Solo link"
+  },
+  "titleLabel": {
+    "message": "Titolo"
+  },
+  "folderLabel": {
+    "message": "Cartella"
+  },
+  "tagsLabel": {
+    "message": "Tag"
+  },
+  "tagsPlaceholder": {
+    "message": "Facoltativi, es. lettura ricerca"
+  },
+  "save": {
+    "message": "Salva in Minerva"
+  },
+  "saving": {
+    "message": "Salvataggio…"
+  },
+  "openNote": {
+    "message": "Apri la nota"
+  },
+  "savedTo": {
+    "message": "Salvata in $FOLDER$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1"
+      }
+    }
+  },
+  "savedShort": {
+    "message": "Salvata in Minerva"
+  },
+  "signedInAs": {
+    "message": "$NAME$ su $SERVER$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "server": {
+        "content": "$2"
+      }
+    }
+  },
+  "previewWords": {
+    "message": "Circa $COUNT$ parole, con i link e le immagini della pagina.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "previewBookmark": {
+    "message": "L’indirizzo e la descrizione della pagina."
+  },
+  "noArticle": {
+    "message": "Nessun articolo in questa pagina: verranno salvati solo l’indirizzo e la descrizione."
+  },
+  "noFolders": {
+    "message": "Non puoi aggiungere note in nessuna cartella di questo server."
+  },
+  "notConnected": {
+    "message": "Il clipper non è collegato. Collegalo nelle impostazioni."
+  },
+  "unreachable": {
+    "message": "Impossibile raggiungere $SERVER$. Controlla la connessione.",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      }
+    }
+  },
+  "expired": {
+    "message": "Il collegamento con Minerva è terminato. Collegati di nuovo nelle impostazioni."
+  },
+  "notMinerva": {
+    "message": "Nessun server Minerva risponde a $SERVER$.",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      }
+    }
+  },
+  "connectCancelled": {
+    "message": "Il collegamento è stato annullato."
+  },
+  "cannotRead": {
+    "message": "Questa pagina non si può leggere."
+  },
+  "clippedFrom": {
+    "message": "Ritagliato da $SOURCE$",
+    "placeholders": {
+      "source": {
+        "content": "$1"
+      }
+    }
+  },
+  "foundOn": {
+    "message": "Trovato su $PAGE$",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "cutShort": {
+    "message": "Il resto della pagina era troppo lungo da ritagliare."
+  },
+  "optionsTitle": {
+    "message": "Minerva Web Clipper"
+  },
+  "optionsIntro": {
+    "message": "Inserisci l’indirizzo del tuo server Minerva. Accederai lì e autorizzerai il clipper."
+  },
+  "serverLabel": {
+    "message": "Indirizzo del server"
+  },
+  "serverPlaceholder": {
+    "message": "note.esempio.it"
+  },
+  "connectHint": {
+    "message": "Il clipper vede solo i nomi delle cartelle in cui puoi aggiungere note e può solo aggiungere note nuove. Non può aprire, modificare o eliminare le tue note."
+  },
+  "badServer": {
+    "message": "Inserisci un indirizzo web, come note.esempio.it."
+  },
+  "permissionRefused": {
+    "message": "Il clipper ha bisogno del permesso di raggiungere il tuo server."
+  },
+  "connecting": {
+    "message": "Collegamento…"
+  },
+  "connectedTo": {
+    "message": "Collegato a $SERVER$ come $NAME$ ($EMAIL$).",
+    "placeholders": {
+      "server": {
+        "content": "$1"
+      },
+      "name": {
+        "content": "$2"
+      },
+      "email": {
+        "content": "$3"
+      }
+    }
+  },
+  "connectedHint": {
+    "message": "Ritaglia dal pulsante nella barra degli strumenti, o con il tasto destro su una pagina, una selezione, un link o un’immagine. I ritagli col tasto destro vanno nell’ultima cartella usata."
+  },
+  "disconnect": {
+    "message": "Scollega"
+  },
+  "menuPage": {
+    "message": "Ritaglia la pagina in Minerva"
+  },
+  "menuSelection": {
+    "message": "Ritaglia la selezione in Minerva"
+  },
+  "menuLink": {
+    "message": "Ritaglia il link in Minerva"
+  },
+  "menuImage": {
+    "message": "Ritaglia l’immagine in Minerva"
+  },
+  "chooseFolderFirst": {
+    "message": "Prima scegli una cartella nel clipper: i ritagli col tasto destro andranno lì."
+  }
+}

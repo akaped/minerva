@@ -12,6 +12,9 @@ turns that section into the next version.
 
 ### Added
 
+- **Web clipper** for Firefox and Chrome (and Edge, Brave…): save the article of the page you are reading (as Firefox's Reader View finds it), a selection, a link or a picture as a new note, in the folder and with the tags you choose. Right-click menus clip straight into the folder used last. **Connect** signs in through Minerva, with your password, two-factor code or single sign-on, and gives the extension a token that can only list folders and add notes; revoke it under Personal API tokens. Build it with `npm run build:clipper`; see `docs/clipper.md`.
+- Pasted HTML now writes list markers as Minerva does (`- item`, not `-   item`).
+
 - **Single sign-on:** sign in with your organization's OpenID Connect provider (Keycloak, Authentik, Google Workspace, Entra ID, …), from the web app or the desktop app, which signs in through the system browser. The first sign-in finds the account by verified email, then binds it to the provider's permanent ID. Administrator accounts are linked only from Account security, never by email. Administrators can create member accounts on first sign-in for listed email domains, require single sign-on for everyone but themselves, and unlink accounts. Off unless `MINERVA_OIDC_ISSUER` and `MINERVA_OIDC_CLIENT_ID` are set; see `docs/setup.md`.
 
 - **Desktop release builds:** GitHub Actions packages Linux, Windows and universal macOS clients on relevant main-branch pushes or manual runs; versioned releases reuse the same builds.

@@ -81,6 +81,13 @@ jobs:
       - name: Package minerva-cli
         run: scripts/package-cli.sh linux windows
 
+      # Zips for the browsers' add-on stores (Firefox installs only signed ones).
+      - name: Package the web clipper
+        run: |
+          npm run build:clipper
+          mv dist/clipper/*.zip dist/
+          rm -rf dist/clipper
+
       - uses: actions/upload-artifact@v7
         with:
           name: minerva-linux-windows
@@ -112,7 +119,7 @@ jobs:
             index($0, "## [" v "]") == 1 { on = 1; next }
             /^## \[/ { on = 0 }
             on' CHANGELOG.md >release-notes.md
-          printf '\n**Downloads:** `minerva-desktop` is the app for your computer (Linux, Windows or macOS); `minerva-server` runs your own server; `minerva-cli` searches, adds notes and makes backups from a terminal; or use the Docker image `ghcr.io/%s/minerva:%s`. Check downloads against `SHA256SUMS.txt`.\n' "${GITHUB_REPOSITORY_OWNER,,}" "$version" >>release-notes.md
+          printf '\n**Downloads:** `minerva-desktop` is the app for your computer (Linux, Windows or macOS); `minerva-server` runs your own server; `minerva-cli` searches, adds notes and makes backups from a terminal; `minerva-clipper` is the web clipper for the Chrome Web Store and addons.mozilla.org (see `docs/clipper.md`); or use the Docker image `ghcr.io/%s/minerva:%s`. Check downloads against `SHA256SUMS.txt`.\n' "${GITHUB_REPOSITORY_OWNER,,}" "$version" >>release-notes.md
 
       - name: Publish the release
         env:

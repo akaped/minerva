@@ -2377,5 +2377,18 @@
   "Signed in": "Accesso effettuato",
   "Single sign-on is linked": "Accesso unico collegato",
   "Continue to Minerva": "Continua su Minerva",
-  "This sign-in has expired. Start again.": "Questo accesso è scaduto. Ricomincia."
+  "This sign-in has expired. Start again.": "Questo accesso è scaduto. Ricomincia.",
+  "Adds clipped notes": "Aggiunge note ritagliate",
+  "your browser": "il tuo browser",
+  "Connect the web clipper?": "Collegare il web clipper?",
+  "The Minerva web clipper in {browser} will add the pages, selections and links you clip as notes, signed in as {name}.": "Il web clipper di Minerva in {browser} aggiungerà come note le pagine, le selezioni e i link che ritagli, con l’accesso di {name}.",
+  "It sees only the names of the folders you can add notes to. It cannot open, change or delete your notes. Disconnect it any time by revoking its token in Account.": "Vede solo i nomi delle cartelle in cui puoi aggiungere note. Non può aprire, modificare o eliminare le tue note. Scollegalo quando vuoi revocando il suo token in Account.",
+  "Connect": "Collega",
+  "This token belongs to the web clipper; it can only add clipped notes.": "Questo token appartiene al web clipper: può solo aggiungere note ritagliate.",
+  "This is not a browser extension's sign-in address": "Questo non è l’indirizzo di accesso di un’estensione del browser",
+  "This approval is unknown, used or expired. Connect again.": "Questa autorizzazione è sconosciuta, già usata o scaduta. Collegati di nuovo.",
+  "Revoke an existing API token before connecting the web clipper": "Revoca un token API esistente prima di collegare il web clipper",
+  "The page's address must start with http:// or https://": "L’indirizzo della pagina deve iniziare con http:// o https://",
+  "Invalid challenge": "Verifica non valida",
+  "Invalid state": "Stato non valido"
 }

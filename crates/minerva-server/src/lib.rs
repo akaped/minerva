@@ -5,6 +5,7 @@ mod attachments;
 mod audio;
 mod bootstrap;
 mod calendar;
+mod clipper;
 mod collaboration;
 mod comments;
 mod databases;
@@ -130,6 +131,10 @@ struct Data {
     sso_pending: HashMap<String, sso::Pending>,
     #[serde(skip)]
     sso_handoffs: HashMap<String, sso::Handoff>,
+    /// Web clipper approvals waiting to be collected, by code hash (memory
+    /// only; see `clipper.rs`).
+    #[serde(skip)]
+    clipper_codes: HashMap<String, clipper::Approval>,
     #[serde(default)]
     databases: Vec<Database>,
     #[serde(default)]
@@ -1085,6 +1090,7 @@ pub fn app(store: Shared) -> Router {
         .route("/pane", get(editor_pane))
         .route("/app.js", get(|| async { ([("content-type","text/javascript; charset=utf-8")], include_str!("../../../web/dist/app.js")) }))
         .route("/style.css", get(|| async { ([("content-type","text/css; charset=utf-8")], include_str!("../../../web/style.css")) }))
+        .route("/clipper/connect", get(|| async { ([("referrer-policy","no-referrer")], axum::response::Html(include_str!("../../../web/index.html"))) }))
         .route("/share", get(|| async { ([("x-robots-tag","noindex"),("referrer-policy","no-referrer")], axum::response::Html(include_str!("../../../web/index.html"))) }))
         // Emoji names and search tags for the pickers, loaded when one opens.
         .route("/emoji.json", get(|| async { ([("content-type","application/json"),("cache-control","public, max-age=86400")], include_str!("../../../web/dist/emoji.json")) }))
@@ -1224,6 +1230,7 @@ async fn api(
         s.data.login_challenges = d.login_challenges.clone();
         // A desktop sign-in code is used up by a wrong attempt too.
         s.data.sso_handoffs = d.sso_handoffs.clone();
+        s.data.clipper_codes = d.clipper_codes.clone();
         let (result, cookie) = outcome?;
         // POSTs that only read (searching, rendering, embeds) change nothing,
         // so they skip saving; the editor renders a block at every change.
@@ -1505,6 +1512,12 @@ fn dispatch(
         if let Some(result) =
             mail::reset_route(d, path, &v).inspect_err(|_| attempts.record(&limits))?
         {
+            return Ok((result, None));
+        }
+    }
+    if path.starts_with("clipper/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        if let Some(result) = clipper::route(d, headers, method, &parts, &v)? {
             return Ok((result, None));
         }
     }

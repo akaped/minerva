@@ -197,13 +197,26 @@ function style(node) {
   return (node.getAttribute?.("style") || "").toLowerCase();
 }
 
+/** List markers as Minerva writes them (`- one`, not `-   one`), outside code. */
+function tidyLists(markdown) {
+  let fenced = false;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+      return fenced ? line : line.replace(/^(\s*(?:[-*+]|\d+[.)])) {2,}(?=\S)/, "$1 ");
+    })
+    .join("\n");
+}
 /** Converts pasted HTML (web pages, Google Docs, Word) to Markdown. */
 export function htmlToMarkdown(html) {
-  return converter()
-    .turndown(html)
-    .replace(/\u00a0/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return tidyLists(
+    converter()
+      .turndown(html)
+      .replace(/\u00a0/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  );
 }
 
 /** Block kinds a block can be turned into, with the Markdown that starts them. */

@@ -75,6 +75,8 @@ The browser bundle includes Yjs, lib0, and their browser support dependencies. T
 | uuid                      | 14.0.3  | MIT                     |
 | yjs                       | 13.6.33 | MIT                     |
 
+The web clipper extension (`clipper/`, built into `dist/clipper/`) bundles @mozilla/readability 0.6.0 (Apache-2.0), Turndown and turndown-plugin-gfm (MIT, as above). The bundles keep their license comments.
+
 The server renders math with the `math-core` crate (MIT) and highlights code with `syntect` (MIT); Rust dependencies retain their own licenses.
 
 ## emojibase-data

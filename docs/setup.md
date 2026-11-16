@@ -82,6 +82,7 @@ The [Superhuman Learning plugin](../plugins/server/superhuman-learning/README.md
 
 ## Detailed features
 
+- [Web clipper](clipper.md) browser extension for Firefox and Chrome: save a page's article, a selection, a link or a picture as a note, from the toolbar or the right-click menu. It connects with a token that can only add notes.
 - Installable app (a web app manifest and service worker, `web/sw.js`): its own window, a **Quick note** page (`/capture`) that phones can share pages, text and files to and that waits for a connection, and notes kept for offline when Account → This device allows it (every note of a workspace at once, if you like): without a connection they can be read and edited, and the changes are sent when it is back. Service workers need HTTPS (or `localhost`), so installing and working offline work once the server has a certificate.
 
 - Server → workspaces → folders → notes, with stable UUID identities.

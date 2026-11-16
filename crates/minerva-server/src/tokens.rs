@@ -26,9 +26,13 @@ pub(super) struct ApiToken {
     read_only: bool,
     #[serde(default)]
     workspace_id: Option<String>,
+    /// Made by connecting the web clipper: it may only list folders and add
+    /// clipped notes (`clipper/folders`, `clipper/clip`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    clipper: bool,
 }
 fn view(db: &Connection, t: &ApiToken) -> Value {
-    json!({"id":t.id,"workspace_id":t.workspace_id,"name":t.name,"created_at":t.created_at,"expires_at":t.expires_at,"access":if t.read_only {"read_only"} else {"read_write"},"last_used_at":last_used(db, &t.token_hash)})
+    json!({"id":t.id,"workspace_id":t.workspace_id,"name":t.name,"created_at":t.created_at,"expires_at":t.expires_at,"access":if t.clipper {"clipper"} else if t.read_only {"read_only"} else {"read_write"},"last_used_at":last_used(db, &t.token_hash)})
 }
 
 pub(super) fn initialize(db: &Connection) -> rusqlite::Result<()> {
@@ -83,6 +87,20 @@ pub(super) async fn guard(
             }
             if current.is_some_and(|t| t.workspace_id.is_some()) && !scoped_path(req.uri().path()) {
                 return forbidden().into_response();
+            }
+            if current.is_some_and(|t| t.clipper)
+                && !matches!(
+                    (req.method().as_str(), req.uri().path()),
+                    ("GET", "/api/v1/clipper/folders")
+                        | ("POST", "/api/v1/clipper/clip")
+                        | ("DELETE", "/api/v1/clipper/token")
+                )
+            {
+                return ApiError(
+                    StatusCode::FORBIDDEN,
+                    "This token belongs to the web clipper; it can only add clipped notes.".into(),
+                )
+                .into_response();
             }
             current.is_some_and(|t| t.read_only) && !reads(req.method(), req.uri().path())
         };
@@ -193,6 +211,7 @@ pub(super) fn route(
                 expires_at: now() + days * 86400,
                 read_only,
                 workspace_id,
+                clipper: false,
             };
             let mut result = view(db, &t);
             // Shown once: only its hash is kept.
@@ -211,6 +230,46 @@ pub(super) fn route(
         }
         _ => Err(missing()),
     }
+}
+/// A token for the web clipper in `browser`, for a year. It replaces the one
+/// that browser had, so connecting again does not pile tokens up.
+pub(super) fn issue_clipper(
+    d: &mut Data,
+    user_id: &str,
+    browser: &str,
+) -> Result<(String, u64), ApiError> {
+    let name = format!("Web clipper ({browser})");
+    d.api_tokens
+        .retain(|t| t.expires_at > now() && !(t.user_id == user_id && t.clipper && t.name == name));
+    if d.api_tokens.iter().filter(|t| t.user_id == user_id).count() >= LIMIT {
+        return Err(bad(
+            "Revoke an existing API token before connecting the web clipper",
+        ));
+    }
+    let token = format!("{PREFIX}{}{}", id(), id()).replace('-', "");
+    let expires_at = now() + 365 * 86400;
+    d.api_tokens.push(ApiToken {
+        id: id(),
+        user_id: user_id.to_string(),
+        name,
+        token_hash: hash_token(&token),
+        created_at: now(),
+        expires_at,
+        read_only: false,
+        workspace_id: None,
+        clipper: true,
+    });
+    Ok((token, expires_at))
+}
+/// Revokes the web clipper token presented with a request (disconnecting).
+pub(super) fn revoke_clipper(d: &mut Data, headers: &HeaderMap) -> bool {
+    let Some(hash) = session_token(headers).map(hash_token) else {
+        return false;
+    };
+    let before = d.api_tokens.len();
+    d.api_tokens
+        .retain(|t| !(t.clipper && t.token_hash == hash));
+    d.api_tokens.len() < before
 }
 /// Revokes every token of a deleted account.
 pub(super) fn forget_user(d: &mut Data, user_id: &str) {
