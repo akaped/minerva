@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-18
+
 ### Added
 
 - **Web clipper** for Firefox and Chrome (and Edge, Brave…): save the article of the page you are reading (as Firefox's Reader View finds it), a selection, a link or a picture as a new note, in the folder and with the tags you choose. Right-click menus clip straight into the folder used last. **Connect** signs in through Minerva, with your password, two-factor code or single sign-on, and gives the extension a token that can only list folders and add notes; revoke it under Personal API tokens. Build it with `npm run build:clipper`; see `docs/clipper.md`.
