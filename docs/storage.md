@@ -42,7 +42,16 @@ Opening and editing notes take about half the time they did; bootstrap is unchan
 
 ## Next, in order
 
-1. **Share the notes list the same way** (0.3 ms at 3,000 notes; notes are already shared one by one). After that, a copy of `Data` costs about the same at any size, and what remains is scanning: saving still compares every note, and opening one looks through every note for its backlinks.
+1. **Sharing the notes list the same way was tried and dropped** (November 2026). Wrapping the list in an `Arc`, so a request that changes no note copies none of it and saving skips comparing notes, changed nothing measurable (a desktop Ryzen 7 7800X3D, release build, median of 20, before → after):
+
+   | Notes | Open a note | Edit a note |        Search |   Bootstrap |
+   | ----: | ----------: | ----------: | ------------: | ----------: |
+   | 1,000 | 0.25 → 0.30 | 0.90 → 0.94 |   2.54 → 2.59 |   5.1 → 5.1 |
+   | 3,000 | 0.79 → 0.62 | 2.51 → 2.32 |   6.35 → 6.39 | 14.4 → 14.1 |
+   | 5,000 | 1.66 → 1.60 | 4.34 → 4.24 | 10.25 → 10.14 | 24.1 → 24.1 |
+
+   Copying a list of shared notes is already cheap; what grows with the server is scanning (bootstrap's summaries, search, backlinks), which step 3 addresses.
+
 2. **Bootstrap note paging is implemented.** The browser asks for metadata with `bootstrap?notes=0`, then loads the selected workspace through `bootstrap/notes` in pages of 200. Switching workspaces fetches that workspace. The page endpoint reads under the store lock without cloning or saving `Data`; it bounds summary construction and response size. Selection still scans and sorts the in-memory notes. The legacy bootstrap response remains available for API clients. No new scale measurements have been taken yet.
 3. **Read through SQL.** The rows are already one per entity. With tables per kind (workspaces, folders, notes, blocks, records) and foreign keys, handlers can query what they need (one note and its access, a folder's notes, backlinks by an index of links) instead of scanning `Data`. Then `Data` holds only what must stay in memory (sessions, presence, caches), and requests stop growing with the server. This is the large step: about 15,000 lines of handlers read `Data` today, and they can move one kind at a time, starting with the most used (opening, saving and listing notes, backlinks).
 
