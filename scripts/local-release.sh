@@ -97,6 +97,9 @@ if [ "$mode" != release ]; then
   step "Building the image with $engine: ${tags[*]}"
   tag_args=()
   for t in "${tags[@]}"; do tag_args+=(-t "$t"); done
+  # Podman builds OCI images by default, which silently drop HEALTHCHECK;
+  # compose services that wait for service_healthy then refuse to start.
+  [ "$engine" = podman ] && tag_args+=(--format docker)
   "$engine" build \
     --label "org.opencontainers.image.source=https://github.com/$repo" \
     --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
@@ -106,7 +109,10 @@ if [ "$mode" != release ]; then
   if [ "$push" = 1 ]; then
     step "Pushing the image to ghcr.io"
     gh auth token | "$engine" login ghcr.io -u "$(gh api user -q .login)" --password-stdin
-    for t in "${tags[@]}"; do "$engine" push "$t"; done
+    # Podman would convert to OCI on push too, dropping HEALTHCHECK again.
+    push_args=()
+    [ "$engine" = podman ] && push_args=(--format v2s2)
+    for t in "${tags[@]}"; do "$engine" push "${push_args[@]}" "$t"; done
   fi
 fi
 
