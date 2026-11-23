@@ -694,3 +694,143 @@ async fn record_pages_stay_record_pages_in_replicas() {
         "{local_page}"
     );
 }
+
+#[tokio::test]
+async fn pushed_comments_belong_to_who_pushes_them() {
+    let server = app(Store::open(":memory:", "admin@test.local", "test-password-1234").unwrap());
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
+    let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap().to_string();
+    let (_, user) = request(
+        &server,
+        "POST",
+        "users",
+        &root,
+        json!({"name":"Other","email":"other@test.local","password":"test-password-1234"}),
+    )
+    .await;
+    request(
+        &server,
+        "PUT",
+        "workspace-access",
+        &token,
+        json!({"workspace_id":ws,"user_id":user["id"],"role":"viewer"}),
+    )
+    .await;
+    let other = login(&server, "other@test.local").await;
+
+    // The owner's thread reaches a replica with the owner's identity.
+    let (_, thread) = request(
+        &server,
+        "POST",
+        &format!("notes/{nid}/comments"),
+        &token,
+        json!({"text":"Owner's"}),
+    )
+    .await;
+    let tid = thread["id"].as_str().unwrap().to_string();
+    let cid = thread["comments"][0]["id"].as_str().unwrap().to_string();
+    let pulled = pull(&server, &other, &ws, 0).await;
+    assert_eq!(pulled["user"]["name"], "Other");
+    let e = entry(&pulled, "thread", &tid).unwrap();
+    assert_eq!(e["fields"]["note_id"], nid.as_str());
+    assert_eq!(e["fields"][format!("comments/{cid}")]["text"], "Owner's");
+    assert_eq!(e["fields"][format!("comments/{cid}")]["author_name"], "owner");
+
+    // A viewer may reply, but a reply claiming another author is still theirs,
+    // and they can neither change, delete nor resolve the owner's thread.
+    let reply = "8b0c1f9e-0000-4000-8000-000000000001";
+    let at = later();
+    let edited = push(
+        &server,
+        &other,
+        &ws,
+        json!([{"op_id":"o:1","kind":"thread","id":tid,
+            "fields":{
+                format!("comments/{reply}"):{"author":"someone","author_name":"Owner","text":"Viewer's","created_at":1},
+                format!("comments/{cid}"):{"text":"Changed by the viewer"},
+                "resolved":true},
+            "clocks":{format!("comments/{reply}"):at,format!("comments/{cid}"):at,"resolved":at}}]),
+    )
+    .await;
+    assert_eq!(edited[0]["status"], "merged", "{edited:?}");
+    let lost: Vec<&str> = edited[0]["lost"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert!(lost.contains(&"resolved") && lost.contains(&format!("comments/{cid}").as_str()));
+    let deleted = push(
+        &server,
+        &other,
+        &ws,
+        json!([{"op_id":"o:2","kind":"thread","id":tid,"deleted":true,"clocks":{"deleted":later()}}]),
+    )
+    .await;
+    assert_eq!(deleted[0]["status"], "forbidden");
+
+    let (_, threads) = request(
+        &server,
+        "GET",
+        &format!("notes/{nid}/comments"),
+        &token,
+        json!({}),
+    )
+    .await;
+    let t = &threads[0];
+    assert_eq!(t["resolved"], false);
+    assert_eq!(t["comments"][0]["text"], "Owner's");
+    assert_eq!(t["comments"][1]["text"], "Viewer's");
+    assert_eq!(t["comments"][1]["author"], user["id"]);
+    assert_eq!(t["comments"][1]["author_name"], "Other");
+
+    // The refused fields got new clocks, so the viewer's replica converges on
+    // the server's values at its next pull.
+    let again = pull(&server, &other, &ws, 0).await;
+    let e = entry(&again, "thread", &tid).unwrap();
+    assert_eq!(e["fields"]["resolved"], false);
+    assert!(e["clocks"]["resolved"].as_str().unwrap() > at.as_str());
+    assert_eq!(e["fields"][format!("comments/{cid}")]["text"], "Owner's");
+}
+
+#[tokio::test]
+async fn threads_from_before_replication_reach_new_replicas() {
+    let path = std::env::temp_dir().join(format!("minerva-threads-{}.db", uuid::Uuid::new_v4()));
+    let open = || app(Store::open(path.to_str().unwrap(), "admin@test.local", "test-password-1234").unwrap());
+    let server = open();
+    let root = login(&server, "admin@test.local").await;
+    let token = common::member(&server, &root, "owner@test.local").await;
+    let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
+    let ws = common::team_workspace(&boot)["id"].as_str().unwrap().to_string();
+    let nid = common::welcome(&boot)["id"].as_str().unwrap().to_string();
+    let (_, thread) = request(
+        &server,
+        "POST",
+        &format!("notes/{nid}/comments"),
+        &token,
+        json!({"text":"Old"}),
+    )
+    .await;
+    let tid = thread["id"].as_str().unwrap().to_string();
+    drop(server);
+    // As in a database from an earlier version: no change-log rows, no clocks.
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute("DELETE FROM changes WHERE kind='thread'", [])
+        .unwrap();
+
+    let server = open();
+    let token = login(&server, "owner@test.local").await;
+    let pulled = pull(&server, &token, &ws, 0).await;
+    let e = entry(&pulled, "thread", &tid).expect("the old thread is pulled");
+    let cid = thread["comments"][0]["id"].as_str().unwrap();
+    assert_eq!(e["fields"][format!("comments/{cid}")]["text"], "Old");
+    assert!(e["clocks"][format!("comments/{cid}")].is_string());
+    std::fs::remove_file(&path).ok();
+}

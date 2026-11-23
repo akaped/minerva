@@ -1781,6 +1781,8 @@
   "New entities need a UUID": "Le nuove entità hanno bisogno di un UUID",
   "Invalid workspace": "Spazio di lavoro non valido",
   "Unknown entity kind": "Tipo di entità sconosciuto",
+  "Missing note": "Nota mancante",
+  "A thread needs a comment": "Una discussione ha bisogno di un commento",
   "Missing folder": "Cartella mancante",
   "A new note needs its document": "Una nuova nota ha bisogno del suo documento",
   "Missing database": "Database mancante",

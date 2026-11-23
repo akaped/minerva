@@ -4,12 +4,10 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-
-
+- [ ] Ability to Import Docmost notes'
 
 ## Follow-ups from the last round
 
-- [ ] **Comments**: in desktop offline copies (they are not replicated yet).
 - [ ] **Storage**: read through SQL, with tables per kind and foreign keys (bootstrap note lists are now paged by workspace), so requests stop growing with the server; PostgreSQL after that, for more than one app server. Measurements and the plan are in `docs/storage.md`.
 - [ ] **Importers**: extend the direct Notion API importer to database tables and attached files (page text and child pages now import directly; unsupported content stays linked to Notion).
 
@@ -17,6 +15,7 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 - [ ] **Calendar**: CalDAV, so calendar apps can also add and change reminders. It is a protocol of its own (discovery, ETags, `REPORT` queries, each client's quirks) and needs its own project.
 
 ## MAYBE IN FUTURE. I will tell you when
+
 - [ ] **Plugin API in the browser**: slash commands, block renderers and sidebar panels, sandboxed; a plugin list to browse.
 - [ ] **AI**: semantic retrieval (embeddings stored next to the search index), per-person provider keys and usage limits, scheduled agents, AI actions on several selected blocks, streaming in the selection assistant.
 - [ ] **Identity**: passkeys, an audit log (single sign-on with OpenID Connect shipped).

@@ -16,8 +16,8 @@
 use super::*;
 use std::collections::BTreeMap;
 
-type Fields = BTreeMap<String, Value>;
-type Clocks = BTreeMap<String, String>;
+pub(super) type Fields = BTreeMap<String, Value>;
+pub(super) type Clocks = BTreeMap<String, String>;
 
 pub(super) fn initialize(db: &Connection) -> rusqlite::Result<()> {
     db.execute_batch(
@@ -44,10 +44,10 @@ struct Entity {
     workspace: String,
     fields: Fields,
 }
-fn key(kind: &str, id: &str) -> String {
+pub(super) fn key(kind: &str, id: &str) -> String {
     format!("{kind}:{id}")
 }
-fn folder_workspace(d: &Data, folder: &str) -> Option<String> {
+pub(super) fn folder_workspace(d: &Data, folder: &str) -> Option<String> {
     d.folders
         .iter()
         .find(|f| f.id == folder)
@@ -113,7 +113,7 @@ fn set_special(d: &mut Data, ws: &str, fields: &Fields) {
 }
 /// Replicas choose the IDs of entities they create; they must be canonical
 /// UUIDs, like the server's own, since pages place IDs in markup and URLs.
-fn canonical(id: &str) -> bool {
+pub(super) fn canonical(id: &str) -> bool {
     Uuid::parse_str(id).is_ok_and(|u| u.to_string() == id)
 }
 fn folder_entity(f: &Folder) -> Entity {
@@ -276,7 +276,7 @@ fn current(d: &Data, kind: &str, id: &str) -> Option<Entity> {
     }
 }
 
-fn parse(clock: &str) -> (u64, u64) {
+pub(super) fn parse(clock: &str) -> (u64, u64) {
     let mut parts = clock.splitn(3, '.');
     let mut next = || parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
     (next(), next())
@@ -293,7 +293,7 @@ fn valid_clock(clock: &str) -> bool {
         && !parts[2].is_empty()
 }
 /// Issues a clock later than every clock this node has issued or seen.
-fn tick(d: &mut Data) -> String {
+pub(super) fn tick(d: &mut Data) -> String {
     let wall = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -431,6 +431,26 @@ pub(super) fn log(db: &Connection, changes: &[Change], upstream: bool) -> rusqli
     Ok(())
 }
 
+/// Logs one entity changed outside `persist()`, such as a comment thread, which
+/// lives in its own table.
+pub(super) fn log_entity(
+    db: &Connection,
+    workspace: &str,
+    kind: &'static str,
+    id: &str,
+    deleted: Option<String>,
+    upstream: bool,
+) -> Result<(), ApiError> {
+    let change = Change {
+        workspace: workspace.into(),
+        kind,
+        id: id.into(),
+        deleted: deleted.is_some(),
+        clock: deleted.unwrap_or_default(),
+    };
+    log(db, &[change], upstream).map_err(|_| internal())
+}
+
 fn visible(d: &Data, u: &User, workspace: &str) -> bool {
     d.workspaces.iter().any(|w| w.id == workspace)
         && (owns(d, u, workspace)
@@ -455,7 +475,10 @@ fn governing_folder(d: &Data, e: &Entity) -> Option<String> {
 }
 /// The entry for an entity, or a tombstone when it no longer exists or the user
 /// cannot read it.
-fn export(d: &Data, u: &User, kind: &str, id: &str, clock: &str) -> Value {
+fn export(db: &Connection, d: &Data, u: &User, kind: &str, id: &str, clock: &str) -> Value {
+    if kind == "thread" {
+        return comments::sync_entry(db, d, u, id, clock);
+    }
     let tombstone = json!({"kind":kind,"id":id,"deleted":true,"clocks":{"deleted":clock}});
     let Some(e) = current(d, kind, id) else {
         return tombstone;
@@ -504,7 +527,7 @@ pub(super) fn endpoint(
 ) -> Result<Value, ApiError> {
     match (method, path) {
         ("GET", "sync/changes") => pull(db, d, u, query),
-        ("POST", "sync/push") => push(d, u, v),
+        ("POST", "sync/push") => push(db, d, u, v),
         _ if d.local && path.starts_with("local/") => local(db, d, u, method, path, v),
         _ => Err(missing()),
     }
@@ -542,7 +565,7 @@ fn pull(db: &Connection, d: &Data, u: &User, query: &str) -> Result<Value, ApiEr
     let changes: Vec<Value> = rows
         .iter()
         .map(|(seq, kind, id, clock)| {
-            let mut entry = export(d, u, kind, id, clock);
+            let mut entry = export(db, d, u, kind, id, clock);
             entry["seq"] = json!(seq);
             entry
         })
@@ -552,6 +575,7 @@ fn pull(db: &Connection, d: &Data, u: &User, query: &str) -> Result<Value, ApiEr
         "server_id": d.server_id,
         "hlc": d.hlc,
         "access": access_digest(d, u, workspace),
+        "user": {"id": u.id, "name": u.name},
         "cursor": rows.last().map_or(since, |r| r.0),
         "more": rows.len() as i64 == limit,
         "changes": changes,
@@ -559,7 +583,7 @@ fn pull(db: &Connection, d: &Data, u: &User, query: &str) -> Result<Value, ApiEr
 }
 
 /// `POST sync/push {workspace_id, upstream?, ops: [{op_id, changed?, ...entry}]}`
-fn push(d: &mut Data, u: &User, v: Value) -> Result<Value, ApiError> {
+fn push(db: &Connection, d: &mut Data, u: &User, v: Value) -> Result<Value, ApiError> {
     let workspace = field(&v, "workspace_id")?;
     let upstream = v["upstream"].as_bool() == Some(true);
     // Only a desktop replica applies its upstream server's changes this way.
@@ -588,7 +612,7 @@ fn push(d: &mut Data, u: &User, v: Value) -> Result<Value, ApiError> {
         let result = match d.sync_ops.get(op_id) {
             Some((_, done)) => done.clone(),
             None if op_id.is_empty() => json!({"status":"invalid","error":"Missing op_id"}),
-            None => match apply(d, u, &workspace, op, upstream) {
+            None => match apply(db, d, u, &workspace, op, upstream) {
                 Ok(result) => {
                     d.sync_ops.insert(op_id.into(), (now(), result.clone()));
                     result
@@ -629,6 +653,11 @@ fn push(d: &mut Data, u: &User, v: Value) -> Result<Value, ApiError> {
         }
         if let Some(access) = v["access"].as_str() {
             r.access = access.into();
+        }
+        // Who the user is on the server, so comments written here are theirs.
+        if let Some(id) = v["user"]["id"].as_str().filter(|id| id.len() <= 80) {
+            r.user_id = id.into();
+            r.user_name = v["user"]["name"].as_str().unwrap_or("").chars().take(200).collect();
         }
     }
     Ok(json!({"results":results,"hlc":d.hlc}))
@@ -675,7 +704,7 @@ fn settle(d: &mut Data, kind: &str, id: &str, applied: &Fields, clocks: &Clocks)
             .insert(f.clone(), clock);
     }
 }
-fn outcome(lost: Vec<String>) -> Value {
+pub(super) fn outcome(lost: Vec<String>) -> Value {
     if lost.is_empty() {
         json!({"status":"applied"})
     } else {
@@ -689,7 +718,14 @@ fn string(fields: &Fields, name: &str) -> Option<String> {
     fields.get(name).and_then(Value::as_str).map(String::from)
 }
 
-fn apply(d: &mut Data, u: &User, ws: &str, op: &Value, upstream: bool) -> Result<Value, ApiError> {
+fn apply(
+    db: &Connection,
+    d: &mut Data,
+    u: &User,
+    ws: &str,
+    op: &Value,
+    upstream: bool,
+) -> Result<Value, ApiError> {
     let kind = op["kind"].as_str().unwrap_or("");
     let id = op["id"]
         .as_str()
@@ -698,7 +734,9 @@ fn apply(d: &mut Data, u: &User, ws: &str, op: &Value, upstream: bool) -> Result
     let fields: Fields = serde_json::from_value(op["fields"].clone()).unwrap_or_default();
     let clocks: Clocks =
         serde_json::from_value(op["clocks"].clone()).map_err(|_| bad("Invalid clocks"))?;
-    if fields.len() > 100 || clocks.values().any(|c| !valid_clock(c)) {
+    // A comment thread has a field per reply, deleted ones included.
+    let most = if kind == "thread" { 1000 } else { 100 };
+    if fields.len() > most || clocks.values().any(|c| !valid_clock(c)) {
         return Err(bad("Invalid fields or clocks"));
     }
     if fields.keys().any(|f| !clocks.contains_key(f)) {
@@ -711,7 +749,13 @@ fn apply(d: &mut Data, u: &User, ws: &str, op: &Value, upstream: bool) -> Result
         let clock = clocks
             .get("deleted")
             .ok_or_else(|| bad("Missing deletion clock"))?;
-        return delete(d, u, ws, kind, id, clock, upstream);
+        if kind == "thread" {
+            return comments::delete_synced(db, d, u, ws, id, clock, upstream);
+        }
+        return delete(db, d, u, ws, kind, id, clock, upstream);
+    }
+    if kind == "thread" {
+        return comments::apply_synced(db, d, u, ws, id, &fields, &clocks, upstream);
     }
     let changed: HashSet<String> =
         serde_json::from_value(op["changed"].clone()).unwrap_or_default();
@@ -1136,7 +1180,9 @@ fn apply_record(
 
 /// Deletes an entity unless it changed after the deletion; then it is kept and
 /// returned so the replica can restore it.
+#[allow(clippy::too_many_arguments)]
 fn delete(
+    db: &Connection,
     d: &mut Data,
     u: &User,
     ws: &str,
@@ -1154,7 +1200,7 @@ fn delete(
     let deleted_at = parse(clock).0 / 1000;
     let edited_after = |updated_at: u64| updated_at > deleted_at;
     let kept =
-        |d: &Data| json!({"status":"conflict","kept":true,"entity":export(d, u, kind, id, clock)});
+        |d: &Data| json!({"status":"conflict","kept":true,"entity":export(db, d, u, kind, id, clock)});
     match kind {
         // Removing a replica only unsubscribes; a workspace is deleted on the server.
         "workspace" if upstream => {
@@ -1238,6 +1284,12 @@ pub(super) struct Replica {
     pub roles: HashMap<String, Role>,
     #[serde(default)]
     pub revoked: bool,
+    /// The user's ID and name on the server, which author the comments written
+    /// in this copy.
+    #[serde(default)]
+    pub user_id: String,
+    #[serde(default)]
+    pub user_name: String,
 }
 pub(super) fn replica<'a>(d: &'a Data, workspace: &str) -> Option<&'a Replica> {
     if !d.local {

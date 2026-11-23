@@ -305,6 +305,177 @@ async fn replicas_work_offline_and_converge() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// Comment threads travel with offline copies: written offline, replied to on
+/// both sides at once, resolved and deleted, always as the server's user.
+#[tokio::test(flavor = "multi_thread")]
+async fn comments_replicate_both_ways() {
+    let store = minerva_server::Store::open(":memory:", "admin@test.local", PASSWORD).unwrap();
+    let remote = Remote::start(store, "127.0.0.1:0".parse().unwrap());
+    let url = remote.url();
+    let base = url::Url::parse(&format!("{url}/")).unwrap();
+    create_member(&url).await;
+    let token = Transport::new()
+        .unwrap()
+        .login(&base, "member@test.local", PASSWORD)
+        .await
+        .unwrap()
+        .token()
+        .to_string();
+    let credentials = Arc::new(MemoryStore::default());
+    let gateway = Arc::new(Gateway::new(
+        Transport::new().unwrap(),
+        Registry::in_memory(),
+        SharedStore(credentials.clone()),
+    ));
+    let connection = gateway.add(&url, "Team", false).await.unwrap();
+    credentials.set(&connection.id, &token).unwrap();
+    let dir = std::env::temp_dir().join(format!("minerva-comments-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let local = Arc::new(LocalServer::open(&dir.join("local.db")).unwrap());
+
+    // A thread started on the server before the copy exists.
+    let boot = remote_call(&url, &token, Method::GET, "bootstrap", Value::Null).await;
+    let ws = boot["workspaces"][0]["id"].as_str().unwrap().to_string();
+    let note = boot["notes"][0]["id"].as_str().unwrap().to_string();
+    let comments = format!("notes/{note}/comments");
+    let online = remote_call(
+        &url,
+        &token,
+        Method::POST,
+        &comments,
+        json!({"text":"Started online"}),
+    )
+    .await;
+    let tid = online["id"].as_str().unwrap().to_string();
+
+    let worker = SyncWorker::new(local.clone(), gateway.clone());
+    worker.subscribe(&connection.id, &ws).await.unwrap();
+    assert!(worker.run_once().await);
+    let copied = local.call(Method::GET, &comments, Value::Null).await.unwrap();
+    assert_eq!(copied[0]["id"], tid.as_str());
+    assert_eq!(copied[0]["comments"][0]["text"], "Started online");
+    assert_eq!(copied[0]["comments"][0]["author_name"], "Member");
+    // The copy knows it is the same person, so they may change it here.
+    assert_eq!(copied[0]["comments"][0]["mine"], true);
+
+    // Offline: a reply, a new thread and an edit to the first comment.
+    let (store, address) = remote.stop();
+    local
+        .call(
+            Method::POST,
+            &format!("{comments}/{tid}/replies"),
+            json!({"text":"Reply from the train"}),
+        )
+        .await
+        .unwrap();
+    let first = copied[0]["comments"][0]["id"].as_str().unwrap().to_string();
+    local
+        .call(
+            Method::PATCH,
+            &format!("{comments}/{tid}/{first}"),
+            json!({"text":"Started online, edited offline"}),
+        )
+        .await
+        .unwrap();
+    let fresh = local
+        .call(Method::POST, &comments, json!({"text":"New offline"}))
+        .await
+        .unwrap();
+    let fresh_id = fresh["id"].as_str().unwrap().to_string();
+    assert!(!worker.run_once().await);
+
+    // Meanwhile a reply on the server to the same thread.
+    let remote = Remote::start(store, address);
+    remote_call(
+        &url,
+        &token,
+        Method::POST,
+        &format!("{comments}/{tid}/replies"),
+        json!({"text":"Reply from the office"}),
+    )
+    .await;
+    assert!(worker.run_once().await);
+
+    let texts = |threads: &Value, id: &str| -> Vec<String> {
+        threads
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id)
+            .map(|t| {
+                t["comments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| c["text"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let server = remote_call(&url, &token, Method::GET, &comments, Value::Null).await;
+    let here = local.call(Method::GET, &comments, Value::Null).await.unwrap();
+    let mut both = texts(&server, &tid);
+    both.sort();
+    assert_eq!(
+        both,
+        [
+            "Reply from the office",
+            "Reply from the train",
+            "Started online, edited offline"
+        ]
+    );
+    assert_eq!(texts(&server, &tid), texts(&here, &tid));
+    assert_eq!(texts(&server, &fresh_id), ["New offline"]);
+    let authored = server
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == fresh_id.as_str())
+        .unwrap();
+    assert_eq!(authored["comments"][0]["mine"], true);
+    assert_eq!(authored["comments"][0]["author_name"], "Member");
+
+    // Resolving here and deleting the new thread reach the server.
+    local
+        .call(
+            Method::PATCH,
+            &format!("{comments}/{tid}"),
+            json!({"resolved":true}),
+        )
+        .await
+        .unwrap();
+    let fresh_comment = authored["comments"][0]["id"].as_str().unwrap().to_string();
+    local
+        .call(
+            Method::DELETE,
+            &format!("{comments}/{fresh_id}/{fresh_comment}"),
+            Value::Null,
+        )
+        .await
+        .unwrap();
+    assert!(worker.run_once().await);
+    let server = remote_call(&url, &token, Method::GET, &comments, Value::Null).await;
+    assert_eq!(server.as_array().unwrap().len(), 1, "{server}");
+    assert_eq!(server[0]["resolved"], true);
+    assert_eq!(server[0]["resolved_by_name"], "Member");
+
+    // Settled: nothing left to send, and nothing conflicted.
+    assert!(worker.run_once().await);
+    let replicas = local
+        .call(Method::GET, "local/replicas", Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(replicas[0]["pending"], 0, "{replicas}");
+    let conflicts = local
+        .call(Method::GET, "local/conflicts", Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(conflicts, json!([]), "{conflicts}");
+
+    drop(remote.stop());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// Creates `member@test.local` with `PASSWORD` on the server at `url`: content
 /// belongs to members, since administrators only manage the server.
 async fn create_member(url: &str) {

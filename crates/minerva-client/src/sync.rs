@@ -390,6 +390,7 @@ impl SyncWorker {
                         "ops": ops,
                         "cursor": pulled["cursor"],
                         "access": digest,
+                        "user": pulled["user"],
                     }),
                 )
                 .await?;

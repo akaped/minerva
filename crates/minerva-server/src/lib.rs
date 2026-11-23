@@ -314,6 +314,7 @@ impl Store {
                 let changes = replication::track(&Data::default(), data).map_err(|e| e.1)?;
                 replication::log(&db, &changes, false)?;
             }
+            comments::backfill(&db, data)?;
             Ok(())
         })?;
         Ok(Arc::new(Mutex::new(Self {
