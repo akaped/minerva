@@ -12,6 +12,7 @@ turns that section into the next version.
 
 ### Added
 
+- **Import from Docmost:** choose a Docmost space or page export (Markdown, with attachments). Pages keep their hierarchy, links between them, pictures and files, emoji icons and creation dates; Docmost's callouts become Minerva's callouts and its toggles keep their summary and contents.
 - **Comments in offline copies:** the desktop app's offline copies now keep a note's comment threads, so you can read, start, reply to, edit, resolve and delete comments without a network. They sync both ways: replies written offline and on the server at the same time both survive, and comments you write offline are yours on the server too (mentions are emailed when they arrive there). Threads written before this version reach new copies as well. Needs this version on both the server and the desktop app; an older server lists them as refused.
 
 ## [0.7.0] - 2026-11-18

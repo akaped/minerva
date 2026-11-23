@@ -245,6 +245,7 @@ async fn collect(client: &mut Client, root: String) -> Result<Export, ApiError> 
             markdown,
             tags: vec![],
             metadata,
+            icon: String::new(),
         });
     }
     if !unsupported.is_empty() {

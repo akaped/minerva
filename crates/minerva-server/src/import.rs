@@ -34,6 +34,8 @@ struct Page {
     markdown: String,
     tags: Vec<String>,
     metadata: BTreeMap<String, String>,
+    /// An emoji, from Docmost's metadata.
+    icon: String,
 }
 struct Table {
     dir: Vec<String>,
@@ -223,7 +225,15 @@ fn percent_decode(text: &str) -> String {
 }
 
 fn from_files(entries: Vec<(String, Vec<u8>)>) -> Export {
-    let mut entries: Vec<_> = entries.into_iter().filter(|(p, _)| !ignored(p)).collect();
+    // Docmost writes some files as `/files/…`, or `Page//files/…`.
+    let mut entries: Vec<_> = entries
+        .into_iter()
+        .map(|(p, data)| {
+            let parts: Vec<&str> = p.split('/').filter(|s| !s.is_empty()).collect();
+            (parts.join("/"), data)
+        })
+        .filter(|(p, _)| !p.is_empty() && !ignored(p))
+        .collect();
     // One folder around everything (a zipped vault) is not a folder of its own.
     let root = entries
         .first()
@@ -239,6 +249,10 @@ fn from_files(entries: Vec<(String, Vec<u8>)>) -> Export {
     }
     let paths: HashSet<String> = entries.iter().map(|(p, _)| p.to_lowercase()).collect();
     let mut export = Export::default();
+    let docmost = entries
+        .iter()
+        .position(|(p, _)| p == DOCMOST_METADATA)
+        .map(|i| entries.remove(i).1);
     for (path, data) in entries {
         let (dir, file) = path
             .rsplit_once('/')
@@ -295,7 +309,100 @@ fn from_files(entries: Vec<(String, Vec<u8>)>) -> Export {
             }
         }
     }
+    if let Some(json) = docmost {
+        docmost_metadata(&mut export, &json);
+    }
     export
+}
+
+const DOCMOST_METADATA: &str = "docmost-metadata.json";
+/// Docmost's `docmost-metadata.json`: each page's icon and creation date, by
+/// its percent-encoded path in the export.
+fn docmost_metadata(export: &mut Export, json: &[u8]) {
+    let Ok(meta) = serde_json::from_slice::<Value>(json) else {
+        return;
+    };
+    let Some(pages) = meta["pages"].as_object() else {
+        return;
+    };
+    let by_path: HashMap<String, &Value> = pages
+        .iter()
+        .map(|(path, v)| {
+            let decoded: Vec<String> = path.split('/').map(percent_decode).collect();
+            (decoded.join("/"), v)
+        })
+        .collect();
+    for p in &mut export.pages {
+        let Some(v) = by_path.get(&p.path) else {
+            continue;
+        };
+        if let Some(icon) = v["icon"].as_str().filter(|i| {
+            (1..=8).contains(&i.chars().count()) && !i.chars().any(|c| c.is_ascii_alphanumeric())
+        }) {
+            p.icon = icon.to_string();
+        }
+        if let Some(created) = v["createdAt"].as_str().and_then(|c| c.get(..10)) {
+            if date(created).is_some() {
+                p.metadata.insert("created".into(), created.into());
+            }
+        }
+    }
+}
+
+/// Docmost's callouts (`:::info` … `:::`) as Minerva's (`> [!NOTE]`), and its
+/// toggles (`<details>` with a `<summary>`) as their summary in bold followed by
+/// what they held. Fenced code is left as it is.
+fn callouts_and_toggles(markdown: &str) -> String {
+    let kind = |name: &str| match name.trim().to_lowercase().as_str() {
+        "info" | "note" => Some("NOTE"),
+        "success" | "tip" => Some("TIP"),
+        "warning" => Some("WARNING"),
+        "danger" | "caution" | "error" => Some("CAUTION"),
+        "important" => Some("IMPORTANT"),
+        _ => None,
+    };
+    let mut out = String::with_capacity(markdown.len());
+    let mut fenced = false;
+    let mut callout = false;
+    for line in markdown.lines() {
+        let t = line.trim();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+        }
+        if !fenced {
+            if callout && t == ":::" {
+                callout = false;
+                continue;
+            }
+            if let Some(k) = t.strip_prefix(":::").filter(|_| !callout).and_then(kind) {
+                callout = true;
+                out.push_str(&format!("> [!{k}]\n"));
+                continue;
+            }
+            if t.starts_with("<details") && t.ends_with('>') || t == "</details>" {
+                continue;
+            }
+            if let Some(summary) = t
+                .strip_prefix("<summary>")
+                .and_then(|r| r.strip_suffix("</summary>"))
+            {
+                if callout {
+                    out.push_str("> ");
+                }
+                out.push_str(&format!("**{}**\n", summary.trim()));
+                continue;
+            }
+        }
+        if callout {
+            out.push_str(if line.is_empty() { ">" } else { "> " });
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if !markdown.ends_with('\n') && out.ends_with('\n') {
+        out.pop();
+    }
+    out
 }
 
 /// A page from Markdown: its title, tags and details from front matter or
@@ -346,7 +453,9 @@ fn page(dir: Vec<String>, path: &str, stem: &str, text: &str) -> Page {
             _ => break,
         }
     }
-    let mut body = bear_tags(body[skip.min(body.len())..].trim_start_matches('\n'));
+    let mut body = callouts_and_toggles(&bear_tags(
+        body[skip.min(body.len())..].trim_start_matches('\n'),
+    ));
     // A first heading repeating the title is the title.
     if let Some(first) = body.lines().next() {
         if let Some(heading) = first.strip_prefix("# ") {
@@ -394,6 +503,7 @@ fn page(dir: Vec<String>, path: &str, stem: &str, text: &str) -> Page {
         markdown: body,
         tags: normalized,
         metadata,
+        icon: String::new(),
     }
 }
 
@@ -956,7 +1066,7 @@ fn apply(s: &mut Store, u: &User, target: &str, mut export: Export) -> Result<Va
             } else {
                 p.title.clone()
             },
-            icon: String::new(),
+            icon: p.icon.clone(),
             blocks: {
                 let mut used = HashSet::new();
                 parts
@@ -1438,6 +1548,7 @@ fn evernote(xml: &str) -> Result<Export, ApiError> {
             markdown,
             tags,
             metadata,
+            icon: String::new(),
         });
     }
     Ok(export)
@@ -1610,6 +1721,7 @@ fn mhtml(name: &str, bytes: &[u8]) -> Result<Export, ApiError> {
         markdown: html_to_markdown(&body),
         tags: vec![],
         metadata: BTreeMap::new(),
+        icon: String::new(),
     });
     Ok(export)
 }

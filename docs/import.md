@@ -2,15 +2,16 @@
 
 Choose **Import** in a folder, or **Import notes** in the workspace menu, pick the files and the folder they go into. Each file is read on the server (`POST /api/v1/import`), up to 200 MB per file.
 
-| From         | What to choose            | How to get it                                                                                                                                                           |
-| ------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Notion**   | The export zip            | Settings → _Export all workspace content_, or ··· → _Export_ on a page; format _Markdown & CSV_, with subpages. Large exports nest zips inside the zip; that works too. |
-| **Obsidian** | Your vault folder, zipped | —                                                                                                                                                                       |
-| **Logseq**   | Your graph folder, zipped | It holds `pages`, `journals` and `assets`.                                                                                                                              |
-| **Evernote** | An `.enex` file           | Right-click a notebook → _Export notebook_, as ENEX.                                                                                                                    |
-| **Bear**     | TextBundles or Markdown   | File → _Export Notes_, as TextBundle (`.textbundle` folders, zipped, or `.textpack` files) or Markdown. Tags with spaces (`#summer plans#`) become `#summer-plans`.     |
-| **OneNote**  | An `.mht` file            | File → _Export_, a page or section as _Single File Web Page (.mht)_; its pictures come along.                                                                           |
-| **Markdown** | One or more `.md` files   | —                                                                                                                                                                       |
+| From         | What to choose            | How to get it                                                                                                                                                            |
+| ------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Notion**   | The export zip            | Settings → _Export all workspace content_, or ··· → _Export_ on a page; format _Markdown & CSV_, with subpages. Large exports nest zips inside the zip; that works too.  |
+| **Obsidian** | Your vault folder, zipped | —                                                                                                                                                                        |
+| **Logseq**   | Your graph folder, zipped | It holds `pages`, `journals` and `assets`.                                                                                                                               |
+| **Evernote** | An `.enex` file           | Right-click a notebook → _Export notebook_, as ENEX.                                                                                                                     |
+| **Bear**     | TextBundles or Markdown   | File → _Export Notes_, as TextBundle (`.textbundle` folders, zipped, or `.textpack` files) or Markdown. Tags with spaces (`#summer plans#`) become `#summer-plans`.      |
+| **OneNote**  | An `.mht` file            | File → _Export_, a page or section as _Single File Web Page (.mht)_; its pictures come along.                                                                            |
+| **Docmost**  | The export zip            | Space settings → _Export_ (or ··· → _Export_ on a page), format _Markdown_, with attachments. A single page without attachments comes as one `.md` file; that works too. |
+| **Markdown** | One or more `.md` files   | —                                                                                                                                                                        |
 
 ## What comes along
 
@@ -20,6 +21,7 @@ Choose **Import** in a folder, or **Import notes** in the workspace menu, pick t
 - **Pictures and files** a page shows or links to (`![](…)`, `![[file.png]]`, Evernote's attachments) become that note's attachments. Obsidian's embeds are found by file name anywhere in the vault. Files no page uses are left out. Attachment limits apply: 60 MiB per file, 500 MiB per note.
 - **Tags and details**: front matter (`tags`, other `key: value` fields), Logseq page properties (`tags:: …`) and Evernote tags become note tags (up to 20) and note details. Evernote also keeps the creation date and source address.
 - **Notion tables** (CSV) become databases. The first column is the name; a column becomes checkboxes (Yes/No), numbers, dates, links, choices or multiple choices (values joined by commas) when all its values fit, and text otherwise. Relation columns link to the records of the table they point to when that table is in the same import (by the related page's title), and are text otherwise. The complete table (`_all.csv`) is used when Notion exported both. Up to 32 columns and 10,000 rows.
+- **Docmost** pages keep their place under their parent page (a subfolder named after it), their emoji icon and creation date (from `docmost-metadata.json`). Callouts (`:::info`, `:::warning`, …) become Minerva's callouts, and toggles their summary in bold followed by what they held. Diagrams come over as their pictures; user mentions as plain `@Name` text.
 - **Evernote** formatting comes over as Markdown: headings, bold, italics, strikethrough, links, lists, checkboxes, quotes, code, tables and rules. Encrypted text is left out.
 
 Left out: the apps' own folders (`.obsidian`, `logseq`, `__MACOSX`), Logseq's folding state, and anything that is not Markdown, CSV, an Evernote note or a file a page uses. An import adds up to 5,000 notes, each with up to 2,000 blocks; the summary after an import lists anything cut or left out.

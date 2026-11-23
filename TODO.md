@@ -4,8 +4,6 @@ What Minerva still misses compared with Notion, Logseq and AFFiNE (reviewed Nove
 
 ## Next
 
-- [ ] Ability to Import Docmost notes'
-
 ## Follow-ups from the last round
 
 - [ ] **Storage**: read through SQL, with tables per kind and foreign keys (bootstrap note lists are now paged by workspace), so requests stop growing with the server; PostgreSQL after that, for more than one app server. Measurements and the plan are in `docs/storage.md`.

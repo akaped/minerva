@@ -471,3 +471,80 @@ async fn imports_bear_textbundles_and_onenote_web_archives() {
         "the picture is kept: {body}"
     );
 }
+
+#[tokio::test]
+async fn imports_docmost_space_exports() {
+    let router = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let root = api(
+        &router,
+        "POST",
+        "login",
+        "",
+        json!({"email":"admin@test.local","password":common::PASSWORD}),
+    )
+    .await["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let token = common::member(&router, &root, "owner@test.local").await;
+    let boot = api(&router, "GET", "bootstrap", &token, json!({})).await;
+    let target = common::team_folder(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // As Docmost writes a space: `Title.md` with an H1, children in a folder
+    // beside it, attachments under `files/<id>/`, relative links encoded.
+    let handbook = "# Team Handbook\n\nRead [On call](Team%20Handbook/On%20call.md) first.\n\n:::warning\nPages go to **everyone**.\n\nReally.\n:::\n\n<details markdown=\"1\">\n<summary>Old process</summary>\n\nAsk in chat.\n\n</details>\n\n![diagram](files/0193-aa/flow chart.png)\n\n- [x] Read it\n";
+    let on_call = "# On call\n\nBack to [Team Handbook](../Team%20Handbook.md).\n\n$$\nx^2\n$$\n";
+    let metadata = json!({
+        "exportedAt": "2026-11-20T10:00:00.000Z",
+        "source": "docmost",
+        "version": "0.25.0",
+        "pages": {
+            "Team%20Handbook.md": {"pageId":"p1","slugId":"a1","icon":"📘","position":"a0","parentPath":null,"createdAt":"2025-03-04T09:00:00.000Z","updatedAt":"2026-11-01T09:00:00.000Z"},
+            "Team%20Handbook/On%20call.md": {"pageId":"p2","slugId":"a2","icon":null,"position":"a0","parentPath":"Team%20Handbook.md","createdAt":"2025-05-06T09:00:00.000Z","updatedAt":"2026-11-01T09:00:00.000Z"}
+        }
+    })
+    .to_string();
+    let export = zip(&[
+        ("Team Handbook.md", handbook.as_bytes()),
+        ("Team Handbook/On call.md", on_call.as_bytes()),
+        ("/files/0193-aa/flow chart.png", PNG),
+        ("docmost-metadata.json", metadata.as_bytes()),
+    ]);
+    let (status, report) = import(&router, &token, &target, "Docmost-space-export.zip", export).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(
+        (report["notes"].clone(), report["attachments"].clone()),
+        (json!(2), json!(1)),
+        "{report}"
+    );
+    let all = notes(&router, &token).await;
+    let (_, handbook) = &all["Team Handbook"];
+    let (folder, on_call) = &all["On call"];
+    assert_eq!(folder, "Team Handbook");
+    assert_eq!(handbook["icon"], "📘");
+    assert_eq!(handbook["metadata"]["created"], "2025-03-04");
+    assert_eq!(on_call["icon"], "");
+    let body = text(handbook);
+    assert!(!body.contains("# Team Handbook"), "the H1 is the title: {body}");
+    assert!(
+        body.contains(&format!("[On call](#note/{})", on_call["id"].as_str().unwrap())),
+        "{body}"
+    );
+    assert!(
+        body.contains("> [!WARNING]\n> Pages go to **everyone**.\n>\n> Really."),
+        "callouts become Minerva's: {body}"
+    );
+    assert!(!body.contains(":::") && !body.contains("<details"), "{body}");
+    assert!(body.contains("**Old process**\nAsk in chat."), "{body}");
+    assert!(body.contains("![flow chart.png](/api/v1/attachments/"), "{body}");
+    assert!(body.contains("- [x] Read it"), "{body}");
+    let back = text(on_call);
+    assert!(
+        back.contains(&format!("[Team Handbook](#note/{})", handbook["id"].as_str().unwrap())),
+        "{back}"
+    );
+    assert!(back.contains("$$\nx^2\n$$"), "{back}");
+}
