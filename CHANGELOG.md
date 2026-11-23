@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
 ### Added
 
 - **Import from Docmost:** choose a Docmost space or page export (Markdown, with attachments). Pages keep their hierarchy, links between them, pictures and files, emoji icons and creation dates; Docmost's callouts become Minerva's callouts and its toggles keep their summary and contents.
