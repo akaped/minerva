@@ -351,7 +351,10 @@ async fn comments_replicate_both_ways() {
     let worker = SyncWorker::new(local.clone(), gateway.clone());
     worker.subscribe(&connection.id, &ws).await.unwrap();
     assert!(worker.run_once().await);
-    let copied = local.call(Method::GET, &comments, Value::Null).await.unwrap();
+    let copied = local
+        .call(Method::GET, &comments, Value::Null)
+        .await
+        .unwrap();
     assert_eq!(copied[0]["id"], tid.as_str());
     assert_eq!(copied[0]["comments"][0]["text"], "Started online");
     assert_eq!(copied[0]["comments"][0]["author_name"], "Member");
@@ -413,7 +416,10 @@ async fn comments_replicate_both_ways() {
             .unwrap_or_default()
     };
     let server = remote_call(&url, &token, Method::GET, &comments, Value::Null).await;
-    let here = local.call(Method::GET, &comments, Value::Null).await.unwrap();
+    let here = local
+        .call(Method::GET, &comments, Value::Null)
+        .await
+        .unwrap();
     let mut both = texts(&server, &tid);
     both.sort();
     assert_eq!(

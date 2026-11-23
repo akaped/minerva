@@ -668,7 +668,10 @@ pub(super) fn apply_synced(
     if existing.is_none() && !replication::canonical(id) {
         return Err(bad("New entities need a UUID"));
     }
-    let ours = existing.as_ref().map(|t| clocks_of(d, t)).unwrap_or_default();
+    let ours = existing
+        .as_ref()
+        .map(|t| clocks_of(d, t))
+        .unwrap_or_default();
     let current = existing
         .as_ref()
         .map(|t| flatten(d, t, Some(&ours)))
@@ -797,7 +800,8 @@ pub(super) fn apply_synced(
                         };
                         let c = &mut t.comments[i];
                         c.text = words;
-                        c.edited_at = Some(value["edited_at"].as_u64().unwrap_or_else(now).min(now()));
+                        c.edited_at =
+                            Some(value["edited_at"].as_u64().unwrap_or_else(now).min(now()));
                         if upstream {
                             c.author_name = value["author_name"].as_str().map(String::from);
                         }
@@ -814,7 +818,8 @@ pub(super) fn apply_synced(
     }
     // Replies in time order; an existing thread keeps its first comment first.
     let pinned = usize::from(before.as_ref().is_some_and(|b| {
-        !b.comments.is_empty() && t.comments.first().map(|c| &c.id) == b.comments.first().map(|c| &c.id)
+        !b.comments.is_empty()
+            && t.comments.first().map(|c| &c.id) == b.comments.first().map(|c| &c.id)
     }));
     t.comments[pinned..].sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
     // A thread whose comments are all deleted is gone.
@@ -848,11 +853,7 @@ pub(super) fn apply_synced(
                 }
                 (a, b) => a.unwrap_or(&Value::Null) == b.unwrap_or(&Value::Null),
             };
-            let clock = if same {
-                clock
-            } else {
-                replication::tick(d)
-            };
+            let clock = if same { clock } else { replication::tick(d) };
             (name, clock)
         })
         .collect();
@@ -904,12 +905,13 @@ pub(super) fn delete_synced(
             return Err(forbidden());
         }
         let deleted_at = replication::parse(clock).0 / 1000;
-        if t
-            .comments
+        if t.comments
             .iter()
             .any(|c| c.edited_at.unwrap_or(c.created_at) > deleted_at)
         {
-            return Ok(json!({"status":"conflict","kept":true,"entity":sync_entry(db, d, u, id, clock)}));
+            return Ok(
+                json!({"status":"conflict","kept":true,"entity":sync_entry(db, d, u, id, clock)}),
+            );
         }
     }
     db.execute("DELETE FROM comments WHERE id=?1", [id])

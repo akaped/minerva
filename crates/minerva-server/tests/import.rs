@@ -513,7 +513,8 @@ async fn imports_docmost_space_exports() {
         ("/files/0193-aa/flow chart.png", PNG),
         ("docmost-metadata.json", metadata.as_bytes()),
     ]);
-    let (status, report) = import(&router, &token, &target, "Docmost-space-export.zip", export).await;
+    let (status, report) =
+        import(&router, &token, &target, "Docmost-space-export.zip", export).await;
     assert_eq!(status, 200, "{report}");
     assert_eq!(
         (report["notes"].clone(), report["attachments"].clone()),
@@ -528,22 +529,37 @@ async fn imports_docmost_space_exports() {
     assert_eq!(handbook["metadata"]["created"], "2025-03-04");
     assert_eq!(on_call["icon"], "");
     let body = text(handbook);
-    assert!(!body.contains("# Team Handbook"), "the H1 is the title: {body}");
     assert!(
-        body.contains(&format!("[On call](#note/{})", on_call["id"].as_str().unwrap())),
+        !body.contains("# Team Handbook"),
+        "the H1 is the title: {body}"
+    );
+    assert!(
+        body.contains(&format!(
+            "[On call](#note/{})",
+            on_call["id"].as_str().unwrap()
+        )),
         "{body}"
     );
     assert!(
         body.contains("> [!WARNING]\n> Pages go to **everyone**.\n>\n> Really."),
         "callouts become Minerva's: {body}"
     );
-    assert!(!body.contains(":::") && !body.contains("<details"), "{body}");
+    assert!(
+        !body.contains(":::") && !body.contains("<details"),
+        "{body}"
+    );
     assert!(body.contains("**Old process**\nAsk in chat."), "{body}");
-    assert!(body.contains("![flow chart.png](/api/v1/attachments/"), "{body}");
+    assert!(
+        body.contains("![flow chart.png](/api/v1/attachments/"),
+        "{body}"
+    );
     assert!(body.contains("- [x] Read it"), "{body}");
     let back = text(on_call);
     assert!(
-        back.contains(&format!("[Team Handbook](#note/{})", handbook["id"].as_str().unwrap())),
+        back.contains(&format!(
+            "[Team Handbook](#note/{})",
+            handbook["id"].as_str().unwrap()
+        )),
         "{back}"
     );
     assert!(back.contains("$$\nx^2\n$$"), "{back}");

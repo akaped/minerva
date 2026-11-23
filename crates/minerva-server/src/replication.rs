@@ -657,7 +657,12 @@ fn push(db: &Connection, d: &mut Data, u: &User, v: Value) -> Result<Value, ApiE
         // Who the user is on the server, so comments written here are theirs.
         if let Some(id) = v["user"]["id"].as_str().filter(|id| id.len() <= 80) {
             r.user_id = id.into();
-            r.user_name = v["user"]["name"].as_str().unwrap_or("").chars().take(200).collect();
+            r.user_name = v["user"]["name"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(200)
+                .collect();
         }
     }
     Ok(json!({"results":results,"hlc":d.hlc}))
@@ -1199,8 +1204,7 @@ fn delete(
     }
     let deleted_at = parse(clock).0 / 1000;
     let edited_after = |updated_at: u64| updated_at > deleted_at;
-    let kept =
-        |d: &Data| json!({"status":"conflict","kept":true,"entity":export(db, d, u, kind, id, clock)});
+    let kept = |d: &Data| json!({"status":"conflict","kept":true,"entity":export(db, d, u, kind, id, clock)});
     match kind {
         // Removing a replica only unsubscribes; a workspace is deleted on the server.
         "workspace" if upstream => {

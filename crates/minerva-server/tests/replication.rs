@@ -740,7 +740,10 @@ async fn pushed_comments_belong_to_who_pushes_them() {
     let e = entry(&pulled, "thread", &tid).unwrap();
     assert_eq!(e["fields"]["note_id"], nid.as_str());
     assert_eq!(e["fields"][format!("comments/{cid}")]["text"], "Owner's");
-    assert_eq!(e["fields"][format!("comments/{cid}")]["author_name"], "owner");
+    assert_eq!(
+        e["fields"][format!("comments/{cid}")]["author_name"],
+        "owner"
+    );
 
     // A viewer may reply, but a reply claiming another author is still theirs,
     // and they can neither change, delete nor resolve the owner's thread.
@@ -802,12 +805,22 @@ async fn pushed_comments_belong_to_who_pushes_them() {
 #[tokio::test]
 async fn threads_from_before_replication_reach_new_replicas() {
     let path = std::env::temp_dir().join(format!("minerva-threads-{}.db", uuid::Uuid::new_v4()));
-    let open = || app(Store::open(path.to_str().unwrap(), "admin@test.local", "test-password-1234").unwrap());
+    let open = || {
+        app(Store::open(
+            path.to_str().unwrap(),
+            "admin@test.local",
+            "test-password-1234",
+        )
+        .unwrap())
+    };
     let server = open();
     let root = login(&server, "admin@test.local").await;
     let token = common::member(&server, &root, "owner@test.local").await;
     let (_, boot) = request(&server, "GET", "bootstrap", &token, json!({})).await;
-    let ws = common::team_workspace(&boot)["id"].as_str().unwrap().to_string();
+    let ws = common::team_workspace(&boot)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let nid = common::welcome(&boot)["id"].as_str().unwrap().to_string();
     let (_, thread) = request(
         &server,
