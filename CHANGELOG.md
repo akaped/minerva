@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-25
+
 - Add account-owned AI providers under User settings, including ChatGPT sign-in on configured servers.
 - Let users edit their name and choose a preset avatar or upload a profile photo.
 - Add an interactive 3D workspace graph alongside the 2D view.
