@@ -527,6 +527,7 @@ fn resolve(
         must_change_password: false,
         default_workspace: None,
         dashboard: None,
+        profile: Default::default(),
         sso: Some(link),
     });
     let lang = if std::env::var("MINERVA_LANGUAGE").is_ok() {

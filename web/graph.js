@@ -304,6 +304,20 @@ export function tagColors(nodes) {
 const radius = (n) =>
   n.kind === "tag" ? 3.5 : 3.5 + Math.sqrt(n.degree) * 1.6;
 
+/** Perspective projection after rotating a point around the center of the graph. */
+export function orbitProjection(x, y, z, yaw, pitch, distance) {
+  const cosYaw = Math.cos(yaw),
+    sinYaw = Math.sin(yaw);
+  const cosPitch = Math.cos(pitch),
+    sinPitch = Math.sin(pitch);
+  const horizontal = x * cosYaw + z * sinYaw;
+  const turnedZ = z * cosYaw - x * sinYaw;
+  const vertical = y * cosPitch - turnedZ * sinPitch;
+  const depth = turnedZ * cosPitch + y * sinPitch;
+  const scale = distance / Math.max(distance * 0.25, distance - depth);
+  return { x: horizontal * scale, y: vertical * scale, depth, scale };
+}
+
 /**
  * Shows `graph` in `canvas`. Options: `color(node)`, `onOpen(node)` (a click on
  * a node), `onSelect(node | null)` (hover or keyboard selection), `focus` (a
@@ -313,6 +327,14 @@ export function mountGraph(canvas, graph, options = {}) {
   const sim = createSimulation(graph, { positions: options.positions || {} });
   const ctx = canvas.getContext("2d");
   const view = { x: 0, y: 0, k: 1 };
+  const initialOrbit = () => ({ yaw: 0.45, pitch: -0.32 });
+  let orbit = options.mode === "3d" ? initialOrbit() : null;
+  const depths = graph.nodes.map(({ id }) => {
+    let hash = 2166136261;
+    for (const char of id)
+      hash = Math.imul(hash ^ char.codePointAt(0), 16777619);
+    return ((hash >>> 0) / 2 ** 32 - 0.5) * 110;
+  });
   let hover = -1,
     selected = -1,
     drag = null,
@@ -329,13 +351,36 @@ export function mountGraph(canvas, graph, options = {}) {
   const styles = getComputedStyle(canvas);
   const ink = styles.getPropertyValue("--ink").trim() || "#263249";
   const muted = styles.getPropertyValue("--muted").trim() || "#8590a2";
-  const line = styles.getPropertyValue("--line").trim() || "#e9edf2";
   const accent = styles.getPropertyValue("--accent").trim() || "#5865d8";
   const font = styles.fontFamily || "sans-serif";
+  const hubs = [...graph.nodes.keys()]
+    .filter((i) => graph.nodes[i].degree >= 4)
+    .sort((a, b) => graph.nodes[b].degree - graph.nodes[a].degree)
+    .slice(0, 8);
+  const project = (p, i) =>
+    orbit
+      ? orbitProjection(
+          p.x - orbit.x,
+          p.y - orbit.y,
+          depths[i],
+          orbit.yaw,
+          orbit.pitch,
+          orbit.distance,
+        )
+      : { x: p.x, y: p.y, depth: 0, scale: 1 };
+  const toScreen = ({ x, y }) => [x * view.k + view.x, y * view.k + view.y];
+  const drawRadius = (i, scale) =>
+    radius(graph.nodes[i]) * Math.max(0.6, Math.min(view.k, 1.6)) * scale;
 
+  let lastSize;
   function size() {
     const ratio = devicePixelRatio || 1;
     const { width, height } = canvas.getBoundingClientRect();
+    if (lastSize) {
+      view.x += (width - lastSize.width) / 2;
+      view.y += (height - lastSize.height) / 2;
+    }
+    lastSize = { width, height };
     if (canvas.width !== Math.round(width * ratio))
       canvas.width = Math.round(width * ratio);
     if (canvas.height !== Math.round(height * ratio))
@@ -346,26 +391,52 @@ export function mountGraph(canvas, graph, options = {}) {
   function fit() {
     const { width, height } = size();
     if (!sim.points.length || !width) return;
-    const xs = sim.points.map((p) => p.x),
-      ys = sim.points.map((p) => p.y);
-    const w = Math.max(...xs) - Math.min(...xs) + 80,
-      h = Math.max(...ys) - Math.min(...ys) + 80;
-    view.k = Math.min(2, Math.max(0.15, Math.min(width / w, height / h)));
-    view.x = width / 2 - ((Math.max(...xs) + Math.min(...xs)) / 2) * view.k;
-    view.y = height / 2 - ((Math.max(...ys) + Math.min(...ys)) / 2) * view.k;
+    const bounds = (points) => {
+      let left = Infinity,
+        right = -Infinity,
+        top = Infinity,
+        bottom = -Infinity;
+      for (const { x, y } of points) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+      return {
+        x: (left + right) / 2,
+        y: (top + bottom) / 2,
+        w: right - left,
+        h: bottom - top,
+      };
+    };
+    const layout = bounds(sim.points);
+    if (orbit)
+      Object.assign(orbit, {
+        x: layout.x,
+        y: layout.y,
+        distance: Math.max(240, Math.hypot(layout.w, layout.h) * 1.5),
+      });
+    const { x, y, w, h } = orbit ? bounds(sim.points.map(project)) : layout;
+    view.k = Math.min(2, Math.min(width / (w + 80), height / (h + 80)));
+    view.x = width / 2 - x * view.k;
+    view.y = height / 2 - y * view.k;
   }
-  const toScreen = (p) => [p.x * view.k + view.x, p.y * view.k + view.y];
   const toWorld = (sx, sy) => [(sx - view.x) / view.k, (sy - view.y) / view.k];
   function nodeAt(sx, sy) {
-    const [wx, wy] = toWorld(sx, sy);
     let best = -1,
-      bestD = Infinity;
+      bestD = Infinity,
+      front = -Infinity;
     sim.points.forEach((p, i) => {
-      const d = Math.hypot(p.x - wx, p.y - wy);
-      const r = radius(graph.nodes[i]) + 4 / view.k;
-      if (d < r && d < bestD) {
+      const projected = project(p, i);
+      const [x, y] = toScreen(projected);
+      const d = Math.hypot(x - sx, y - sy);
+      if (
+        d < drawRadius(i, projected.scale) + 4 &&
+        (projected.depth > front || (projected.depth === front && d < bestD))
+      ) {
         best = i;
         bestD = d;
+        front = projected.depth;
       }
     });
     return best;
@@ -377,24 +448,29 @@ export function mountGraph(canvas, graph, options = {}) {
     ctx.clearRect(0, 0, width, height);
     const focus = hover >= 0 ? hover : selected;
     const near = focus >= 0 ? neighbors[focus] : null;
+    const projected = sim.points.map(project);
+    const screen = projected.map(toScreen);
+    const order = [...graph.nodes.keys()];
+    if (orbit) order.sort((a, b) => projected[a].depth - projected[b].depth);
     ctx.lineWidth = 1;
     for (const [a, b] of graph.edges) {
       const lit = focus >= 0 && (a === focus || b === focus);
-      ctx.strokeStyle = lit ? accent : line;
-      ctx.globalAlpha = focus >= 0 && !lit ? 0.35 : 1;
-      const [x1, y1] = toScreen(sim.points[a]);
-      const [x2, y2] = toScreen(sim.points[b]);
+      ctx.strokeStyle = lit ? accent : muted;
+      ctx.globalAlpha = lit ? 1 : focus >= 0 ? 0.15 : 0.45;
+      const [x1, y1] = screen[a];
+      const [x2, y2] = screen[b];
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
-    graph.nodes.forEach((n, i) => {
-      const [x, y] = toScreen(sim.points[i]);
+    order.forEach((i) => {
+      const n = graph.nodes[i];
+      const [x, y] = screen[i];
       if (x < -20 || y < -20 || x > width + 20 || y > height + 20) return;
       const dim = focus >= 0 && i !== focus && !near.has(i);
       ctx.globalAlpha = dim ? 0.25 : 1;
-      const r = radius(n) * Math.max(0.6, Math.min(view.k, 1.6));
+      const r = drawRadius(i, projected[i].scale);
       ctx.fillStyle =
         n.kind === "tag"
           ? muted
@@ -415,24 +491,21 @@ export function mountGraph(canvas, graph, options = {}) {
     ctx.font = `12px ${font}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    // Hubs only: the few most linked notes, when clearly more linked than most.
-    const busiest = [...graph.nodes.keys()]
-      .filter((i) => graph.nodes[i].degree >= 4)
-      .sort((a, b) => graph.nodes[b].degree - graph.nodes[a].degree)
-      .slice(0, 8);
-    graph.nodes.forEach((n, i) => {
+    order.forEach((i) => {
+      const n = graph.nodes[i];
       const show =
+        graph.nodes.length <= 10 ||
         view.k > 1.3 ||
         i === focus ||
         near?.has(i) ||
-        (focus < 0 && busiest.includes(i) && n.degree > 1);
+        (focus < 0 && hubs.includes(i));
       if (!show) return;
-      const [x, y] = toScreen(sim.points[i]);
+      const [x, y] = screen[i];
       if (x < -100 || y < -20 || x > width + 100 || y > height + 20) return;
       ctx.globalAlpha = focus >= 0 && i !== focus && !near.has(i) ? 0.3 : 1;
-      ctx.fillStyle = i === focus ? ink : muted;
+      ctx.fillStyle = i === focus || graph.nodes.length <= 10 ? ink : muted;
       const text = n.label.length > 40 ? n.label.slice(0, 39) + "…" : n.label;
-      ctx.fillText(text, x, y + radius(n) * Math.min(view.k, 1.6) + 3);
+      ctx.fillText(text, x, y + drawRadius(i, projected[i].scale) + 3);
     });
     ctx.globalAlpha = 1;
   }
@@ -463,11 +536,21 @@ export function mountGraph(canvas, graph, options = {}) {
     return [e.clientX - r.left, e.clientY - r.top];
   };
   canvas.addEventListener("pointerdown", (e) => {
+    if (drag || e.button !== 0) return;
     const [sx, sy] = local(e);
     const i = nodeAt(sx, sy);
     canvas.setPointerCapture(e.pointerId);
-    drag = { i, sx, sy, vx: view.x, vy: view.y, moved: false };
-    if (i >= 0) sim.points[i].pinned = true;
+    drag = {
+      i,
+      sx,
+      sy,
+      vx: view.x,
+      vy: view.y,
+      pointer: e.pointerId,
+      moved: false,
+    };
+    if (orbit) Object.assign(drag, { yaw: orbit.yaw, pitch: orbit.pitch });
+    else if (i >= 0) sim.points[i].pinned = true;
   });
   canvas.addEventListener("pointermove", (e) => {
     const [sx, sy] = local(e);
@@ -475,6 +558,7 @@ export function mountGraph(canvas, graph, options = {}) {
       const i = nodeAt(sx, sy);
       if (i !== hover) {
         hover = i;
+        if (i >= 0 && options.keepSelection) selected = i;
         canvas.style.cursor = i >= 0 ? "pointer" : "grab";
         options.onSelect?.(
           i >= 0
@@ -487,8 +571,18 @@ export function mountGraph(canvas, graph, options = {}) {
       }
       return;
     }
+    if (e.pointerId !== drag.pointer) return;
     if (Math.hypot(sx - drag.sx, sy - drag.sy) > 3) drag.moved = true;
-    if (drag.i >= 0) {
+    if (!drag.moved) return;
+    if (orbit) {
+      hover = -1;
+      canvas.style.cursor = "grabbing";
+      rotate(
+        drag.yaw + (sx - drag.sx) * 0.009,
+        drag.pitch + (sy - drag.sy) * 0.009,
+      );
+    } else if (drag.i >= 0) {
+      moved = true;
       const [wx, wy] = toWorld(sx, sy);
       Object.assign(sim.points[drag.i], { x: wx, y: wy });
       wake(0.2);
@@ -499,14 +593,16 @@ export function mountGraph(canvas, graph, options = {}) {
       if (!frame) draw();
     }
   });
-  const release = () => {
-    if (!drag) return;
-    const { i, moved } = drag;
-    if (i >= 0) sim.points[i].pinned = false;
+  const release = (e) => {
+    if (drag?.pointer !== e.pointerId) return;
+    const { i, moved: dragged } = drag;
+    if (!orbit && i >= 0) sim.points[i].pinned = false;
     drag = null;
-    if (i >= 0 && !moved) options.onOpen?.(graph.nodes[i]);
+    canvas.style.cursor = "";
+    if (e.type !== "pointerup" || i < 0) return;
+    if (!dragged) options.onOpen?.(graph.nodes[i]);
     // A note put somewhere stays there.
-    if (i >= 0 && moved && options.onArrange) {
+    if (!orbit && dragged && options.onArrange) {
       const p = sim.points[i];
       p.fixed = true;
       options.onArrange(graph.nodes[i], [
@@ -524,28 +620,55 @@ export function mountGraph(canvas, graph, options = {}) {
       if (!frame) draw();
     }
   });
+  function zoom(factor, sx, sy) {
+    const [wx, wy] = toWorld(sx, sy);
+    view.k = Math.min(6, Math.max(Math.min(0.015, view.k), view.k * factor));
+    view.x = sx - wx * view.k;
+    view.y = sy - wy * view.k;
+    moved = true;
+    if (!frame) draw();
+  }
+  function rotate(yaw, pitch) {
+    orbit.yaw = yaw;
+    orbit.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+    moved = true;
+    if (!frame) draw();
+  }
+  canvas.addEventListener("keydown", (e) => {
+    if (!orbit) return;
+    const steps = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
+    if (!Object.hasOwn(steps, e.key)) return;
+    const [x, y] = steps[e.key];
+    e.preventDefault();
+    rotate(orbit.yaw + x * 0.16, orbit.pitch + y * 0.16);
+  });
   canvas.addEventListener(
     "wheel",
     (e) => {
       e.preventDefault();
       const [sx, sy] = local(e);
-      const [wx, wy] = toWorld(sx, sy);
-      view.k = Math.min(
-        6,
-        Math.max(0.1, view.k * Math.exp(-e.deltaY * 0.0015)),
-      );
-      view.x = sx - wx * view.k;
-      view.y = sy - wy * view.k;
-      moved = true;
-      if (!frame) draw();
+      zoom(Math.exp(-e.deltaY * 0.0015), sx, sy);
     },
     { passive: false },
   );
-  const resize = new ResizeObserver(() => !frame && draw());
+  const resize = new ResizeObserver(() => {
+    if (!moved) {
+      fit();
+      if (options.focus && graph.nodes[selected]?.id === options.focus)
+        center(options.focus, false);
+    }
+    if (!frame) draw();
+  });
   resize.observe(canvas);
 
   function select(id) {
     selected = graph.nodes.findIndex((n) => n.id === id);
+    if (options.keepSelection) hover = -1;
     options.onSelect?.(selected >= 0 ? graph.nodes[selected] : null);
     if (!frame) draw();
   }
@@ -555,13 +678,29 @@ export function mountGraph(canvas, graph, options = {}) {
     if (chosen) moved = true;
     const { width, height } = size();
     view.k = Math.max(view.k, 1.2);
-    view.x = width / 2 - sim.points[i].x * view.k;
-    view.y = height / 2 - sim.points[i].y * view.k;
+    const { x, y } = project(sim.points[i], i);
+    view.x = width / 2 - x * view.k;
+    view.y = height / 2 - y * view.k;
     select(id);
   }
   return {
     select,
     center,
+    setMode(mode) {
+      if (drag?.i >= 0) sim.points[drag.i].pinned = false;
+      drag = null;
+      canvas.style.cursor = "";
+      orbit = mode === "3d" ? initialOrbit() : null;
+      moved = selected >= 0 && graph.nodes[selected].id !== options.focus;
+      fitted = false;
+      hover = -1;
+      fit();
+      if (!frame) draw();
+    },
+    zoom(factor) {
+      const { width, height } = size();
+      zoom(factor, width / 2, height / 2);
+    },
     fit: () => {
       moved = false;
       fit();

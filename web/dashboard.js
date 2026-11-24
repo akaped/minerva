@@ -1,59 +1,66 @@
-// The overview page as a dashboard of widgets the user arranges: reorder by
-// dragging (or with the arrow buttons), resize, configure, add, and remove.
-// Widgets sit in rows that always fill the page width: a widget's size is a
-// preference, and the widgets of a row grow or shrink to fill it. The layout is
-// saved per account on the server.
+// Overview widgets are arranged in rows saved per account. Within a row,
+// widgets share the available width and wrap when their minimum widths won't fit.
 import { $t, $tn } from "./i18n.js";
 import { intervalLabel, rich } from "./flashcards.js";
 
 export const WIDGETS = {
   welcome: {
     name: $t("Welcome"),
+    icon: "home",
     size: "full",
+    minWidth: 420,
     about: $t("A short hello with a link to start writing."),
   },
   folders: {
     name: $t("Folders"),
+    icon: "folder",
     size: "full",
+    minWidth: 300,
     about: $t("The top-level folders of this workspace."),
   },
   recent: {
     name: $t("Recently updated"),
+    icon: "clock",
     size: "l",
+    minWidth: 260,
     about: $t("The notes you and others changed last."),
   },
   favorites: {
     name: $t("Favorites"),
+    icon: "star",
     size: "s",
+    minWidth: 220,
     about: $t("Your starred notes."),
   },
   journal: {
     name: $t("Journal"),
+    icon: "calendar",
     size: "s",
+    minWidth: 270,
     about: $t("This month, with the days that have an entry."),
   },
   flashcards: {
     name: $t("Flashcards"),
+    icon: "flashcards",
     size: "m",
+    minWidth: 300,
     about: $t("Cards due for review; answer them right here."),
   },
   mentions: {
     name: $t("Mentions"),
+    icon: "users",
     size: "m",
+    minWidth: 260,
     about: $t("Notes where someone mentioned you with @."),
   },
   chart: {
     name: $t("Chart"),
+    icon: "chart",
     size: "m",
+    minWidth: 320,
     about: $t("A database property as bars or a pie."),
   },
 };
-const SIZES = [
-  ["s", "Small"],
-  ["m", "Medium"],
-  ["l", "Large"],
-  ["full", "Full width"],
-];
 const DEFAULT = [
   { type: "welcome", size: "full" },
   { type: "folders", size: "full" },
@@ -62,57 +69,61 @@ const DEFAULT = [
   { type: "journal", size: "s" },
   { type: "flashcards", size: "m" },
 ];
-const COLUMNS = 4;
-const SPAN = { s: 1, m: 2, l: 3, full: 4 };
+// The API still accepts the size field for older clients and saved layouts.
+const LEGACY_COLUMNS = 4;
+const LEGACY_SPAN = { s: 1, m: 2, l: 3, full: 4 };
 const fresh = (w) => ({
   id: crypto.randomUUID().slice(0, 8),
   options: {},
   ...w,
 });
+let pendingLayoutSave = Promise.resolve();
 
-/**
- * Splits the widgets into rows. A widget with `newRow` starts one; a row holds
- * at most four widgets, and a fifth moves on to start the next row.
- */
 export function rows(widgets) {
   const out = [];
-  for (const w of widgets) {
-    const row = out.at(-1);
-    if (!row || w.newRow || row.length === COLUMNS) out.push([w]);
-    else row.push(w);
+  for (const widget of widgets) {
+    if (!out.length || widget.newRow) out.push([]);
+    out.at(-1).push(widget);
   }
   return out;
 }
-/**
- * The columns each widget of a row spans, filling the row exactly: the largest
- * shrink first when the preferred sizes do not fit, and the extra space goes to
- * the largest when they leave a gap.
- */
-export function spans(row) {
-  const out = row.map((w) => SPAN[w.size] || 1);
-  const largest = (pick) =>
-    out.reduce((best, v, i) => (pick(v, out[best]) ? i : best), 0);
-  while (out.reduce((a, b) => a + b, 0) > COLUMNS)
-    out[largest((v, b) => v > b)] -= 1;
-  while (out.reduce((a, b) => a + b, 0) < COLUMNS)
-    out[largest((v, b) => v > b)] += 1;
-  return out;
+function flatten(groups) {
+  return groups.flatMap((row) =>
+    row.map((widget, i) => ({ ...widget, newRow: i === 0 })),
+  );
 }
-/** Marks where rows start, so the layout survives saving as a flat list. */
-function settle(widgets) {
-  rows(widgets).forEach((row) => row.forEach((w, i) => (w.newRow = i === 0)));
-  return widgets;
+/** Older layouts without row markers packed widgets by their preferred sizes. */
+export function packed(widgets) {
+  if (widgets.some((widget) => "newRow" in widget)) return flatten(rows(widgets));
+  let used = LEGACY_COLUMNS;
+  return widgets.map((widget) => {
+    const span = LEGACY_SPAN[widget.size] || 1;
+    const newRow = used + span > LEGACY_COLUMNS;
+    used = newRow ? span : used + span;
+    return { ...widget, newRow };
+  });
 }
-/** Older layouts have no rows: pack them by their sizes, as they were drawn. */
-function packed(widgets) {
-  if (widgets.some((w) => "newRow" in w)) return settle(widgets);
-  let used = COLUMNS;
-  for (const w of widgets) {
-    const span = SPAN[w.size] || 1;
-    w.newRow = used + span > COLUMNS;
-    used = w.newRow ? span : used + span;
+/** Insert beside a widget, or before/after its visible line in a wrapped row. */
+export function moveWidget(widgets, id, targetId, where, lineIds) {
+  if (id === targetId) return widgets;
+  const groups = rows(widgets);
+  const source = groups.find((row) => row.some((widget) => widget.id === id));
+  const destination = groups.find((row) => row.some((widget) => widget.id === targetId));
+  if (!source || !destination) return widgets;
+
+  const [moved] = source.splice(source.findIndex((widget) => widget.id === id), 1);
+  if (where === "before" || where === "after") {
+    const target = destination.findIndex((widget) => widget.id === targetId);
+    destination.splice(target + (where === "after" ? 1 : 0), 0, moved);
+  } else {
+    const line = new Set(lineIds || destination.map((widget) => widget.id));
+    const at = where === "above"
+      ? destination.findIndex((widget) => line.has(widget.id))
+      : destination.findLastIndex((widget) => line.has(widget.id)) + 1;
+    const tail = destination.splice(at);
+    groups.splice(groups.indexOf(destination) + 1, 0, [moved], tail);
   }
-  return settle(widgets);
+  return flatten(groups);
 }
 
 /**
@@ -123,6 +134,7 @@ function packed(widgets) {
 export async function renderDashboard(root, app) {
   const { api, esc, icon } = app;
   let widgets;
+  await pendingLayoutSave;
   try {
     widgets = (await api("account/dashboard")).widgets;
   } catch {
@@ -130,48 +142,49 @@ export async function renderDashboard(root, app) {
   }
   widgets = packed((widgets || DEFAULT).map(fresh));
   let editing = false;
-  const save = () =>
-    settle(widgets) &&
-    api("account/dashboard", "PUT", { widgets }).catch(app.error);
+  function save() {
+    const snapshot = structuredClone(widgets);
+    pendingLayoutSave = pendingLayoutSave
+      .then(() => api("account/dashboard", "PUT", { widgets: snapshot }))
+      .catch(app.error);
+  }
 
   function draw() {
     if (!root.isConnected) return;
     root.innerHTML = `<div class="dashboard-bar">${
       editing
         ? `<button class="btn primary" id="dash-add">${icon("plus")}${$t("Add widget")}</button><button class="btn" id="dash-reset">${$t("Restore default layout")}</button><span class="dash-hint">${$t("Drag a widget beside another to share its row, or above or below a row to give it a row of its own.")}</span><button class="btn primary" id="dash-done">${$t("Done")}</button>`
-        : `<button class="btn" id="dash-edit">${icon("grid")}${$t("Customize")}</button>`
+        : `<button class="btn primary" id="dash-new-note">${icon("plus")}${$t("New note")}</button><button class="btn" id="dash-edit">${icon("grid")}${$t("Customize")}</button>`
     }</div><div class="dashboard ${editing ? "editing" : ""}">${
       rows(widgets)
-        .map((row) => {
-          const width = spans(row);
-          return row
-            .map((w) => frame(w, widgets.indexOf(w), width[row.indexOf(w)]))
-            .join("");
-        })
+        .map((row) =>
+          `<div class="dashboard-row">${row.map((w) => frame(w, widgets.indexOf(w))).join("")}</div>`,
+        )
         .join("") ||
       `<div class="empty">${$t("Your dashboard is empty. Choose Customize to add widgets.")}</div>`
     }</div>`;
     bind();
     widgets.forEach((w) => fill(w).catch(() => {}));
   }
-  function frame(w, i, span) {
+  function frame(w, i) {
     const spec = WIDGETS[w.type];
     const title = w.type === "chart" ? w.options.title || spec.name : spec.name;
     const tools = editing
-      ? `<div class="widget-tools"><button data-move="${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${esc(title)} earlier" title="${$t("Move earlier")}">←</button><button data-move="${i}:1" ${i === widgets.length - 1 ? "disabled" : ""} aria-label="Move ${esc(title)} later" title="${$t("Move later")}">→</button><select data-size="${i}" aria-label="Preferred size of ${esc(title)}" title="${$t("Preferred size; the row stretches or shrinks it to fill the width")}">${SIZES.map(([v, label]) => `<option value="${v}" ${w.size === v ? "selected" : ""}>${label}</option>`).join("")}</select>${w.type === "chart" ? `<button data-configure="${i}" aria-label="${$t("Chart settings")}" title="${$t("Chart settings")}">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="${$t("Remove")}">×</button></div>`
+      ? `<div class="widget-tools"><button type="button" class="widget-grip" aria-label="${$t("Move {name}", { name: esc(title) })}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" title="${$t("Drag to move, or use the arrow keys")}">⠿</button>${w.type === "chart" ? `<button data-configure="${i}" aria-label="${$t("Chart settings")}" title="${$t("Chart settings")}">⚙</button>` : ""}<button data-remove="${i}" aria-label="Remove ${esc(title)}" title="${$t("Remove")}">×</button></div>`
       : "";
     // The welcome block can be dismissed for good, without customizing.
     const dismiss =
       !editing && w.type === "welcome"
         ? `<button class="widget-dismiss" data-remove="${i}" aria-label="${$t("Hide this welcome for good")}" title="${$t("Hide for good")}">×</button>`
         : "";
-    return `<section class="widget widget-${w.type}" style="--span:${span}" data-widget="${w.id}" aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">${$t("Loading…")}</p></div></section>`;
+    return `<section class="widget widget-${w.type}" style="--widget-min:${spec.minWidth}px" data-widget="${w.id}" aria-label="${esc(title)}">${w.type === "welcome" ? "" : `<header class="widget-head"><h2>${esc(title)}</h2>${tools}</header>`}${w.type === "welcome" ? tools : ""}${dismiss}<div class="widget-body" id="widget-${w.id}"><p class="widget-loading">${$t("Loading…")}</p></div></section>`;
   }
   function bind() {
     const on = (sel, fn, event = "click") =>
       root
         .querySelectorAll(sel)
         .forEach((el) => el.addEventListener(event, (e) => fn(el, e)));
+    on("#dash-new-note", () => app.createNote().catch(app.error));
     on("#dash-edit", () => ((editing = true), draw()));
     on("#dash-done", () => ((editing = false), draw()));
     on("#dash-add", addDialog);
@@ -180,28 +193,9 @@ export async function renderDashboard(root, app) {
       save();
       draw();
     });
-    on("[data-move]", (b) => {
-      const [i, d] = b.dataset.move.split(":").map(Number);
-      const [a, b2] = [widgets[i].newRow, widgets[i + d].newRow];
-      [widgets[i], widgets[i + d]] = [widgets[i + d], widgets[i]];
-      [widgets[i].newRow, widgets[i + d].newRow] = [a, b2];
-      save();
-      draw();
-      root.querySelector(`[data-move="${i + d}:${d}"]`)?.focus();
-    });
-    on(
-      "[data-size]",
-      (s) => {
-        widgets[Number(s.dataset.size)].size = s.value;
-        save();
-        draw();
-      },
-      "change",
-    );
     on("[data-remove]", (b) => {
       const i = Number(b.dataset.remove);
-      if (widgets[i].newRow && widgets[i + 1]) widgets[i + 1].newRow = true;
-      widgets.splice(i, 1);
+      widgets = flatten(rows(widgets).map((row) => row.filter((w) => w !== widgets[i])));
       save();
       draw();
       app.toast($t("Widget removed · add it back with Customize → Add widget"));
@@ -209,129 +203,162 @@ export async function renderDashboard(root, app) {
     on("[data-configure]", (b) =>
       chartDialog(widgets[Number(b.dataset.configure)]),
     );
-    // Drag to reorder, while customizing. Pointer events rather than HTML
-    // drag and drop, which embedded webviews (the desktop app) do not deliver.
-    // Where a drop lands: beside the widget (left or right half), or in a new
-    // row above or below its row (the top and bottom edges).
-    const place = (el, e) => {
-      const r = el.getBoundingClientRect(),
-        y = (e.clientY - r.top) / r.height;
-      if (y < 0.2) return "above";
-      if (y > 0.8) return "below";
-      return e.clientX < r.left + r.width / 2 ? "before" : "after";
-    };
-    const clear = () =>
-      root
-        .querySelectorAll("[data-drop]")
-        .forEach((el) => el.removeAttribute("data-drop"));
-    const scroller = () => {
-      for (let el = root.parentElement; el; el = el.parentElement)
-        if (
-          el.scrollHeight > el.clientHeight &&
-          /auto|scroll/.test(getComputedStyle(el).overflowY)
-        )
-          return el;
-      return document.scrollingElement;
-    };
-    const under = (e) =>
-      document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest(".dashboard [data-widget]");
-    on(
-      "[data-widget]",
-      (el, down) => {
-        if (
-          !editing ||
-          down.button !== 0 ||
-          down.target.closest("button, select, input, a, textarea")
-        )
-          return;
-        down.preventDefault();
-        let moving = false;
-        const startScroll = scroller().scrollTop;
-        const move = (e) => {
-          // A few pixels first, so a click stays a click.
-          if (
-            !moving &&
-            Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 6
-          )
-            return;
-          if (!moving) {
-            moving = true;
-            el.classList.add("dragging");
-            document.body.classList.add("dragging-widget");
-          }
-          // The widget follows the pointer, also while the page scrolls.
-          const scrolled = scroller().scrollTop - startScroll;
-          el.style.transform = `translate(${e.clientX - down.clientX}px, ${e.clientY - down.clientY + scrolled}px)`;
-          // Near the top or bottom of the window, scroll to reach other rows.
-          const edge =
-            e.clientY < 70 ? -1 : e.clientY > innerHeight - 70 ? 1 : 0;
-          if (edge) scroller().scrollBy(0, edge * 18);
-          clear();
-          const target = under(e);
-          if (target && target !== el) target.dataset.drop = place(target, e);
-        };
-        const up = (e) => {
-          removeEventListener("pointermove", move);
-          removeEventListener("pointerup", up);
-          removeEventListener("pointercancel", up);
-          el.classList.remove("dragging");
-          el.style.transform = "";
-          document.body.classList.remove("dragging-widget");
-          clear();
-          const target = moving && e.type === "pointerup" && under(e);
-          if (target && target !== el)
-            drop(el.dataset.widget, target.dataset.widget, place(target, e));
-        };
-        addEventListener("pointermove", move);
-        addEventListener("pointerup", up);
-        addEventListener("pointercancel", up);
-      },
-      "pointerdown",
-    );
+    if (editing) bindPlacement();
   }
-  /** Moves widget `id` beside widget `targetId`, or into a row next to its row. */
-  function drop(id, targetId, where) {
-    const from = widgets.findIndex((w) => w.id === id);
-    if (from < 0 || id === targetId) return;
-    // Take the widget out; its row keeps its start.
-    const [moved] = widgets.splice(from, 1);
-    if (moved.newRow && widgets[from]) widgets[from].newRow = true;
-    const target = widgets.find((w) => w.id === targetId);
-    const row = rows(widgets).find((r) => r.includes(target));
-    let at;
-    if (where === "before") {
-      at = widgets.indexOf(target);
-      moved.newRow = target.newRow;
-      target.newRow = false;
-    } else if (where === "after") {
-      at = widgets.indexOf(target) + 1;
-      moved.newRow = false;
-    } else {
-      at =
-        where === "above"
-          ? widgets.indexOf(row[0])
-          : widgets.indexOf(row.at(-1)) + 1;
-      moved.newRow = true;
-      if (widgets[at]) widgets[at].newRow = true;
+  function bindPlacement() {
+    const board = root.querySelector(".dashboard");
+    const cards = [...board.querySelectorAll("[data-widget]")];
+    const rect = (card) => card.getBoundingClientRect();
+    const peers = (card) => {
+      const top = rect(card).top;
+      return [...card.parentElement.children].filter(
+        (other) => Math.abs(rect(other).top - top) < 1,
+      );
+    };
+    const guide = document.createElement("div");
+    guide.className = "widget-drop-guide";
+    guide.hidden = true;
+    board.append(guide);
+
+    function move(card, target, where) {
+      const line = peers(target).map((widget) => widget.dataset.widget);
+      const id = card.dataset.widget;
+      widgets = moveWidget(widgets, id, target.dataset.widget, where, line);
+      save();
+      draw();
+      root.querySelector(`[data-widget="${CSS.escape(id)}"] .widget-grip`)?.focus({ preventScroll: true });
     }
-    widgets.splice(at, 0, moved);
-    save();
-    draw();
+    function keyboardMove(card, event) {
+      const line = peers(card);
+      const i = line.indexOf(card);
+      const first = cards.indexOf(line[0]);
+      const last = cards.indexOf(line.at(-1));
+      const target = {
+        ArrowLeft: [line[i - 1], "before"],
+        ArrowRight: [line[i + 1], "after"],
+        ArrowUp: [cards[first - 1], "above"],
+        ArrowDown: [cards[last + 1], "below"],
+      }[event.key];
+      if (!target || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      event.preventDefault();
+      if (target[0]) move(card, ...target);
+    }
+    for (const card of cards) {
+      const grip = card.querySelector(".widget-grip");
+      grip.addEventListener("keydown", (event) => keyboardMove(card, event));
+      grip.addEventListener("pointerdown", (down) => {
+        if (!down.isPrimary || down.button !== 0) return;
+        down.preventDefault();
+        grip.focus({ preventScroll: true });
+        grip.setPointerCapture(down.pointerId);
+        const scroller = document.scrollingElement;
+        const startScroll = scroller.scrollTop;
+        let pointer = down;
+        let moving = false;
+        let animation;
+        let destination;
+
+        function position() {
+          const { clientX: x, clientY: y } = pointer;
+          card.style.transform = `translate(${x - down.clientX}px, ${y - down.clientY + scroller.scrollTop - startScroll}px)`;
+          const bounds = rect(board);
+          const hitCard = document.elementFromPoint(x, y)?.closest("[data-widget]");
+          let target = hitCard !== card && board.contains(hitCard) ? hitCard : null;
+          if (!target && x >= bounds.left && x <= bounds.right) {
+            // The gutters are also drop targets. Use the closest card edge.
+            let closest = 10;
+            for (const other of cards) {
+              if (other === card) continue;
+              const box = rect(other);
+              const distance = Math.hypot(
+                Math.max(box.left - x, x - box.right, 0),
+                Math.max(box.top - y, y - box.bottom, 0),
+              );
+              if (distance < closest) {
+                target = other;
+                closest = distance;
+              }
+            }
+          }
+          if (!target) {
+            guide.hidden = true;
+            destination = null;
+            return;
+          }
+          const hit = rect(target);
+          const edge = Math.min(30, hit.height / 4);
+          const where = y < hit.top + edge ? "above"
+            : y > hit.bottom - edge ? "below"
+            : x < hit.left + hit.width / 2 ? "before" : "after";
+          destination = { target, where };
+          const across = where === "above" || where === "below";
+          const left = across ? bounds.left : where === "before" ? hit.left : hit.right;
+          const top = where === "below" ? hit.bottom : hit.top;
+          Object.assign(guide.style, {
+            left: `${left - bounds.left}px`,
+            top: `${top - bounds.top}px`,
+            width: `${across ? bounds.width : 3}px`,
+            height: `${across ? 3 : hit.height}px`,
+          });
+          guide.hidden = false;
+        }
+        function tick() {
+          if (!board.isConnected) return finish();
+          const y = pointer.clientY;
+          const edge = y < 64 ? -1 : y > innerHeight - 64 ? 1 : 0;
+          if (edge) scroller.scrollBy(0, edge * 16);
+          position();
+          animation = requestAnimationFrame(tick);
+        }
+        function track(event) {
+          if (event.pointerId !== down.pointerId) return;
+          pointer = event;
+          if (moving || Math.hypot(
+            pointer.clientX - down.clientX,
+            pointer.clientY - down.clientY,
+          ) < 6) return;
+          moving = true;
+          card.classList.add("dragging");
+          document.body.classList.add("dragging-widget");
+          tick();
+        }
+        function finish(up) {
+          if (up && up.pointerId !== down.pointerId) return;
+          cancelAnimationFrame(animation);
+          if (moving && up?.type === "pointerup") {
+            pointer = up;
+            position();
+          }
+          grip.removeEventListener("pointermove", track);
+          grip.removeEventListener("pointerup", finish);
+          grip.removeEventListener("pointercancel", finish);
+          grip.removeEventListener("lostpointercapture", finish);
+          card.classList.remove("dragging");
+          card.style.transform = "";
+          document.body.classList.remove("dragging-widget");
+          guide.hidden = true;
+          if (moving && up?.type === "pointerup" && destination)
+            move(card, destination.target, destination.where);
+        }
+        grip.addEventListener("pointermove", track);
+        grip.addEventListener("pointerup", finish);
+        grip.addEventListener("pointercancel", finish);
+        grip.addEventListener("lostpointercapture", finish);
+      });
+    }
   }
   function addDialog() {
     const modal = document.querySelector("#modal");
-    modal.innerHTML = `<form method="dialog" class="widget-picker"><h2>${$t("Add a widget")}</h2><div class="widget-choices">${Object.entries(
-      WIDGETS,
-    )
-      .map(
-        ([type, spec]) =>
-          `<button type="button" class="widget-choice" data-add="${type}"><strong>${esc(spec.name)}</strong><small>${esc(spec.about)}</small></button>`,
+    modal.innerHTML = `<form method="dialog" class="widget-picker"><header class="widget-picker-header"><h2 id="widget-picker-title">${$t("Add a widget")}</h2><button class="widget-picker-close" aria-label="${$t("Close")}">×</button></header><div class="widget-choices">${Object.entries(WIDGETS)
+      .map(([type, spec]) =>
+        `<button type="button" class="widget-choice" data-add="${type}" aria-label="${$t("Add {name}", { name: esc(spec.name) })}" aria-describedby="widget-about-${type}"><span class="widget-choice-icon">${icon(spec.icon)}</span><span class="widget-choice-copy"><strong>${esc(spec.name)}</strong><small id="widget-about-${type}">${esc(spec.about)}</small></span><span class="widget-choice-add">${icon("plus")}</span></button>`,
       )
-      .join(
-        "",
-      )}</div><footer><button class="btn">${$t("Close")}</button></footer></form>`;
+      .join("")}</div></form>`;
+    modal.setAttribute("aria-labelledby", "widget-picker-title");
+    modal.addEventListener("close", () => {
+      if (modal.getAttribute("aria-labelledby") === "widget-picker-title")
+        modal.removeAttribute("aria-labelledby");
+    }, { once: true });
     modal.showModal();
     modal.querySelectorAll("[data-add]").forEach((b) =>
       b.addEventListener("click", () => {

@@ -2793,6 +2793,7 @@ dependencies = [
  "minerva-core",
  "openidconnect",
  "pdf-extract",
+ "png",
  "pulldown-cmark",
  "qrcode",
  "reqwest",

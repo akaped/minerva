@@ -1,3 +1,4 @@
+mod account_profile;
 mod administration;
 mod ai;
 mod anki;
@@ -67,6 +68,8 @@ use uuid::Uuid;
 struct Account {
     user: User,
     password_hash: String,
+    #[serde(default)]
+    profile: account_profile::Profile,
     #[serde(default)]
     two_factor: twofactor::TwoFactor,
     /// Set when an administrator chooses the password: the person picks their
@@ -544,6 +547,7 @@ fn initial(email: &str, password: &str, local: bool) -> Result<Data, ApiError> {
             must_change_password: false,
             default_workspace: None,
             dashboard: None,
+            profile: Default::default(),
             sso: None,
         }],
         workspaces: if local { vec![workspace] } else { vec![] },
@@ -1691,7 +1695,7 @@ fn dispatch(
                 })
                 .collect();
             let account = d.users.iter().find(|a| a.user.id == u.id);
-            json!({"notes_paged":v["omit_notes"] == true,"server_id":d.server_id,"user":u,"must_change_password":account.is_some_and(|a| a.must_change_password),"sso_linked":account.is_some_and(sso::linked),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()).filter(|w| tokens::within(&u, w)),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
+            json!({"notes_paged":v["omit_notes"] == true,"server_id":d.server_id,"user":u,"profile":account.map(|a| a.profile.view(&u.name)),"must_change_password":account.is_some_and(|a| a.must_change_password),"sso_linked":account.is_some_and(sso::linked),"language":d.languages.get(&u.id),"owns_workspace":d.workspaces.iter().any(|w| owns(d,&u,&w.id)),"default_workspace":account.and_then(|a| a.default_workspace.clone()).filter(|w| tokens::within(&u, w)),"workspaces":workspaces_view,"folders":folders,"notes":notes,"shared_notes":sharing::shared_with(d,&u),"journal_folders":visible(&d.journal_folders),"template_folders":visible(&d.template_folders),"journal_templates":visible(&d.journal_templates),"sites":sites::listed(d,&workspaces),"roles":roles,"databases":d.databases.iter().filter(|db|role(d,&u,&db.folder_id).is_some()).map(|db|json!({"id":db.id,"folder_id":db.folder_id,"name":db.name,"updated_at":db.updated_at,"record_count":db.rows.iter().filter(|r|!r.archived).count()})).collect::<Vec<_>>()})
         }
         ("POST", ["search"]) => {
             let query = v["query"].as_str().unwrap_or("").trim().to_lowercase();
@@ -2216,6 +2220,7 @@ fn dispatch(
                 must_change_password: true,
                 default_workspace: None,
                 dashboard: None,
+                profile: Default::default(),
                 sso: None,
             });
             // In the server's language, or else the administrator's.
@@ -2333,6 +2338,13 @@ fn dispatch(
             d.languages.remove(*uid);
             twofactor::forget(d, uid);
             json!({"ok":true,"workspaces_transferred":transferred,"workspaces_deleted":removed})
+        }
+        ("PATCH", ["account", "profile"]) => {
+            let profile = account_profile::Profile::parse(&v)?;
+            let account = d.users.iter_mut().find(|a| a.user.id == u.id).ok_or_else(missing)?;
+            account.user.name = profile.display_name();
+            account.profile = profile;
+            json!({"user": account.user, "profile": account.profile.view(&account.user.name)})
         }
         // Your overview page's widgets.
         ("GET", ["account", "dashboard"]) => {

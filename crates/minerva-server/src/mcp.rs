@@ -799,6 +799,7 @@ mod tests {
             must_change_password: false,
             default_workspace: None,
             dashboard: None,
+            profile: Default::default(),
             sso: None,
         });
         d.workspaces.push(Workspace {

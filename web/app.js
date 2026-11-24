@@ -9,6 +9,7 @@ import {
   keys as shortcutKeys,
 } from "./i18n.js";
 import "./pane-auth.js";
+import { bindProfileFields, profileAvatar, profileFields } from "./account-profile.js";
 import { renderServerOverview } from "./server-overview.js";
 import { renderFlashcards } from "./flashcards.js";
 import { renderReminders } from "./reminders.js";
@@ -96,6 +97,18 @@ import {
 ("use strict");
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const scrollbarTimers = new WeakMap();
+document.addEventListener("scroll", (event) => {
+  const scroller = event.target === document ? document.scrollingElement : event.target;
+  if (!(scroller instanceof Element)) return;
+  clearTimeout(scrollbarTimers.get(scroller));
+  scroller.setAttribute("data-scrolling", "");
+  scrollbarTimers.set(scroller, setTimeout(() => {
+    scroller.removeAttribute("data-scrolling");
+    scrollbarTimers.delete(scroller);
+  }, 800));
+}, { capture: true, passive: true });
+
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -255,10 +268,13 @@ const paths = {
   menu: "M4 6h16 M4 12h16 M4 18h16",
   canvas: "M3 3h7v7H3z M14 5h7v10h-7z M5 14h6v7H5z",
   check: "m5 12 4 4L19 6",
+  settings: "M10 3h4l.5 2.4 1.4.6 2.1-1.3 2.3 2.3L19 9.1l.6 1.4 2.4.5v2l-2.4.5-.6 1.4 1.3 2.1-2.3 2.3-2.1-1.3-1.4.6L14 21h-4l-.5-2.4-1.4-.6L6 19.3 3.7 17 5 14.9l-.6-1.4L2 13v-2l2.4-.5L5 9.1 3.7 7 6 4.7 8.1 6l1.4-.6L10 3z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
   calendar: "M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5",
   graph:
     "M6 18a2 2 0 1 0 0 .01 M18 16a2 2 0 1 0 0 .01 M12 6a2 2 0 1 0 0 .01 M7 16.5l4-9 M13 7.5l4 7 M8 18l8-1.5",
   bell: "M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 21h4",
+  chart: "M4 4v16h16 M8 16v-4 M12 16V8 M16 16V5",
+  flashcards: "M4 7h13v11H4z M7 4h13v11 M7 11h7 M7 14h4",
   template: "M5 4h14v5H5z M5 13h6v7H5z M14 13h5 M14 17h5",
   chevron: "m7 10 5 5 5-5",
   more: "M5 12h.5 M11.75 12h.5 M18.5 12h.5",
@@ -1508,6 +1524,68 @@ function secondFactor(challenge) {
     }
   };
 }
+const sidebarOnPhone = matchMedia("(max-width: 760px)");
+let desktopSidebarCollapsed = false;
+function syncSidebarToggle() {
+  const toggle = $(".mobile-menu");
+  const sidebar = $(".sidebar");
+  if (!toggle || !sidebar) return;
+  sidebar.parentElement.classList.toggle(
+    "sidebar-collapsed",
+    desktopSidebarCollapsed,
+  );
+  toggle.setAttribute(
+    "aria-expanded",
+    String(
+      sidebarOnPhone.matches
+        ? sidebar.classList.contains("open")
+        : !desktopSidebarCollapsed,
+    ),
+  );
+}
+sidebarOnPhone.addEventListener("change", () => {
+  setMobileSidebar(false);
+  noteTabs?.place();
+});
+function setMobileSidebar(open) {
+  $(".sidebar")?.classList.toggle("open", open);
+  syncSidebarToggle();
+}
+function bindSidebarToggle() {
+  const toggle = $(".mobile-menu");
+  const sidebar = $(".sidebar");
+  if (!toggle || !sidebar) return;
+  sidebar.id = "app-sidebar";
+  toggle.setAttribute("aria-controls", sidebar.id);
+  const close = document.createElement("button");
+  close.className = "mobile-sidebar-close";
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", $t("Close menu"));
+  $(".brand", sidebar).append(close);
+  setMobileSidebar(false);
+  const dismiss = () => {
+    setMobileSidebar(false);
+    toggle.focus();
+  };
+  toggle.onclick = () => {
+    if (!sidebarOnPhone.matches) {
+      desktopSidebarCollapsed = !desktopSidebarCollapsed;
+      syncSidebarToggle();
+      noteTabs?.place();
+      return;
+    }
+    setMobileSidebar(!sidebar.classList.contains("open"));
+    if (sidebar.classList.contains("open")) close.focus();
+  };
+  close.onclick = dismiss;
+  sidebar.parentElement.onkeydown = (event) => {
+    if (event.key === "Escape" && sidebar.classList.contains("open")) {
+      event.preventDefault();
+      dismiss();
+    }
+  };
+}
 function adminShell() {
   note = null;
   noteTabs?.hide();
@@ -1529,19 +1607,16 @@ function adminShell() {
       )
       .join(
         "",
-      )}</nav><div class="sidebar-bottom"><div class="profile-name">${esc(data.user.name)}</div><p class="subtitle">${$t("Management account")}</p><button class="btn" id="admin-logout">${$t("Sign out")}</button></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button><strong id="breadcrumb">${$t("Server administration")}</strong>${themeSelect()}</header><div id="content" tabindex="-1"></div></main></div>`;
+      )}</nav><div class="sidebar-bottom"><div class="profile-name">${esc(data.user.name)}</div><p class="subtitle">${$t("Management account")}</p><button class="btn" id="admin-logout">${$t("Sign out")}</button></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button><strong id="breadcrumb">${$t("Server administration")}</strong></header><div id="content" tabindex="-1"></div></main></div>`;
   $$("[data-admin-view]").forEach((b) =>
     action(b, "click", () => navigate(b.dataset.adminView)),
   );
-  action($(".mobile-menu"), "click", () =>
-    $(".sidebar").classList.toggle("open"),
-  );
+  bindSidebarToggle();
   action($("#admin-logout"), "click", async () => {
     await noteTabs?.clear();
     await api("logout", "POST");
     login();
   });
-  bindThemeSelect();
   if (view === "admin") renderAdmin().catch(error);
   else if (view === "providers")
     renderAISettings({ api, esc, data, error, localMode }).catch(error);
@@ -1669,12 +1744,12 @@ function shell() {
       ["home", "home", $t("Overview")],
       ["all", "note", $t("All notes")],
       ["journal", "calendar", $t("Journal")],
+      ["chat", "brain", $t("AI chat")],
       ["reminders", "bell", $t("Reminders")],
-      ["templates", "template", $t("Templates")],
       ["databases", "grid", $t("Databases")],
       ["graph", "graph", $t("Graph")],
-      ["flashcards", "template", $t("Flashcards")],
-      ["chat", "brain", $t("AI chat")],
+      ["flashcards", "flashcards", $t("Flashcards")],
+      ["templates", "template", $t("Templates")],
     ]
       .map(
         ([v, i, t]) =>
@@ -1682,7 +1757,7 @@ function shell() {
       )
       .join(
         "",
-      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${esc(data.user.name.slice(0, 2).toUpperCase())}</span>${localMode ? `<button class="profile-link" data-view="personal-providers"><div class="profile-name">${$t("User settings")}</div><div class="profile-role">${$t("On this computer")}</div></button>` : `<button class="profile-link" data-view="account" title="${$t("User settings")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${$t("{value} · Security", { value: data.user.admin ? $t("Server administrator") : $t("Member") })}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${themeSelect()}${workspaceBadge()}<span class="avatar">${esc(data.user.name[0])}</span></div></header><div id="content" tabindex="-1"></div></main></div>`;
+      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${profileAvatar(data.profile, data.user.name, esc)}</span>${localMode ? `<button class="profile-link" data-view="account"><div class="profile-name">${$t("User settings")}</div><div class="profile-role">${$t("On this computer")}</div></button>` : `<button class="profile-link" data-view="account" title="${$t("User settings")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${data.user.admin ? $t("Server administrator") : $t("Member")}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${workspaceBadge()}</div></header><div id="content" tabindex="-1"></div></main></div>`;
   $$("[data-view]").forEach((b) =>
     action(b, "click", () => navigate(b.dataset.view)),
   );
@@ -1707,18 +1782,15 @@ function shell() {
     await api("logout", "POST");
     login();
   });
-  action($(".mobile-menu"), "click", () =>
-    $(".sidebar").classList.toggle("open"),
-  );
+  bindSidebarToggle();
   action($("#sync-state"), "click", syncDialog);
   action($("#share-workspace"), "click", () => shareWorkspace());
-  bindThemeSelect();
   if (note) renderEditor();
   else if (view === "admin") renderAdmin().catch(error);
   else if (view === "databases") renderDatabaseList();
   else if (view === "graph") renderGraph(folderId).catch(error);
   else if (view === "flashcards")
-    renderFlashcards({ api, esc, data, error, workspaceId }).catch(error);
+    renderFlashcards({ api, esc, data, error, icon, modal, workspaceId }).catch(error);
   else if (view === "reminders")
     renderReminders({
       api,
@@ -1740,8 +1812,6 @@ function shell() {
     renderAISettings({ api, esc, data, error, localMode, personal: true }).catch(
       error,
     );
-  else if (view === "providers")
-    renderAISettings({ api, esc, data, error, localMode }).catch(error);
   else if (view === "chat")
     renderAIChat({
       localMode,
@@ -1876,6 +1946,7 @@ async function noteFromReply(markdown, question, scope) {
   return n.id;
 }
 async function navigate(v, f = null) {
+  setMobileSidebar(false);
   graphView?.destroy();
   graphView = null;
   localGraph?.destroy();
@@ -1896,8 +1967,7 @@ async function navigate(v, f = null) {
 function dashboard() {
   $("#breadcrumb").textContent = $t("Overview");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR WORKSPACE, AT A GLANCE")}</div><div class="page-heading"><div><h1>${$t("A place for your ideas")}</h1><p class="subtitle">${$t("Collect your thoughts. Connect the dots. Make something great.")}</p></div><button class="btn primary" id="new-note">${icon("plus")}${$t("New note")}</button></div><div id="dashboard-root"></div></section>`;
-  action($("#new-note"), "click", createNote);
+    `<section class="page" aria-label="${$t("Overview")}"><div id="dashboard-root"></div></section>`;
   renderDashboard($("#dashboard-root"), {
     api,
     esc,
@@ -1937,9 +2007,7 @@ function overview() {
     );
   notes.sort((a, b) => b.updated_at - a.updated_at);
   const title =
-    view === "home"
-      ? $t("A place for your ideas")
-      : view === "all"
+    view === "all"
         ? $t("All notes")
         : view === "favorites"
           ? $t("Your favorites")
@@ -1952,24 +2020,15 @@ function overview() {
                 : folders().find((f) => f.id === folderId)?.name ||
                   $t("Folder");
   $("#breadcrumb").textContent =
-    view === "home"
-      ? $t("Overview")
-      : view === "folder"
-        ? folderPath(folderId)
-            .map((f) => f.name)
-            .join(" / ")
-        : title;
+    view === "folder"
+      ? folderPath(folderId).map((f) => f.name).join(" / ")
+      : title;
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${view === "home" ? $t("YOUR WORKSPACE, AT A GLANCE") : $t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "home" ? $t("Collect your thoughts. Connect the dots. Make something great.") : view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : view === "archive" ? $t("Notes put away: out of the sidebar and search, never deleted. Open one to bring it back.") : $tn(notes.length, "{count} note · Space to think, write, and explore.", "{count} notes · Space to think, write, and explore.")}</p></div>${view !== "trash" && view !== "archive" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
-      view === "home"
-        ? `<div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("A FRESH START")}</div><h2>${$t("Good ideas start with a little space.")}</h2><p>${$t("A quick thought, a detailed plan, your next big thing.")}<br>${$t("Bring it all together in your workspace.")}</p><button class="text-link" id="start-writing">${$t("Start writing")} <span>↗</span></button></div>${art()}</div><div class="section-title"><h2>${$t("Your folders")}</h2><span>${$t("{count} spaces to keep things together", { count: folderChildren(treeFolders(), null).length })}</span></div><div class="folder-grid">${
-            folderChildren(treeFolders(), null).map(folderCard).join("") ||
-            `<div class="empty">${$t("Your administrator can grant you folder access.")}</div>`
-          }</div>`
-        : view === "folder" && folderChildren(treeFolders(), folderId).length
+    `<section class="page"><div class="eyebrow">${$t("A LITTLE MORE ORGANIZED")}</div><div class="page-heading"><div><h1>${esc(title)}</h1>${view === "folder" ? `<button class="btn" id="ask-folder">${$t("Ask AI about this folder")}</button>` : ""}<p class="subtitle">${view === "trash" ? $t("Nothing is permanently deleted. Restore a note whenever you need it.") : view === "archive" ? $t("Notes put away: out of the sidebar and search, never deleted. Open one to bring it back.") : $tn(notes.length, "{count} note · Space to think, write, and explore.", "{count} notes · Space to think, write, and explore.")}</p></div>${view !== "trash" && view !== "archive" ? `<button id="new-note" class="btn primary" ${!folders().some((f) => data.roles[f.id] === "editor") ? "disabled" : ""}>${icon("plus")}${$t("New note")}</button>` : ""}</div>${
+      view === "folder" && folderChildren(treeFolders(), folderId).length
           ? `<div class="section-title"><h2>${$t("Subfolders")}</h2></div><div class="folder-grid">${folderChildren(treeFolders(), folderId).map(folderCard).join("")}</div>`
           : ""
-    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "home" ? $t("Recently updated") : view === "trash" ? $t("Deleted notes") : view === "archive" ? $t("Archived notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && editsWorkspace() ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view === "archive" ? "" : view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq, Evernote, Bear, OneNote or Docmost")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : view === "archive" ? $t("Nothing archived.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : view === "archive" ? $t("Archive a note from its ⋯ menu to put it away without deleting it.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
+    }<div class="notes-toolbar"><div class="tabs"><button class="active">${view === "trash" ? $t("Deleted notes") : view === "archive" ? $t("Archived notes") : $t("Your notes")} <span>(${notes.length})</span></button>${view === "folder" && editsWorkspace() ? `<button id="rename-folder">${$t("Rename folder")}</button>` : ""}${view === "folder" && editsWorkspace() ? `<button id="delete-folder" class="danger-text">${$t("Delete folder")}</button>` : ""}</div><div style="display:flex;gap:12px;align-items:center">${view === "archive" ? "" : view !== "trash" ? `<button id="import" class="btn" title="${$t("Import notes from Markdown, Notion, Obsidian, Logseq, Evernote, Bear, OneNote or Docmost")}">${icon("upload")}${$t("Import")}</button>` : notes.some((n) => data.roles[n.folder_id] === "editor") ? `<button id="empty-trash" class="btn danger">${icon("trash")}${$t("Empty trash")}</button>` : ""}<div class="view-toggle"><button data-layout="grid" aria-label="${$t("Grid view")}" class="${layout === "grid" ? "active" : ""}">${icon("grid")}</button><button data-layout="list" aria-label="${$t("List view")}" class="${layout === "list" ? "active" : ""}">${icon("list")}</button></div></div></div><div class="note-${layout}">${notes.map((n) => `<button class="note-card" data-note="${n.id}"><div class="note-preview" aria-hidden="true"><span class="preview-symbol">${esc(n.icon)}</span><div class="preview-lines"><i></i><i></i><i></i></div></div><div class="note-info"><strong>${esc(n.title)}</strong><div class="note-meta">${icon("folder")}<span>${esc(data.folders.find((f) => f.id === n.folder_id)?.name)}</span><span>· ${date(n.updated_at)}</span>${n.favorite ? `<span class="star">☆</span>` : ""}${sharingBadges(n.sharing)}</div></div></button>`).join("")}</div>${!notes.length ? `<div class="empty">${icon("note")}<h3>${view === "trash" ? $t("All clear. No deleted notes.") : view === "archive" ? $t("Nothing archived.") : $t("A blank page, endless possibilities.")}</h3>${view === "trash" ? $t("Deleted notes will appear here.") : view === "archive" ? $t("Archive a note from its ⋯ menu to put it away without deleting it.") : $t("Create a note to give your ideas a home.")}</div>` : ""}<div class="page-footer">${$t("A little clarity. A little possibility. Your Minerva.")}</div></section>`;
   action($("#ask-folder"), "click", () =>
     askAI({ kind: "folder", id: folderId }),
   );
@@ -1987,7 +2046,6 @@ function overview() {
     }),
   );
   action($("#new-note"), "click", createNote);
-  action($("#start-writing"), "click", createNote);
   action($("#import"), "click", importMarkdown);
   action($("#delete-folder"), "click", () => deleteFolder(folderId));
   action($("#empty-trash"), "click", () => {
@@ -2014,8 +2072,8 @@ function folderCard(f) {
   const subfolders = data.folders.filter((x) => x.parent_id === f.id).length;
   return `<button class="folder-card" data-open-folder="${f.id}"><span class="folder-icon">${icon("folder")}</span><div><strong>${esc(f.name)}</strong><small>${$tn(notes, "{count} note{value} · {value2}", "{count} notes{value} · {value2}", { value: subfolders ? ` · ${$tn(subfolders, "{count} subfolder", "{count} subfolders")}` : "", value2: data.roles[f.id] === "editor" ? $t("Can edit") : $t("Read only") })}</small></div></button>`;
 }
-function formDialog(title, desc, fields, onSubmit, label = "Create") {
-  modal.innerHTML = `<form><h2>${esc(title)}</h2><p>${esc(desc)}</p>${fields}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${esc(label)}</button></footer></form>`;
+function formDialog(title, desc, fields, onSubmit, label = "Create", formClass = "") {
+  modal.innerHTML = `<form class="${formClass}"><h2>${esc(title)}</h2><p>${esc(desc)}</p>${fields}<div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel">${$t("Cancel")}</button><button class="btn primary" type="submit">${esc(label)}</button></footer></form>`;
   modal.showModal();
   $("#cancel", modal).onclick = () => modal.close();
   $("form", modal).onsubmit = async (e) => {
@@ -2098,6 +2156,7 @@ function deleteWorkspace(w, after = null) {
 }
 /** Opens a note; with `split`, in a tab beside the note tab that is shown. */
 async function openNote(id, { split = false, block = null } = {}) {
+  setMobileSidebar(false);
   if (block && note?.id === id && !noteTabs && !chatPane) return showBlock(block);
   if (noteTabs) {
     await flush();
@@ -2613,7 +2672,7 @@ function renderEditor() {
       : `<button class="btn icon-btn" id="favorite" aria-label="${$t("Favorite")}" aria-pressed="${!!note.favorite}" title="${$t("Favorite")}" ${!can ? "disabled" : ""}>${note.favorite ? "★" : "☆"}</button>${localMode ? "" : `<button class="btn" id="share-note" ${!editor || note.trashed ? `disabled title="${$t("Folder editors can share this note")}"` : ""}>${$t("Share")}${sharing.published || sharing.links ? `<span class="share-badge public">${$t("Public")}</span>` : ""}</button>`}<button class="btn" id="comments-toggle" aria-pressed="false" aria-label="${$t("Comments")}" title="${$t("Comments on this note")}">💬<span class="toolbar-label"> ${$t("Comments")}</span> <span class="comments-count"></span></button><button class="btn" id="ask-note" aria-label="${$t("Ask AI")}" title="${$t("Chat with AI about this note, side by side")}">${icon("brain")}<span class="toolbar-label">${$t("Ask AI")}</span></button>`
   }<div class="toolbar-more"><button class="btn icon-btn" id="note-more" aria-haspopup="menu" aria-expanded="false" aria-controls="note-menu" aria-label="${$t("More note tools")}" title="${$t("More")}">${icon("more")}</button><div class="row-menu note-menu" id="note-menu" role="menu" aria-label="${$t("Note tools")}" hidden>${menu}</div></div>`;
   $("#content").innerHTML =
-    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && note.archived && !note.trashed ? `<div class="archived-banner" role="note">${icon("archive")}<span>${$t("Archived · out of the sidebar and search")}</span>${editable() ? `<button class="btn" id="unarchive-banner">${$t("Unarchive")}</button>` : ""}</div>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || $t("Shared with you"))}</span>`}<span>${$t("Updated {date}", { date: date(note.updated_at) })}</span><span>${$t("Revision {revision}", { revision: note.revision })}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
+    `<div class="editor-toolbar" role="toolbar" aria-label="${$t("Note tools")}"><span class="save-status" id="save-state" role="status">${can ? $t("All changes saved") : $t("Read only")}</span><span id="presence" class="presence"></span><span class="spacer"></span>${tools}</div>${coverHTML(note.cover, can)}<article class="document ${note.cover ? "has-cover" : ""}">${can ? `<div class="doc-adders">${note.icon ? "" : `<button class="text-link" id="add-icon">${$t("☺ Add icon")}</button>`}${note.cover ? "" : `<button class="text-link" id="add-cover">${$t("▧ Add cover")}</button>`}</div>` : ""}${note.journal && !shareMode ? `<nav class="journal-nav" aria-label="${$t("Journal days")}"><button class="btn" data-journal-shift="-1" aria-label="${$t("Previous day")}">‹ ${esc(parseDate(shiftDate(note.journal, -1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</button><span>${esc(longDate(note.journal))}</span><button class="btn" data-journal-shift="1" aria-label="${$t("Next day")}">${esc(parseDate(shiftDate(note.journal, 1)).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} ›</button></nav>` : ""}${!shareMode && note.archived && !note.trashed ? `<div class="archived-banner" role="note">${icon("archive")}<span>${$t("Archived · out of the sidebar and search")}</span>${editable() ? `<button class="btn" id="unarchive-banner">${$t("Unarchive")}</button>` : ""}</div>` : ""}${!shareMode && isTemplate(note) ? `<span class="template-badge">${$t("Template · used by “Fill from template”")}</span>` : ""}<div class="doc-heading">${note.icon ? (can ? `<button class="doc-icon" id="doc-icon" aria-label="${$t("Change icon")}" title="${$t("Change icon")}">${esc(note.icon)}</button>` : `<div class="doc-icon" aria-hidden="true">${esc(note.icon)}</div>`) : ""}<input id="note-title" data-live-key="title" class="doc-title" aria-label="${$t("Note title")}" maxlength="200" value="${esc(note.title)}" ${!can || note.record ? "readonly" : ""} ${note.record ? 'title="A record\'s page is named after the record: rename it in the properties below"' : ""}></div><div class="doc-meta">${shareMode ? "" : `<span>${esc(data.folders.find((f) => f.id === note.folder_id)?.name || $t("Shared with you"))}</span>`}<span>${$t("Updated {date}", { date: date(note.updated_at) })}</span><span>${$t("Revision {revision}", { revision: note.revision })}</span><span id="word-count"></span>${shareState}</div>${note.record && !shareMode ? `<section class="record-panel" id="record-panel" aria-label="${$t("Record properties")}"></section>` : ""}<div class="tag-bar" id="tag-bar"></div>${can && !shareMode && isEmptyNote(note) && templateNotes(workspaceOfNote(note)).some((t) => t.id !== note.id) ? `<div class="template-fill"><button class="btn" id="fill-template">${icon("template")}${$t("Fill from template")}</button><span>${$t("or just start writing")}</span></div>` : ""}<div id="blocks" role="list" aria-label="${$t("Note blocks")}"></div><span id="block-edit-hint" hidden>${$t("Press Enter to edit.")}</span>${can ? `<button class="add-block" id="add-block">${$t("+ Add a block")}</button><p class="editor-help" id="editor-help">${$t("Click a block to edit · Enter splits it at the cursor · Backspace at the start merges with the block above · Shift+Enter adds a line break · ↑/↓ at the edges move between blocks · Ctrl+Z undoes your changes · / for block types · Ctrl+J for AI on the selection · Ctrl+Shift+P for commands on selected text")}</p>` : ""}<section class="backlinks" id="backlinks" aria-label="${$t("Linked from")}"></section></article>`;
   renderBlocks();
   renderTagBar();
   renderBacklinks();
@@ -2991,6 +3050,7 @@ const graphChoices = {
   folder: "",
   since: "",
   color: "folder",
+  mode: "2d",
 };
 let graphView = null;
 /**
@@ -3001,17 +3061,22 @@ async function renderGraph(focus = null) {
   graphView?.destroy();
   graphView = null;
   $("#breadcrumb").textContent = $t("Graph");
-  $("#content").innerHTML = `<section class="page graph-page"><p class="hint">${$t("Drawing the graph…")}</p></section>`;
+  const content = $("#content");
+  content.innerHTML = `<section class="page graph-page"><p class="hint">${$t("Drawing the graph…")}</p></section>`;
+  const loading = content.firstElementChild;
   const wid = workspaceId;
   const raw = await api(`workspaces/${wid}/graph`);
-  if (view !== "graph") return;
+  if (view !== "graph" || wid !== workspaceId || !loading.isConnected) return;
   // A folder chosen in another workspace does not apply here.
-  if (!folders().some((f) => f.id === graphChoices.folder)) graphChoices.folder = "";
+  if (!folders().some((f) => f.id === graphChoices.folder))
+    graphChoices.folder = "";
   // A folder filter keeps its subfolders too.
   const inFolder = graphChoices.folder
     ? new Set(
         folders()
-          .filter((f) => folderPath(f.id).some((p) => p.id === graphChoices.folder))
+          .filter((f) =>
+            folderPath(f.id).some((p) => p.id === graphChoices.folder),
+          )
           .map((f) => f.id),
       )
     : null;
@@ -3039,15 +3104,27 @@ async function renderGraph(focus = null) {
             `<span><i style="background:${folderColor(folderIds, id)}"></i>${esc(folderName(id))}</span>`,
         );
   const select = (id, label, options, value) =>
-    `<label class="cal-by">${label}<select id="${id}">${options.map(([v, text]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
-  $("#content").innerHTML =
-    `<section class="page graph-page"><div class="page-heading"><div><h1>${around ? $t("Around “{label}”", { label: esc(around.label) }) : $t("Graph")}</h1><p class="subtitle">${$tn(notes, "{count} note", "{count} notes")} · ${$tn(graph.edges.length, "{count} link", "{count} links")}. ${$t("Drag to move, scroll to zoom, click a note to open it.")} ${$t("A note you drag stays where you put it.")}</p></div></div><div class="graph-toolbar"><div class="graph-find"><input type="search" id="graph-search" placeholder="${$t("Find a note…")}" aria-label="${$t("Find a note in the graph")}" autocomplete="off"><div class="graph-results" id="graph-results" role="listbox" aria-label="${$t("Matching notes")}"></div></div>${around ? `<label class="cal-by">${$t("Links away")}<select id="graph-depth">${[1, 2, 3].map((d) => `<option ${d === graphChoices.depth ? "selected" : ""}>${d}</option>`).join("")}</select></label><button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}${select(
+    `<label class="graph-field">${label}<select id="${id}">${options.map(([v, text]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
+  const modeHelp = () =>
+    graphChoices.mode === "3d"
+      ? $t(
+          "Drag or use the arrow keys on the graph to rotate. Click a note to open it.",
+        )
+      : $t(
+          "Drag the background to pan. Drag a note to pin it, or click it to open.",
+        );
+  const filters = [
+    select(
       "graph-folder",
       $t("Folder"),
       [
         ["", $t("All folders")],
         ...folders()
-          .filter((f) => raw.nodes.some((n) => n.folder_id === f.id) || data.folders.some((c) => c.parent_id === f.id))
+          .filter(
+            (f) =>
+              raw.nodes.some((n) => n.folder_id === f.id) ||
+              data.folders.some((c) => c.parent_id === f.id),
+          )
           .map((f) => [
             f.id,
             folderPath(f.id)
@@ -3056,7 +3133,8 @@ async function renderGraph(focus = null) {
           ]),
       ],
       graphChoices.folder,
-    )}${select(
+    ),
+    select(
       "graph-since",
       $t("Updated"),
       [
@@ -3066,7 +3144,8 @@ async function renderGraph(focus = null) {
         ["365", $t("In the last year")],
       ],
       graphChoices.since,
-    )}${select(
+    ),
+    select(
       "graph-color",
       $t("Colour by"),
       [
@@ -3074,19 +3153,85 @@ async function renderGraph(focus = null) {
         ["tag", $t("Tag")],
       ],
       graphChoices.color,
-    )}${[
-      ["tags", $t("Tags")],
-      ["orphans", $t("Unlinked notes")],
-      ["journal", $t("Journal")],
-    ]
-      .map(
-        ([key, label]) =>
-          `<label class="checkbox-label"><input type="checkbox" data-graph-choice="${key}" ${graphChoices[key] ? "checked" : ""}>${label}</label>`,
-      )
-      .join(
-        "",
-      )}<button class="btn" id="graph-fit">${$t("Fit")}</button><button class="btn" id="graph-reset" ${Object.keys(positions).length ? "" : "hidden"} title="${$t("Let every note you placed move freely again")}">${$t("Reset layout")}</button></div><div class="graph-wrap"><canvas id="graph-canvas" role="img" aria-label="${$tn(notes, "Graph of {count} note and its links. Use “Find a note” and the list beside it to move through it with the keyboard.", "Graph of {count} notes and their links. Use “Find a note” and the list beside it to move through it with the keyboard.")}"></canvas><aside class="graph-panel" id="graph-panel" aria-live="polite"></aside></div><div class="graph-legend">${legend.join("")}${byTag && tagged.tags.length ? `<span><i class="untagged"></i>${$t("Other tags or none")}</span>` : ""}</div>${graph.nodes.length ? "" : `<div class="empty"><h3>${raw.nodes.length ? $t("No notes match these filters.") : $t("Nothing to draw yet.")}</h3>${raw.nodes.length ? "" : `${$t("Link notes with")} <code>[[</code> ${$t("in the editor, and they appear here connected.")}`}</div>`}</section>`;
+    ),
+    ...(around
+      ? [
+          select(
+            "graph-depth",
+            $t("Links away"),
+            ["1", "2", "3"].map((d) => [d, d]),
+            String(graphChoices.depth),
+          ),
+        ]
+      : []),
+  ].join("");
+  const visibility = [
+    ["tags", $t("Tags")],
+    ["orphans", $t("Unlinked notes")],
+    ["journal", $t("Journal")],
+  ]
+    .map(
+      ([key, label]) =>
+        `<label class="checkbox-label"><input type="checkbox" data-graph-choice="${key}" ${graphChoices[key] ? "checked" : ""}>${label}</label>`,
+    )
+    .join("");
+  const modeOptions = ["2d", "3d"]
+    .map(
+      (mode) =>
+        `<button type="button" data-graph-mode="${mode}" aria-pressed="${mode === graphChoices.mode}" class="${mode === graphChoices.mode ? "active" : ""}">${mode.toUpperCase()}</button>`,
+    )
+    .join("");
+  const graphLabel = $tn(
+    notes,
+    "Graph of {count} note and its links. Use “Find a note” and the list beside it to move through it with the keyboard.",
+    "Graph of {count} notes and their links. Use “Find a note” and the list beside it to move through it with the keyboard.",
+  );
+  content.innerHTML = `<section class="page graph-page">
+    <div class="page-heading">
+      <div>
+        <h1>${around ? $t("Around “{label}”", { label: esc(around.label) }) : $t("Graph")}</h1>
+        <p class="subtitle">${$tn(notes, "{count} note", "{count} notes")} · ${$tn(graph.edges.length, "{count} link", "{count} links")}</p>
+      </div>
+      ${graph.nodes.length ? `<div class="segmented graph-modes" role="group" aria-label="${$t("Graph view")}">${modeOptions}</div>` : ""}
+    </div>
+    <div class="graph-toolbar">
+      <div class="graph-filters">
+        <div class="graph-find">
+          <label class="graph-field" for="graph-search">${$t("Find a note")}</label>
+          <div class="graph-search-box">${icon("search")}<input type="search" id="graph-search" placeholder="${$t("Find a note…")}" autocomplete="off" ${graph.nodes.length ? "" : "disabled"}>
+            <div class="graph-results" id="graph-results" role="group" aria-label="${$t("Matching notes")}"></div>
+          </div>
+        </div>
+        ${filters}
+        ${around ? `<button class="btn" id="graph-whole">${$t("Whole workspace")}</button>` : ""}
+      </div>
+      <div class="graph-toolbar-footer">
+        <div class="graph-visibility" role="group" aria-label="${$t("Show in graph")}">${visibility}</div>
+        <button class="btn" id="graph-reset" ${Object.keys(positions).length ? "" : "hidden"} title="${$t("Let every note you placed move freely again")}">${$t("Reset layout")}</button>
+      </div>
+    </div>
+    ${
+      graph.nodes.length
+        ? `<div class="graph-wrap">
+      <div class="graph-stage">
+        <canvas id="graph-canvas" role="img" aria-label="${graphLabel}" aria-describedby="graph-mode-help" ${graphChoices.mode === "3d" ? 'tabindex="0"' : ""}></canvas>
+        <div class="graph-camera" role="group" aria-label="${$t("Zoom")}">
+          <button class="btn" id="graph-zoom-out" title="${$t("Zoom out")}" aria-label="${$t("Zoom out")}">−</button>
+          <button class="btn" id="graph-zoom-in" title="${$t("Zoom in")}" aria-label="${$t("Zoom in")}">+</button>
+          <button class="btn" id="graph-fit">${$t("Fit")}</button>
+        </div>
+      </div>
+      <aside class="graph-panel">
+        <p class="graph-mode-help" id="graph-mode-help">${modeHelp()}</p>
+        <div id="graph-panel" aria-live="polite"></div>
+      </aside>
+    </div>
+    <div class="graph-legend">${legend.join("")}${graphChoices.tags && graph.nodes.some((node) => node.kind === "tag") ? `<span><i class="graph-tag-key"></i>${$t("Tags")}</span>` : ""}${byTag && notes ? `<span><i class="untagged"></i>${$t("Other tags or none")}</span>` : ""}</div>`
+        : `<div class="empty"><h3>${raw.nodes.length ? $t("No notes match these filters.") : $t("Nothing to draw yet.")}</h3>${raw.nodes.length ? "" : `${$t("Link notes with")} <code>[[</code> ${$t("in the editor, and they appear here connected.")}`}</div>`
+    }
+  </section>`;
   const panel = $("#graph-panel");
+  const reset = $("#graph-reset");
   // Positions are saved shortly after the last drag.
   let unsaved = {};
   let saveTimer = 0;
@@ -3099,10 +3244,7 @@ async function renderGraph(focus = null) {
       api(`workspaces/${wid}/graph/positions`, "PUT", body)
         .then((r) => {
           positions = r.positions;
-          $("#graph-reset")?.toggleAttribute(
-            "hidden",
-            !Object.keys(positions).length,
-          );
+          reset.toggleAttribute("hidden", !Object.keys(positions).length);
         })
         .catch(error);
     }, 400);
@@ -3149,19 +3291,22 @@ async function renderGraph(focus = null) {
     rerender();
   });
   action($("#graph-whole"), "click", () => navigate("graph"));
-  action($("#graph-reset"), "click", async () => {
+  action(reset, "click", async () => {
     clearTimeout(saveTimer);
     unsaved = {};
     await api(`workspaces/${wid}/graph/positions`, "PUT", { reset: true });
-    rerender();
+    if (reset.isConnected) rerender();
   });
   if (!graph.nodes.length) return;
-  graphView = mountGraph($("#graph-canvas"), graph, {
+  const canvas = $("#graph-canvas");
+  graphView = mountGraph(canvas, graph, {
     color: byTag
       ? (n) => tagged.color(n)
       : (n) => folderColor(folderIds, n.folder),
     plain: byTag ? "#a3abb9" : null,
     positions,
+    mode: graphChoices.mode,
+    keepSelection: true,
     onOpen: openGraphNode,
     onSelect: describe,
     onArrange: (node, xy) => {
@@ -3171,7 +3316,26 @@ async function renderGraph(focus = null) {
     focus: around ? focus : null,
   });
   describe(around || null);
+  const modes = $$("[data-graph-mode]", $("#content"));
+  modes.forEach((button) =>
+    action(button, "click", () => {
+      const { graphMode } = button.dataset;
+      if (graphMode === graphChoices.mode) return;
+      graphChoices.mode = graphMode;
+      for (const option of modes) {
+        const active = option === button;
+        option.classList.toggle("active", active);
+        option.setAttribute("aria-pressed", String(active));
+      }
+      if (graphMode === "3d") canvas.tabIndex = 0;
+      else canvas.removeAttribute("tabindex");
+      $("#graph-mode-help").textContent = modeHelp();
+      graphView.setMode(graphMode);
+    }),
+  );
   action($("#graph-fit"), "click", () => graphView.fit());
+  action($("#graph-zoom-in"), "click", () => graphView.zoom(1.25));
+  action($("#graph-zoom-out"), "click", () => graphView.zoom(0.8));
   const search = $("#graph-search"),
     results = $("#graph-results");
   search.addEventListener("input", () => {
@@ -3182,27 +3346,42 @@ async function renderGraph(focus = null) {
     results.innerHTML = found
       .map(
         (n) =>
-          `<button role="option" data-graph-select="${esc(n.id)}">${esc(n.label)}</button>`,
+          `<button type="button" data-graph-select="${esc(n.id)}">${esc(n.label)}</button>`,
       )
       .join("");
     $$("button", results).forEach(
       (b) =>
         (b.onclick = () => {
           graphView.center(b.dataset.graphSelect);
+          search.focus();
           results.innerHTML = "";
         }),
     );
     if (found[0]) graphView.center(found[0].id);
   });
-  search.addEventListener("keydown", (e) => {
+  const finder = search.closest(".graph-find");
+  finder.addEventListener("focusout", (e) => {
+    if (!finder.contains(e.relatedTarget)) results.innerHTML = "";
+  });
+  finder.addEventListener("keydown", (e) => {
     const first = $("button", results);
-    if (e.key === "Enter" && first) {
+    if (e.key === "Escape" && first) {
       e.preventDefault();
-      openGraphNode(graph.nodes.find((n) => n.id === first.dataset.graphSelect));
+      e.stopPropagation();
+      search.focus();
+      results.innerHTML = "";
     }
-    if (e.key === "ArrowDown" && first) {
+    if (e.key === "Enter" && e.target === search && first) {
       e.preventDefault();
-      first.focus();
+      openGraphNode(
+        graph.nodes.find((n) => n.id === first.dataset.graphSelect),
+      );
+    }
+    if (["ArrowDown", "ArrowUp"].includes(e.key) && first) {
+      e.preventDefault();
+      const choices = [search, ...$$("button", results)];
+      const next = choices.indexOf(e.target) + (e.key === "ArrowDown" ? 1 : -1);
+      choices[(next + choices.length) % choices.length].focus();
     }
   });
 }
@@ -3529,7 +3708,7 @@ function emptyBlockHTML() {
 }
 function blockHTML(b, i) {
   const level = indentLevel(b.markdown);
-  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? `<div class="block-controls"><button class="block-handle" title="${$t("Drag to move · click for options · ↑/↓ to move with the keyboard")}" aria-label="${$t("Block options (drag, or press the up and down arrows, to move)")}" aria-haspopup="menu" aria-expanded="false">⠿</button><button data-remove title="${$t("Delete block")}" aria-label="${$t("Delete block")}">×</button></div>` : shareMode ? "" : `<div class="block-controls"><button class="block-handle readonly" title="${$t("Block options")}" aria-label="${$t("Block options")}" aria-haspopup="menu" aria-expanded="false">⠿</button></div>`}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="${$t("Toggle task")}" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div>${shareMode && !guestComments() ? "" : `<button class="block-comment" type="button" data-comment-block="${esc(b.id)}" title="${$t("Comment on this block")}" aria-label="${$t("Comment on this block")}">💬</button>`}</div>`;
+  return `<div class="block${level ? ` indent-${level}` : ""}" role="listitem" data-block="${esc(b.id)}"${level ? ` aria-level="${level + 1}"` : ""}>${editable() ? `<div class="block-controls"><button class="block-handle" title="${$t("Drag to move · click for options · ↑/↓ to move with the keyboard")}" aria-label="${$t("Block options (drag, or press the up and down arrows, to move)")}" aria-haspopup="menu" aria-expanded="false">⠿</button><button data-remove title="${$t("Delete block")}" aria-label="${$t("Delete block")}">×</button></div>` : shareMode ? "" : `<div class="block-controls"><button class="block-handle readonly" title="${$t("Block options")}" aria-label="${$t("Block options")}" aria-haspopup="menu" aria-expanded="false">⠿</button></div>`}${/^\s*- \[[ xX]\]/.test(b.markdown) ? `<button class="task-toggle" aria-label="${$t("Toggle task")}" ${!editable() ? "disabled" : ""}>${/\[[xX]\]/.test(b.markdown) ? "☑" : "☐"}</button>` : ""}<div class="block-body" tabindex="0" ${editable() ? 'aria-describedby="block-edit-hint"' : ""}>${note.rendered?.[i] || emptyBlockHTML()}</div></div>`;
 }
 /** Moves the block at `i` to index `j` and saves. */
 async function moveBlock(i, j) {
@@ -4450,27 +4629,54 @@ function updateFormatBar(ta) {
   bar.className = "format-bar";
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", $t("Format selection"));
-  bar.innerHTML = formatButtons();
-  $$("button", bar).forEach((b) => {
-    b.setAttribute("aria-label", b.title);
-    // Keep the textarea focused and its selection intact.
-    b.addEventListener("mousedown", (e) => e.preventDefault());
-    b.addEventListener("click", () => formatAction(ta, b.dataset));
-  });
+  bindFormatBar(bar, (dataset) => formatAction(ta, dataset));
   block.append(bar);
 }
+function bindFormatBar(bar, apply) {
+  bar.innerHTML = formatButtons();
+  const style = $("[data-style-toggle]", bar);
+  const options = $(".format-style-options", bar);
+  style.onclick = () => {
+    options.hidden = !options.hidden;
+    style.setAttribute("aria-expanded", String(!options.hidden));
+  };
+  for (const button of $$("button", bar)) {
+    // Keep the selection intact when using a pointer or touch.
+    button.setAttribute("aria-label", button.title);
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    if (button !== style)
+      button.onclick = () => {
+        options.hidden = true;
+        style.setAttribute("aria-expanded", "false");
+        apply(button.dataset);
+      };
+  }
+}
 function formatButtons() {
-  return `<button data-format="bold" title="${$t("Bold (Ctrl+B)")}"><b>B</b></button><button data-format="italic" title="${$t("Italic (Ctrl+I)")}"><i>I</i></button><button data-format="strike" title="${$t("Strikethrough (Ctrl+Shift+X)")}"><s>S</s></button><button data-format="code" title="${$t("Inline code (Ctrl+E)")}"><code>&lt;/&gt;</code></button><button data-format="link" title="${$t("Link (Ctrl+K)")}">🔗</button><button data-format="highlight" class="format-highlight" title="${$t("Highlight (Ctrl+Shift+H)")}">🖍</button>${shareMode ? "" : `<button data-ai class="format-ai" title="${$t("AI: improve, translate, continue (Ctrl+J)")}">${$t("✦ AI")}</button>`}${shareMode && !guestComments() ? "" : `<button data-comment-selection title="${$t("Comment on the selected text")}">💬</button>`}`;
+  return `<div class="format-controls"><div class="format-group"><button type="button" class="format-style-toggle" data-style-toggle aria-expanded="false" title="${$t("Block style")}">Aa <span aria-hidden="true">⌄</span></button></div><div class="format-group"><button type="button" data-format="bold" title="${$t("Bold (Ctrl+B)")}"><b>B</b></button><button type="button" data-format="italic" title="${$t("Italic (Ctrl+I)")}"><i>I</i></button><button type="button" data-format="strike" title="${$t("Strikethrough (Ctrl+Shift+X)")}"><s>S</s></button><button type="button" data-format="code" title="${$t("Inline code (Ctrl+E)")}"><code>&lt;/&gt;</code></button><button type="button" data-format="link" title="${$t("Link (Ctrl+K)")}">🔗</button><button type="button" data-format="highlight" class="format-highlight" title="${$t("Highlight (Ctrl+Shift+H)")}">🖍</button></div><div class="format-group">${shareMode ? "" : `<button type="button" data-ai class="format-ai" title="${$t("AI: improve, translate, continue (Ctrl+J)")}">${$t("✦ AI")}</button>`}${shareMode && !guestComments() ? "" : `<button type="button" data-comment-selection title="${$t("Comment on the selected text")}">💬</button>`}</div></div><div class="format-style-options" hidden>${BLOCK_KINDS.map(([kind, label]) => `<button type="button" data-block-style="${kind}" title="${esc($t(label))}">${esc($t(label))}</button>`).join("")}</div>`;
 }
 /** What a format bar button (or its shortcut) does to the selection in `ta`. */
-function formatAction(ta, { format, ai, commentSelection }) {
+function formatAction(ta, { format, ai, commentSelection, blockStyle }) {
   if (ai !== undefined) return openWritingAssist(ta);
   if (commentSelection !== undefined)
     return comments.start(
       ta.closest("[data-block]")?.dataset.block,
       ta.value.slice(ta.selectionStart, ta.selectionEnd),
     );
-  applyFormat(ta, format);
+  if (blockStyle) {
+    const text = turnInto(ta.value, blockStyle);
+    const shift = text.length - ta.value.length;
+    if (text !== ta.value)
+      replaceRange(ta, {
+        from: 0,
+        to: ta.value.length,
+        text,
+        selStart: Math.max(0, ta.selectionStart + shift),
+        selEnd: Math.max(0, ta.selectionEnd + shift),
+      });
+  } else {
+    applyFormat(ta, format);
+  }
   updateFormatBar(ta);
 }
 
@@ -4558,15 +4764,10 @@ function updateViewFormatBar() {
   bar.dataset.block = selection.id;
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", $t("Format selection"));
-  bar.innerHTML = formatButtons();
-  $$("button", bar).forEach((b) => {
-    b.setAttribute("aria-label", b.title);
-    b.addEventListener("mousedown", (e) => e.preventDefault());
-    b.addEventListener("click", () => {
-      const current = renderedSelection();
-      const ta = current && editSelection(current);
-      if (ta) formatAction(ta, b.dataset);
-    });
+  bindFormatBar(bar, (dataset) => {
+    const current = renderedSelection();
+    const ta = current && editSelection(current);
+    if (ta) formatAction(ta, dataset);
   });
   block.append(bar);
 }
@@ -6271,9 +6472,9 @@ function printDocument(url) {
 function importMarkdown() {
   if (!folderOptions()) return toast($t("Editor access is required."));
   formDialog(
-    $t("Bring your notes along"),
-    $t("Pages become notes, with their links, tags, pictures and files; folders come along when you can add folders here, and Notion tables become databases."),
-    `<button type="button" class="btn" id="notion-api-import">${$t("Import from Notion directly")}</button><label>${$t("Files")}<input type="file" name="file" accept=".md,.markdown,.txt,.zip,.enex,.textpack,.mht,.mhtml" multiple required></label><label>${$t("Into folder")}<select name="folder_id">${folderOptions()}</select></label><details class="import-help"><summary>${$t("Where to get an export")}</summary><ul><li><strong>${$t("Notion:")}</strong> ${$t("Settings → Export all workspace content (or ··· → Export on a page), format")} <em>${$t("Markdown &amp; CSV")}</em>${$t(", with subpages. Choose the downloaded zip.")}</li><li><strong>${$t("Obsidian:")}</strong> ${$t("zip your vault folder.")}</li><li><strong>${$t("Logseq:")}</strong> ${$t("zip your graph folder (with")} <code>pages</code>, <code>journals</code> and <code>assets</code>).</li><li><strong>${$t("Evernote:")}</strong> ${$t("right-click a notebook → Export notebook, as")} <em>${$t("ENEX")}</em>.</li><li><strong>${$t("Bear:")}</strong> ${$t("File → Export Notes, as")} <em>TextBundle</em> ${$t("(or Markdown), and choose the files or a zip of them.")}</li><li><strong>${$t("OneNote:")}</strong> ${$t("File → Export, a page or section as")} <em>${$t("Single File Web Page (.mht)")}</em>.</li><li><strong>${$t("Docmost:")}</strong> ${$t("space settings → Export (or ··· → Export on a page), format")} <em>Markdown</em>${$t(", with attachments. Choose the downloaded zip.")}</li><li><strong>${$t("Markdown:")}</strong> ${$t("choose one or more")} <code>.md</code> ${$t("files.")}</li></ul></details><p class="hint" id="import-progress" aria-live="polite"></p>`,
+    $t("Import notes"),
+    $t("Choose files or an export, then select where to import them."),
+    `<div class="import-source"><span class="import-source-icon">${icon("upload")}</span><div><label for="import-files">${$t("Files")}</label><small>Markdown, ZIP, ENEX, TextBundle, MHT</small><input type="file" id="import-files" name="file" accept=".md,.markdown,.txt,.zip,.enex,.textpack,.mht,.mhtml" multiple required></div></div><label class="import-destination">${$t("Into folder")}<select name="folder_id">${folderOptions()}</select></label><div class="import-alternatives"><button type="button" class="btn" id="notion-api-import">${icon("arrow")}${$t("Import from Notion directly")}</button><details class="import-help"><summary>${$t("Where to get an export")}</summary><ul><li><strong>${$t("Notion:")}</strong> ${$t("Settings → Export all workspace content (or ··· → Export on a page), format")} <em>${$t("Markdown &amp; CSV")}</em>${$t(", with subpages. Choose the downloaded zip.")}</li><li><strong>${$t("Obsidian:")}</strong> ${$t("zip your vault folder.")}</li><li><strong>${$t("Logseq:")}</strong> ${$t("zip your graph folder (with")} <code>pages</code>, <code>journals</code> and <code>assets</code>).</li><li><strong>${$t("Evernote:")}</strong> ${$t("right-click a notebook → Export notebook, as")} <em>${$t("ENEX")}</em>.</li><li><strong>${$t("Bear:")}</strong> ${$t("File → Export Notes, as")} <em>TextBundle</em> ${$t("(or Markdown), and choose the files or a zip of them.")}</li><li><strong>${$t("OneNote:")}</strong> ${$t("File → Export, a page or section as")} <em>${$t("Single File Web Page (.mht)")}</em>.</li><li><strong>${$t("Docmost:")}</strong> ${$t("space settings → Export (or ··· → Export on a page), format")} <em>Markdown</em>${$t(", with attachments. Choose the downloaded zip.")}</li><li><strong>${$t("Markdown:")}</strong> ${$t("choose one or more")} <code>.md</code> ${$t("files.")}</li></ul></details></div><p class="hint" id="import-progress" role="status"></p>`,
     async (v) => {
       const files = [...$("[name=file]", modal).files];
       const progress = $("#import-progress", modal);
@@ -6326,6 +6527,7 @@ function importMarkdown() {
       else navigate("folder", v.folder_id);
     },
     "Import",
+    "import-form",
   );
   $("#notion-api-import").onclick = importNotion;
 }
@@ -6342,6 +6544,7 @@ function importNotion() {
       else navigate("folder", v.folder_id);
     },
     "Import",
+    "import-form",
   );
 }
 async function history() {
@@ -6438,11 +6641,9 @@ function renderJournal() {
   const recent = [...entries.values()]
     .sort((a, b) => b.journal.localeCompare(a.journal))
     .slice(0, 12);
-  const templates = templateNotes();
-  const configured = data.journal_templates?.[workspaceId] || "";
   $("#breadcrumb").textContent = $t("Journal");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("ONE NOTE PER DAY")}</div><div class="page-heading"><div><h1>${$t("Journal")}</h1><p class="subtitle">${$t("Capture the day. Unfinished tasks can follow you with [[uncompleted_journal_tasks]].")}</p></div><div class="toolbar-group"><input type="date" id="journal-date" value="${today}" aria-label="${$t("Journal date")}"><button class="btn" id="journal-open">${$t("Open date")}</button><button class="btn primary" id="journal-today">${icon("calendar")}${$t("Today")}</button></div></div><div class="journal-layout"><section class="panel calendar" aria-label="${$t("Calendar")}"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="${$t("Previous month")}">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="${$t("Next month")}">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>${$t("Recent entries")}</h2><p>${$tn(entries.size, "{count} entry in this workspace", "{count} entries in this workspace")}</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || `<div class="empty">${$t("No entries yet. Start with today.")}</div>`}</div>${editsWorkspace() ? `<form class="journal-settings" id="journal-settings"><label>${$t("Template for new days")}<select name="template_id"><option value="">${$t("Blank page")}</option>${templates.map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label><button class="btn">${$t("Save")}</button></form>` : ""}</section></div></section>`;
+    `<section class="page journal-page"><div class="eyebrow">${$t("ONE NOTE PER DAY")}</div><div class="page-heading"><div><h1>${$t("Journal")}</h1><p class="subtitle">${$t("Capture the day.")}</p></div><div class="toolbar-group journal-tools"><input type="date" id="journal-date" value="${today}" aria-label="${$t("Journal date")}"><button class="btn" id="journal-open">${$t("Open date")}</button><button class="btn primary" id="journal-today">${icon("calendar")}${$t("Today")}</button>${editsWorkspace() ? `<button class="btn journal-gear" type="button" id="journal-settings" aria-label="${$t("Journal settings")}" title="${$t("Journal settings")}">${icon("settings")}</button>` : ""}</div></div><div class="journal-layout"><section class="panel calendar" aria-label="${$t("Calendar")}"><div class="calendar-head"><button class="btn" id="month-prev" aria-label="${$t("Previous month")}">‹</button><h2>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</h2><button class="btn" id="month-next" aria-label="${$t("Next month")}">›</button></div><div class="calendar-grid">${weekdays.map((d) => `<span class="weekday">${esc(d)}</span>`).join("")}${cells}</div></section><section class="panel journal-recent"><div class="panel-heading"><div><h2>${$t("Recent entries")}</h2><p>${$tn(entries.size, "{count} entry in this workspace", "{count} entries in this workspace")}</p></div></div><div class="journal-list">${recent.map((n) => `<button class="journal-entry" data-note="${n.id}"><strong>${esc(longDate(n.journal))}</strong><small>${n.title !== n.journal ? esc(n.title) : ""}</small></button>`).join("") || `<div class="empty">${$t("No entries yet. Start with today.")}</div>`}</div></section></div></section>`;
   action($("#journal-today"), "click", () => openJournal(today));
   action($("#journal-open"), "click", () => {
     const value = $("#journal-date").value;
@@ -6461,15 +6662,25 @@ function renderJournal() {
   };
   action($("#month-prev"), "click", () => moveMonth(-1));
   action($("#month-next"), "click", () => moveMonth(1));
-  action($("#journal-settings"), "submit", async (e) => {
-    e.preventDefault();
-    await api("journal/settings", "PUT", {
-      workspace_id: workspaceId,
-      template_id: e.target.template_id.value || null,
-    });
-    await refresh();
-    toast($t("Journal template saved"));
-  });
+  action($("#journal-settings"), "click", journalSettings);
+}
+function journalSettings() {
+  const target = workspaceId;
+  const configured = data.journal_templates?.[target] || "";
+  formDialog(
+    $t("Journal settings"),
+    $t("Choose the template used when you create a new journal entry."),
+    `<label>${$t("Template for new days")}<select name="template_id" autofocus><option value="">${$t("Blank page")}</option>${templateNotes(target).map((t) => `<option value="${t.id}" ${t.id === configured ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label>`,
+    async ({ template_id }) => {
+      await api("journal/settings", "PUT", {
+        workspace_id: target,
+        template_id: template_id || null,
+      });
+      await refresh();
+      toast($t("Journal template saved"));
+    },
+    $t("Save"),
+  );
 }
 function renderTemplates() {
   const templates = templateNotes();
@@ -6581,8 +6792,11 @@ async function renderJournalTasks() {
     );
   }
 }
-/** Account → This device: installing the app and reading offline. */
+/** Account → This device: appearance and browser preferences. */
 function deviceHTML() {
+  const theme = `<label for="theme">${$t("Color theme")}${themeSelect()}</label>`;
+  if (localMode)
+    return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><h2>${$t("This device")}</h2></div><div class="security-body">${theme}</div></section>`;
   const worker = "serviceWorker" in navigator && isSecureContext;
   const app = installed()
     ? `<p>${$t("Minerva is installed on this device.")}</p>`
@@ -6595,13 +6809,14 @@ function deviceHTML() {
       ([code]) => code === pickLanguage("", navigator.languages || []),
     )?.[1] || "English";
   const languages = `<label class="device-language">${$t("Language")}<select id="interface-language"><option value="">${$t("Automatic")} (${esc(browser)})</option>${LANGUAGES.map(([code, name]) => `<option value="${code}" ${chosenLanguage() === code ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`;
-  return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><div><h2>${$t("This device")}</h2><p>${$t("Settings for this browser only.")}</p></div></div><div class="security-body">${languages}${app}${
+  return `<section class="panel security-panel" id="device-panel"><div class="panel-heading"><div><h2>${$t("This device")}</h2><p>${$t("Settings for this browser only.")}</p></div></div><div class="security-body">${theme}${languages}${app}${
     worker
       ? `<label class="checkbox-label device-offline"><input type="checkbox" id="offline-reading" ${offlineReading() ? "checked" : ""}><span><strong>${$t("Keep notes I open for offline")}</strong><br><small>${$t("Notes and files you open are kept in this browser. Without a connection you can read them, and edit the notes: changes are sent when you are back online. They are deleted when you sign out. Leave this off on a shared computer.")}</small></span></label>${"PushManager" in window ? `<label class="checkbox-label device-push"><input type="checkbox" id="push-reminders" disabled><span><strong>${$t("Notify me of reminders on this device")}</strong><br><small>${$t("When a reminder is due, this device shows a notification, besides the email.")}</small></span></label>` : ""}${offlineReading() ? `<div class="device-workspace"><button class="btn" id="keep-workspace">${icon("download")}${$t("Keep all of this workspace’s notes")}</button><span class="hint" id="keep-progress" role="status"></span></div>` : ""}`
       : `<p class=\"hint\">${$t("Reading offline needs a secure (https) connection to the server.")}</p>`
   }</div></section>`;
 }
 function bindDevice() {
+  bindThemeSelect();
   action($("#interface-language"), "change", (e) => setLanguage(e.target.value));
   action($("#offline-reading"), "change", (e) => {
     setOfflineReading(e.target.checked);
@@ -6717,82 +6932,159 @@ onInstallChange(() => {
     bindDevice();
   }
 });
+function personalProvidersSettings() {
+  if (data.user.admin && !localMode) return "";
+  return `<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Personal AI providers")}</h2><p>${localMode ? $t("Choose private models for this computer.") : $t("Use your own models in workspaces you own.")}</p></div></div><div class="security-body"><button class="btn" id="personal-ai-settings">${$t("Manage providers")}</button></div></section>`;
+}
+function accountDialog(title, description, content, actions, asForm = false) {
+  const opening = !modal.open;
+  const tag = asForm ? "form" : "section";
+  modal.innerHTML = `<${tag} class="account-modal"><header class="account-modal-header"><h2 id="account-modal-title">${title}</h2>${description ? `<p>${description}</p>` : ""}</header><div class="account-modal-body">${content}</div><footer class="account-modal-footer">${actions}</footer></${tag}>`;
+  modal.setAttribute("aria-labelledby", "account-modal-title");
+  if (opening) {
+    modal.addEventListener("close", () => {
+      if (modal.getAttribute("aria-labelledby") === "account-modal-title")
+        modal.removeAttribute("aria-labelledby");
+      const dialog = $(".account-modal", modal);
+      if (!modal.open) dialog?.remove();
+    }, { once: true });
+    modal.showModal();
+  }
+  return $(".account-modal", modal);
+}
+modal.addEventListener("cancel", (event) => {
+  if ($('.account-modal[aria-busy="true"]', modal)) event.preventDefault();
+});
+function accountForm({ title, description, fields, submit, run, danger = false }) {
+  const form = accountDialog(
+    title,
+    description,
+    fields + '<div class="form-error" role="alert"></div>',
+    `<button type="button" class="btn" data-cancel>${$t("Cancel")}</button><button type="submit" class="btn ${danger ? "danger" : "primary"}">${submit}</button>`,
+    true,
+  );
+  const cancel = $("[data-cancel]", form);
+  const button = $('[type="submit"]', form);
+  cancel.onclick = () => modal.close();
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (button.disabled) return;
+    form.setAttribute("aria-busy", "true");
+    button.disabled = cancel.disabled = true;
+    try {
+      const close = await run(Object.fromEntries(new FormData(form)));
+      if (close !== false && form.isConnected) modal.close();
+    } catch (err) {
+      $(".form-error", form).textContent = err.message;
+    } finally {
+      form.removeAttribute("aria-busy");
+      button.disabled = cancel.disabled = false;
+    }
+  };
+  return form;
+}
+function profileSettings() {
+  return `<section class="panel security-panel"><div class="panel-heading"><h2>${$t("Profile")}</h2></div><div class="security-body"><div class="account-profile-summary"><span class="avatar">${profileAvatar(data.profile, data.user.name, esc)}</span><div><strong>${esc(data.user.name)}</strong>${localMode ? "" : `<small>${esc(data.user.email)}</small>`}</div><button type="button" class="btn" id="edit-profile">${$t("Edit profile")}</button></div></div></section>`;
+}
+function editProfile() {
+  const form = accountForm({
+    title: $t("Edit profile"),
+    fields: profileFields(data.profile || {}, data.user.name, esc),
+    submit: $t("Save changes"),
+    run: async (values) => {
+      const profile = await api("account/profile", "PATCH", { ...values, avatar: values.avatar || null });
+      data.user = profile.user;
+      data.profile = profile.profile;
+      shell();
+      toast($t("Profile saved"));
+    },
+  });
+  bindProfileFields(form, esc);
+}
+function bindAccountPanels() {
+  action($("#personal-ai-settings"), "click", () => navigate("personal-providers"));
+  action($("#edit-profile"), "click", editProfile);
+  bindDevice();
+}
 async function renderAccount() {
+  if (localMode) {
+    $("#breadcrumb").textContent = $t("User settings");
+    $("#content").innerHTML = `<section class="page"><div class="page-heading"><div><h1>${$t("User settings")}</h1><p class="subtitle">${$t("On this computer")}</p></div></div>${profileSettings()}${personalProvidersSettings()}${deviceHTML()}</section>`;
+    bindAccountPanels();
+    return;
+  }
   const status = await api("account/2fa");
+  if (view !== "account") return;
   $("#breadcrumb").textContent = $t("User settings");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("User settings")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section>${ssoPanel()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
+    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("User settings")}</h1></div></div>${profileSettings()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><div class="security-body"><button class="btn" id="change-password">${$t("Change password")}</button></div></section>${ssoPanel()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
       status.enabled
         ? `<p>${$t("On since {date}. {recovery_remaining} of 10 recovery codes left.", { date: esc(new Date(status.enabled_at * 1000).toLocaleDateString()), recovery_remaining: status.recovery_remaining })}</p><div class="toolbar-group"><button class="btn" id="new-recovery">${$t("New recovery codes")}</button><button class="btn danger" id="disable-2fa">${$t("Turn off")}</button></div>`
         : `<p>${$t("Two-factor authentication protects your notes even if your password is stolen.")}</p><button class="btn primary" id="setup-2fa">${$t("Set up two-factor authentication")}</button>`
-    }</div></section>${deviceHTML()}</section>`;
-  if (!data.user.admin) {
-    $("#content .page").insertAdjacentHTML(
-      "beforeend",
-      `<section class="panel security-panel"><h2>${$t("Personal AI providers")}</h2><button class="btn" id="personal-ai-settings">${$t("Manage providers")}</button></section>`,
-    );
-    action($("#personal-ai-settings"), "click", () => navigate("personal-providers"));
-  }
-  bindDevice();
+    }</div></section>${personalProvidersSettings()}${deviceHTML()}</section>`;
+  bindAccountPanels();
   action($("#link-sso"), "click", () =>
     location.assign("/auth/sso/start?client=link"),
   );
   action($("#unlink-sso"), "click", () =>
-    formDialog(
-      $t("Unlink single sign-on?"),
-      $t("You then sign in with your password. Signing in with {name} again links your account by its email address, unless you are an administrator.", { name: esc(sso.name) }),
-      "",
-      async () => {
+    accountForm({
+      title: $t("Unlink single sign-on?"),
+      description: $t("You then sign in with your password. Signing in with {name} again links your account by its email address, unless you are an administrator.", { name: esc(sso.name) }),
+      fields: "",
+      submit: $t("Unlink"),
+      danger: true,
+      run: async () => {
         await api("account/sso", "DELETE");
         await refresh();
         toast($t("Single sign-on is unlinked"));
         await renderAccount();
       },
-      "Unlink",
-    ),
+    }),
   );
   action($("#setup-2fa"), "click", setupTwoFactor);
   action($("#change-password"), "click", () =>
-    formDialog(
-      $t("Change your password"),
-      $t("Use 12 characters or more. Your other devices will need to sign in again."),
-      `<label>${$t("Current password")}<input name="current_password" type="password" autocomplete="current-password" required></label><label>${$t("New password")}<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>${$t("Repeat new password")}<input name="repeat" type="password" autocomplete="new-password" required></label>`,
-      async (v) => {
-        if (v.new_password !== v.repeat)
+    accountForm({
+      title: $t("Change your password"),
+      description: $t("Use 12 characters or more. Your other devices will need to sign in again."),
+      fields: `<label>${$t("Current password")}<input name="current_password" type="password" autocomplete="current-password" required></label><label>${$t("New password")}<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>${$t("Repeat new password")}<input name="repeat" type="password" autocomplete="new-password" required></label>`,
+      submit: $t("Change password"),
+      run: async (values) => {
+        if (values.new_password !== values.repeat)
           throw new Error($t("The new passwords do not match."));
         await api("account/password", "POST", {
-          current_password: v.current_password,
-          new_password: v.new_password,
+          current_password: values.current_password,
+          new_password: values.new_password,
         });
         toast($t("Password changed"));
       },
-      "Change password",
-    ),
+    }),
   );
   action($("#new-recovery"), "click", () =>
-    formDialog(
-      $t("New recovery codes"),
-      $t("Your current recovery codes will stop working. Enter a code from your authenticator app to continue."),
-      `<label>${$t("Authentication code")}<input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="7"></label>`,
-      async (v) => {
-        const result = await api("account/2fa/recovery", "POST", v);
+    accountForm({
+      title: $t("New recovery codes"),
+      description: $t("Your current recovery codes will stop working. Enter a code from your authenticator app to continue."),
+      fields: `<label>${$t("Authentication code")}<input class="account-code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="7"></label>`,
+      submit: $t("Create new codes"),
+      run: async (values) => {
+        const result = await api("account/2fa/recovery", "POST", values);
         showRecoveryCodes(result.recovery_codes);
+        return false;
       },
-      "Create new codes",
-    ),
+    }),
   );
   action($("#disable-2fa"), "click", () =>
-    formDialog(
-      $t("Turn off two-factor authentication?"),
-      $t("Your account will be protected by your password only."),
-      `<label>${$t("Password")}<input name="password" type="password" autocomplete="current-password" required></label><label>${$t("Authentication or recovery code")}<input name="code" autocomplete="one-time-code" required></label>`,
-      async (v) => {
-        await api("account/2fa/disable", "POST", v);
+    accountForm({
+      title: $t("Turn off two-factor authentication?"),
+      description: $t("Your account will be protected by your password only."),
+      fields: `<label>${$t("Password")}<input name="password" type="password" autocomplete="current-password" required></label><label>${$t("Authentication or recovery code")}<input name="code" autocomplete="one-time-code" required></label>`,
+      submit: $t("Turn off"),
+      danger: true,
+      run: async (values) => {
+        await api("account/2fa/disable", "POST", values);
         toast($t("Two-factor authentication is off"));
         await renderAccount();
       },
-      "Turn off",
-    ),
+    }),
   );
 }
 /** Settings: whether this account signs in with single sign-on. */
@@ -6809,32 +7101,34 @@ function ssoPanel() {
 }
 async function setupTwoFactor() {
   const setup = await api("account/2fa/setup", "POST", {});
-  modal.innerHTML = `<form id="totp-form"><h2>${$t("Set up two-factor authentication")}</h2><ol class="totp-steps"><li><strong>${$t("Scan this QR code")}</strong> ${$t("with your authenticator app.")}<div class="totp-qr" aria-label="${$t("QR code for your authenticator app")}">${setup.qr_svg}</div><details><summary>${$t("Can't scan? Enter the key manually")}</summary><code class="totp-secret">${esc(setup.secret)}</code><button type="button" class="btn" id="copy-secret">${$t("Copy key")}</button><p>${$t("Account: {email} · Time-based · 6 digits", { email: esc(data.user.email) })}</p></details></li><li><strong>${$t("Enter the 6-digit code")}</strong> ${$t("the app shows for Minerva.")}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" maxlength="7" required aria-label="${$t("Authentication code")}"></li></ol><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-totp">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Turn on")}</button></footer></form>`;
-  modal.showModal();
-  $("#cancel-totp").onclick = () => modal.close();
-  action($("#copy-secret"), "click", async () => {
+  if (view !== "account" || modal.open) return;
+  const form = accountForm({
+    title: $t("Set up two-factor authentication"),
+    fields: `<div class="totp-steps"><section class="totp-step"><h3>${$t("Scan this QR code")}</h3><p>${$t("Open your authenticator app to add Minerva.")}</p><div class="totp-qr" role="img" aria-label="${$t("QR code for your authenticator app")}">${setup.qr_svg}</div><details><summary>${$t("Can't scan? Enter the key manually")}</summary><code class="totp-secret">${esc(setup.secret)}</code><button type="button" class="btn" id="copy-secret">${$t("Copy key")}</button><p>${$t("Account: {email} · Time-based · 6 digits", { email: esc(data.user.email) })}</p></details></section><section class="totp-step"><h3>${$t("Enter the 6-digit code")}</h3><p>${$t("Use the code your app shows for Minerva.")}</p><label>${$t("Authentication code")}<input class="account-code" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" maxlength="7" required></label></section></div>`,
+    submit: $t("Turn on"),
+    run: async (values) => {
+      const result = await api("account/2fa/enable", "POST", values);
+      showRecoveryCodes(result.recovery_codes, true);
+      return false;
+    },
+  });
+  action($("#copy-secret", form), "click", async () => {
     await navigator.clipboard.writeText(setup.secret.replace(/ /g, ""));
     toast($t("Key copied"));
   });
-  $("#totp-form").onsubmit = async (e) => {
-    e.preventDefault();
-    const button = $("[type=submit]", modal);
-    button.disabled = true;
-    try {
-      const result = await api("account/2fa/enable", "POST", {
-        code: e.target.code.value,
-      });
-      showRecoveryCodes(result.recovery_codes, true);
-    } catch (err) {
-      $(".form-error", modal).textContent = err.message;
-      button.disabled = false;
-    }
-  };
 }
 function showRecoveryCodes(codes, justEnabled = false) {
   const text = codes.join("\n");
-  modal.innerHTML = `<h2>${justEnabled ? $t("Two-factor authentication is on") : $t("Your new recovery codes")}</h2><p>${$t("Save these recovery codes somewhere safe. Each one signs you in once if you lose your phone. They will not be shown again.{value}", { value: justEnabled ? $t(" Your other sessions were signed out.") : "" })}</p><div class="recovery-codes">${codes.map((c) => `<code>${esc(c)}</code>`).join("")}</div><footer><button class="btn" id="copy-codes">${$t("Copy")}</button><button class="btn" id="download-codes">${$t("Download")}</button><button class="btn primary" id="done-codes">${$t("I saved them")}</button></footer>`;
-  if (!modal.open) modal.showModal();
+  accountDialog(
+    justEnabled ? $t("Two-factor authentication is on") : $t("Your new recovery codes"),
+    $t("Save these recovery codes somewhere safe. Each one signs you in once if you lose your phone. They will not be shown again.{value}", { value: justEnabled ? $t(" Your other sessions were signed out.") : "" }),
+    `<ul class="recovery-codes">${codes.map((c) => `<li><code>${esc(c)}</code></li>`).join("")}</ul>`,
+    `<button class="btn" id="copy-codes">${$t("Copy")}</button><button class="btn" id="download-codes">${$t("Download")}</button><button class="btn primary" id="done-codes">${$t("I saved them")}</button>`,
+  );
+  modal.addEventListener("close", () => {
+    if (view === "account") renderAccount().catch(error);
+  }, { once: true });
+  $("#done-codes").focus();
   action($("#copy-codes"), "click", async () => {
     await navigator.clipboard.writeText(text);
     toast($t("Recovery codes copied"));
@@ -6850,10 +7144,7 @@ function showRecoveryCodes(codes, justEnabled = false) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
-  $("#done-codes").onclick = () => {
-    modal.close();
-    renderAccount().catch(error);
-  };
+  $("#done-codes").onclick = () => modal.close();
 }
 let sharingFilter = "all";
 /** Who can see what, across every workspace you belong to. */
@@ -7223,7 +7514,6 @@ function sidebarSections() {
     ...(localMode ? [] : [["sharing", "users", $t("Sharing")]]),
     ["archive", "archive", $t("Archived")],
     ["trash", "trash", $t("Trash")],
-    ...(localMode ? [] : [["providers", "users", $t("AI providers")]]),
     // A desktop app's own server has no other accounts and no network clients.
     ...(localMode
       ? []
@@ -7976,14 +8266,29 @@ function search() {
     ],
     searchFilters.since,
   )}</div>`;
-  modal.innerHTML =
-    `<h2>${$t("Find a thought")}</h2><p>${$t("Search titles, text and tags, database records, and the text of attached PDFs.")}</p><input id="search-input" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes")}" placeholder="${$t("Search notes…")}" style="width:100%" autocomplete="off" autofocus>${filters}<div class="search-results" id="results" role="listbox" aria-label="${$t("Notes")}"></div><footer><span class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> open</span>` +
-    (noteTabs
-      ? `<span><kbd>${shortcutKeys("Shift")}</kbd>+<kbd>${shortcutKeys("Enter")}</kbd> ${$t("side by side")}</span>`
-      : "") +
-    `</span><button class="btn" id="close-modal">${$t("Close")}</button></footer>`;
+  modal.innerHTML = `<div class="search-dialog">
+    <header class="search-dialog-header"><h2 id="search-dialog-title">${$t("Search")}</h2><button type="button" class="search-close" id="close-modal" aria-label="${$t("Close")}">×</button></header>
+    <div class="search-field">${icon("search")}<input id="search-input" type="search" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" aria-label="${$t("Search notes, records, and files")}" placeholder="${$t("Search notes, records, and files…")}" autocomplete="off" enterkeyhint="search" autofocus></div>
+    ${filters}
+    <div class="search-results"><p class="search-heading" id="search-section" hidden></p><div id="results" role="listbox" aria-label="${$t("Search results")}"></div><p id="search-status" class="search-status" role="status" hidden></p></div>
+    <footer class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> ${$t("Choose")}</span><span><kbd>${shortcutKeys("Enter")}</kbd> ${$t("Open")}</span>${
+      noteTabs && !matchMedia("(max-width: 760px)").matches
+        ? `<span><kbd>${shortcutKeys("Shift")}</kbd>+<kbd>${shortcutKeys("Enter")}</kbd> ${$t("side by side")}</span>`
+        : ""
+    }</footer>
+  </div>`;
+  modal.setAttribute("aria-labelledby", "search-dialog-title");
   modal.showModal();
   const input = $("#search-input");
+  const list = $("#results");
+  const section = $("#search-section");
+  const status = $("#search-status");
+  let timer;
+  modal.addEventListener("close", () => {
+    clearTimeout(timer);
+    if (modal.getAttribute("aria-labelledby") === "search-dialog-title")
+      modal.removeAttribute("aria-labelledby");
+  }, { once: true });
   let searchVersion = 0,
     matches = [],
     selected = 0;
@@ -8023,26 +8328,37 @@ function search() {
   }
   function select(i) {
     selected = Math.max(0, Math.min(i, matches.length - 1));
-    $$("[data-result]").forEach((b, j) =>
+    $$("[data-result]", list).forEach((b, j) =>
       b.setAttribute("aria-selected", j === selected),
     );
-    const current = $(`#search-result-${selected}`);
-    input.setAttribute("aria-activedescendant", current?.id || "");
+    const current = $(`#search-result-${selected}`, list);
+    if (current) input.setAttribute("aria-activedescendant", current.id);
+    else input.removeAttribute("aria-activedescendant");
     current?.scrollIntoView({ block: "nearest" });
   }
   function draw(heading) {
-    $("#results").innerHTML =
-      (matches.length ? heading : "") +
-      (matches
-        .map(
+    section.textContent = heading;
+    section.hidden = !heading || !matches.length;
+    status.textContent = heading ? $t("No recent notes.") : $t("No results found.");
+    status.hidden = matches.length > 0;
+    list.innerHTML = matches
+      .map(
           (n, i) =>
             `${n.kind && n.kind !== matches[i - 1]?.kind && n.kind !== "note" ? `<p class="search-heading">${n.kind === "record" ? $t("Database records") : $t("In attached files")}</p>` : ""}<button class="search-result" id="search-result-${i}" role="option" tabindex="-1" data-result="${i}"><span class="search-icon">${n.kind === "record" ? icon("grid") : n.kind === "file" ? icon("upload") : esc(n.icon || "📄")}</span><span class="search-main"><span class="search-title">${esc(n.title || $t("Untitled"))}</span>${n.snippet ? `<span class="search-snippet">${highlightSnippet(n.snippet, esc)}</span>` : ""}</span><small>${esc(n.kind === "record" ? [n.database_name, place(n)].filter(Boolean).join(" · ") : n.kind === "file" ? [n.note_title, place(n)].filter(Boolean).join(" · ") : place(n))}</small></button>`,
-        )
-        .join("") || `<p>${$t("No matching notes.")}</p>`);
-    $$("[data-result]").forEach((b) =>
+      )
+      .join("");
+    $$("[data-result]", list).forEach((b) =>
       action(b, "click", (e) => choose(+b.dataset.result, e.shiftKey)),
     );
     select(0);
+  }
+  function showPending() {
+    matches = [];
+    list.replaceChildren();
+    section.hidden = true;
+    select(0);
+    status.textContent = $t("Searching…");
+    status.hidden = false;
   }
   async function results() {
     const version = ++searchVersion;
@@ -8055,8 +8371,9 @@ function search() {
         .filter((n) => !n.trashed)
         .sort((a, b) => b.updated_at - a.updated_at)
         .slice(0, 8);
-      return draw(`<p class="search-heading">${$t("Recently updated")}</p>`);
+      return draw($t("Recently updated"));
     }
+    showPending();
     const found = await api("search", "POST", {
       query: q,
       include: ["records", "files"],
@@ -8069,8 +8386,12 @@ function search() {
               Number(searchFilters.since) * 86400,
           }
         : {}),
+    }).catch((err) => {
+      if (version === searchVersion && modal.open && input.isConnected)
+        status.textContent = err.message;
+      return null;
     });
-    if (version !== searchVersion || !modal.open) return;
+    if (!found || version !== searchVersion || !modal.open || !input.isConnected) return;
     matches = found;
     draw("");
   }
@@ -8084,9 +8405,10 @@ function search() {
       results().catch(error);
       input.focus();
     });
-  let timer;
   input.oninput = () => {
     clearTimeout(timer);
+    searchVersion++;
+    showPending();
     timer = setTimeout(() => results().catch(error), 150);
   };
   input.onkeydown = (e) => {
@@ -8730,10 +9052,6 @@ function openCellPicker(el) {
   document.addEventListener("mousedown", close, true);
   document.addEventListener("keydown", close, true);
 }
-document.addEventListener("click", (e) => {
-  const block = e.target.closest?.("[data-comment-block]");
-  if (block && note) comments.start(block.dataset.commentBlock);
-});
 document.addEventListener("click", (e) => {
   const picker = e.target.closest?.(".cell-picker");
   if (picker && !picker.disabled) openCellPicker(picker);

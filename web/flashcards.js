@@ -1,7 +1,15 @@
 import { $t, $tn, serverMessage } from "./i18n.js";
 import { statsHTML } from "./flashcard-stats.js";
 // Personal study workspace. Card contents are plain text, never executable markup.
-export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
+export async function renderFlashcards({
+  api,
+  esc,
+  data,
+  error,
+  icon,
+  modal,
+  workspaceId,
+}) {
   const root = document.querySelector("#content");
   document.querySelector("#breadcrumb").textContent = $t("Flashcards");
   let deck = null,
@@ -11,13 +19,37 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     reviewed = 0;
   const live = () => root.isConnected;
   const dueNow = () => serverNow + (Date.now() - receivedAt) / 1000;
-  const button = (label, id, primary = false) =>
-    `<button class="btn ${primary ? "primary" : ""}" id="${id}">${label}</button>`;
-  const shell = (body) => {
-    if (live())
-      root.innerHTML = `<section class="page flashcards-page"><div class="eyebrow">${$t("A LITTLE PRACTICE, LASTING KNOWLEDGE")}</div><div class="page-heading"><div><h1>${$t("Flashcards")}</h1><p class="subtitle">${$t("Recall it. Check it. Give it time to stick.")}</p></div>${deck ? button($t("All decks"), "fc-home") : ""}</div><div aria-live="polite" id="fc-status"></div>${body}</section>`;
+  const button = (label, id, style = "", symbol = "") =>
+    `<button type="button" class="btn ${style}" id="${id}">${symbol ? icon(symbol) : ""}${label}</button>`;
+  const shell = (
+    body,
+    { title = $t("Flashcards"), subtitle = "", actions, home = false } = {},
+  ) => {
+    if (!live()) return;
+    const headerActions =
+      (home ? button($t("All decks"), "fc-home") : "") + (actions || "");
+    root.innerHTML = `<section class="page flashcards-page">
+      <header class="page-heading"><div><h1>${title}</h1>${subtitle ? `<p class="subtitle">${subtitle}</p>` : ""}</div>
+        ${headerActions ? `<div class="fc-actions">${headerActions}</div>` : ""}
+      </header>
+      <div role="status" id="fc-status" class="fc-status"></div>
+      ${body}
+    </section>`;
     bind("fc-home", list);
   };
+  const confirmDelete = (label, message) =>
+    new Promise((resolve) => {
+      modal.returnValue = "";
+      modal.innerHTML = `<form method="dialog"><h2>${label}</h2><p>${esc(message)}</p>
+      <footer><button class="btn" value="cancel" autofocus>${$t("Cancel")}</button>
+      <button class="btn danger" value="delete">${label}</button></footer></form>`;
+      modal.addEventListener(
+        "close",
+        () => resolve(modal.returnValue === "delete"),
+        { once: true },
+      );
+      modal.showModal();
+    });
   const bind = (id, fn, event = "click") => {
     const el = root.querySelector("#" + id);
     if (el)
@@ -39,7 +71,9 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
       });
   };
   const field = (label, name, value = "", textarea = false, required = true) =>
-    `<label>${label}${textarea ? `<textarea name="${name}" rows="4" ${required ? "required" : ""}>${esc(value)}</textarea>` : `<input name="${name}" value="${esc(value)}" ${required ? "required" : ""}>`}</label>`;
+    `<label class="fc-field">${label}${textarea ? `<textarea name="${name}" rows="4" ${required ? "required" : ""}>${esc(value)}</textarea>` : `<input name="${name}" value="${esc(value)}" ${required ? "required" : ""}>`}</label>`;
+  const formActions = (label, extra = "") =>
+    `<footer class="fc-actions fc-form-actions">${extra}${button($t("Cancel"), "fc-cancel")}<button type="submit" class="btn primary">${label}</button></footer>`;
   const sources = (links = []) =>
     links
       .map(
@@ -66,12 +100,33 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     const result = await api("flashcards/decks");
     if (!live()) return;
     shell(
-      `<div class="fc-intro"><p>${$t("Your decks and study history are private to your account on this server.")}</p><div class="fc-actions">${button($t("Create a deck"), "fc-create", true)}${button($t("Import from Anki"), "fc-import")}${button($t("Statistics"), "fc-stats")}${button($t("Scheduling"), "fc-settings")}</div></div><div class="fc-decks">${result.decks.map((d) => `<button class="fc-deck" data-deck="${esc(d.id)}"><strong>${esc(d.name)}</strong>${d.workspace ? `<small class="fc-shared">${esc($t("Shared · {name}", { name: d.workspace_name || "" }))}</small>` : ""}<p>${esc(d.description)}</p><span>${$t("{count} cards ·", { count: d.count })} <b>${$t("{count} due", { count: d.due })}</b></span></button>`).join("")}</div>${!result.decks.length ? `<div class="empty"><h3>${$t("Make your first deck.")}</h3>${$t("Add your own questions, or turn a note, folder, or researched topic into cards with AI.")}</div>` : ""}`,
+      result.decks.length
+        ? `<div class="fc-decks">${result.decks
+            .map(
+              (
+                d,
+              ) => `<button type="button" class="fc-deck" data-deck="${esc(d.id)}">
+          <span class="fc-deck-icon">${icon("flashcards")}</span>
+          <strong>${esc(d.name)}</strong>
+          ${d.workspace ? `<small class="fc-shared">${esc($t("Shared · {name}", { name: d.workspace_name || "" }))}</small>` : ""}
+          ${d.description ? `<span class="fc-deck-description">${esc(d.description)}</span>` : ""}
+          <span class="fc-deck-count">${$t("{count} cards ·", { count: d.count })} <b>${$t("{count} due", { count: d.due })}</b></span>
+        </button>`,
+            )
+            .join("")}</div>`
+        : `<div class="empty fc-empty">${icon("flashcards")}<h2>${$t("Make your first deck.")}</h2><p>${$t("Add your own questions, or turn a note, folder, or researched topic into cards with AI.")}</p></div>`,
+      {
+        actions:
+          button($t("Import from Anki"), "fc-import", "", "upload") +
+          button($t("Statistics"), "fc-stats", "", "chart") +
+          button($t("Scheduling"), "fc-settings", "", "settings") +
+          button($t("Create a deck"), "fc-create", "primary", "plus"),
+      },
     );
     bind("fc-create", () => deckForm());
     bind("fc-import", importForm);
     bind("fc-stats", () => statistics());
-    bind("fc-settings", scheduling);
+    bind("fc-settings", () => scheduling());
     root
       .querySelectorAll("[data-deck]")
       .forEach((el) => (el.onclick = () => load(el.dataset.deck).catch(error)));
@@ -79,7 +134,20 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
   // Anki packages (.apkg, .colpkg) or plain-text exports, read by the server.
   function importForm() {
     shell(
-      `<form id="fc-import-form" class="fc-form"><h2>${$t("Import from Anki")}</h2><p>${$t("In Anki, choose")} <b>${$t("File → Export")}</b>${$t(", then")} <b>${$t("Anki Deck Package (.apkg)")}</b>${$t(", with media included to keep pictures. A")} <b>${$t("Notes in Plain Text")}</b> ${$t("export or a CSV file with question and answer columns works too.")}</p><p>${$t("Looking for ready-made decks? Browse thousands of free shared decks on")} <a href="https://ankiweb.net/shared/decks" target="_blank" rel="noopener noreferrer">${$t("AnkiWeb ↗")}</a>${$t(", download one, and import the .apkg file here.")}</p><label>${$t("File")}<input type="file" name="file" accept=".apkg,.colpkg,.txt,.csv,.tsv" required></label><label class="checkbox-label"><input type="checkbox" name="progress" checked> ${$t("Keep my review progress from Anki")}</label><p class="hint">${$t("Each Anki deck becomes a deck here. Cards keep their text, pictures, and links; other formatting becomes plain text, and sounds show as [audio]. Export with media to keep the pictures.")}</p><div class="fc-actions"><button class="btn primary" id="fc-import-button">${$t("Import")}</button>${button($t("Cancel"), "fc-cancel")}</div><p role="status" id="fc-importing"></p></form>`,
+      `<form id="fc-import-form" class="fc-form">
+        <label class="fc-field fc-file">${$t("File")}<input type="file" name="file" accept=".apkg,.colpkg,.txt,.csv,.tsv" required></label>
+        <label class="fc-check"><input type="checkbox" name="progress" checked><span>${$t("Keep my review progress from Anki")}</span></label>
+        <details class="fc-help"><summary>${$t("How to export from Anki")}</summary>
+          <p>${$t("In Anki, choose")} <b>${$t("File → Export")}</b>${$t(", then")} <b>${$t("Anki Deck Package (.apkg)")}</b>${$t(", with media included to keep pictures. A")} <b>${$t("Notes in Plain Text")}</b> ${$t("export or a CSV file with question and answer columns works too.")}</p>
+          <p>${$t("Looking for ready-made decks? Browse thousands of free shared decks on")} <a href="https://ankiweb.net/shared/decks" target="_blank" rel="noopener noreferrer">${$t("AnkiWeb ↗")}</a>${$t(", download one, and import the .apkg file here.")}</p>
+        </details>
+        <div class="fc-status" role="status" id="fc-importing"></div>
+        <footer class="fc-actions fc-form-actions">${button($t("Cancel"), "fc-cancel")}<button type="submit" class="btn primary" id="fc-import-button">${$t("Import")}</button></footer>
+      </form>`,
+      {
+        title: $t("Import from Anki"),
+        subtitle: $t("Choose an Anki package or a text export up to 100 MB."),
+      },
     );
     bind("fc-cancel", list);
     bind(
@@ -160,28 +228,46 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
   function deckForm() {
     const sources = deck ? [] : noteSources();
     const follow = sources.length
-      ? `<fieldset class="fc-source"><legend>${$t("Cards")}</legend><label><input type="radio" name="origin" value="own" checked> ${$t("I’ll write or generate them here")}</label><label><input type="radio" name="origin" value="notes"> ${$t("Follow the cards written in my notes")}</label><select name="source" aria-label="${$t("Notes to follow")}" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select><p class="hint">${$t("In a note, tag a question")} <code>#card</code> ${$t("and indent its answer below it, or write")} <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> ${$t("become cards too. The deck keeps up with your notes each time you open it.")}</p></fieldset>`
+      ? `<fieldset class="fc-source"><legend>${$t("Card source")}</legend>
+        <div class="fc-options">
+          <label class="fc-option"><input type="radio" name="origin" value="own" checked><span>${$t("I’ll write or generate them here")}</span></label>
+          <label class="fc-option"><input type="radio" name="origin" value="notes"><span>${$t("Follow the cards written in my notes")}</span></label>
+        </div>
+        <div class="fc-follow" hidden>
+          <label class="fc-field">${$t("Notes to follow")}<select name="source" disabled>${sources.map((o, i) => `<option value="${i}">${esc(o.label)}</option>`).join("")}</select></label>
+          <details class="fc-help"><summary>${$t("How cards in notes work")}</summary><p>${$t("In a note, tag a question")} <code>#card</code> ${$t("and indent its answer below it, or write")} <code>Question :: Answer #card</code>. Cloze deletions such as <code>{{c1::Rome}} is the capital of Italy</code> ${$t("become cards too. The deck keeps up with your notes each time you open it.")}</p></details>
+        </div>
+      </fieldset>`
       : "";
     // A deck can be shared with a workspace where you can edit (not your own).
     const shareable = data.workspaces.filter(
       (w) => !w.personal && (w.can_edit || w.owner_id === data.user.id),
     );
     const share = shareable.length
-      ? `<label>${$t("Shared with")}<select name="workspace_id"><option value="">${$t("Only me")}</option>${shareable.map((w) => `<option value="${esc(w.id)}" ${deck?.workspace === w.id ? "selected" : ""}>${esc($t("Everyone in {name}", { name: w.name }))}</option>`).join("")}</select></label><p class="hint">${$t("Everyone in the workspace can study a shared deck, each with their own progress; people who can edit there can change its cards.")}</p>`
+      ? `<label class="fc-field">${$t("Shared with")}<select name="workspace_id"><option value="">${$t("Only me")}</option>${shareable.map((w) => `<option value="${esc(w.id)}" ${deck?.workspace === w.id ? "selected" : ""}>${esc($t("Everyone in {name}", { name: w.name }))}</option>`).join("")}</select></label><p class="hint">${$t("Everyone in the workspace can study a shared deck, each with their own progress; people who can edit there can change its cards.")}</p>`
       : "";
     const percents = [70, 75, 80, 85, 90, 93, 95, 97];
-    const retention = `<label>${$t("Desired retention for this deck")}<select name="retention"><option value="">${$t("My own setting (Scheduling)")}</option>${percents.map((p) => `<option value="${p}" ${Math.round((deck?.retention || 0) * 100) === p ? "selected" : ""}>${p}%</option>`).join("")}</select></label>`;
+    const retention = `<label class="fc-field">${$t("Desired retention for this deck")}<select name="retention"><option value="">${$t("My own setting (Scheduling)")}</option>${percents.map((p) => `<option value="${p}" ${Math.round((deck?.retention || 0) * 100) === p ? "selected" : ""}>${p}%</option>`).join("")}</select></label>`;
     shell(
-      `<form id="fc-deck-form" class="fc-form"><h2>${deck ? $t("Edit deck") : $t("Create a deck")}</h2>${field($t("Deck name"), "name", deck?.name || "")}${field($t("Description"), "description", deck?.description || "", true, false)}${share}${retention}${follow}<div class="fc-actions"><button class="btn primary">${$t("Save deck")}</button>${button($t("Cancel"), "fc-cancel")}</div></form>`,
+      `<form id="fc-deck-form" class="fc-form">
+        ${field($t("Deck name"), "name", deck?.name || "")}
+        ${field($t("Description"), "description", deck?.description || "", true, false)}
+        ${follow}
+        ${retention}
+        ${share}
+        ${formActions($t("Save deck"))}
+      </form>`,
+      { title: deck ? $t("Edit deck") : $t("Create a deck") },
     );
-    root
-      .querySelectorAll('[name="origin"]')
-      .forEach(
-        (radio) =>
-          (radio.onchange = () =>
-            (root.querySelector('[name="source"]').disabled =
-              radio.value !== "notes" || !radio.checked)),
-      );
+    const form = root.querySelector("#fc-deck-form");
+    form.addEventListener("change", (e) => {
+      if (e.target.name !== "origin") return;
+      const followsNotes = e.target.value === "notes";
+      form.querySelector(".fc-follow").hidden = !followsNotes;
+      form.elements.source.disabled = !followsNotes;
+      if (form.elements.workspace_id)
+        form.elements.workspace_id.disabled = followsNotes;
+    });
     bind("fc-cancel", () => (deck ? detail() : list()));
     bind(
       "fc-deck-form",
@@ -220,8 +306,48 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     const due = deck.cards.filter(
       (c) => !c.suspended && c.due <= dueNow(),
     ).length;
+    const deckInfo = [
+      deck.description ? `<p>${esc(deck.description)}</p>` : "",
+      deck.source
+        ? `<p class="hint">${$t("Follows the cards written in {value}: tag a question", { value: esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || $t("notes you can no longer open")) })} <code>#card</code>${$t(", or write a cloze such as")} <code>{{c1::Rome}}</code>.</p>`
+        : "",
+      deck.workspace
+        ? `<p class="hint">${esc($t("Shared with {name}: your progress is your own.", { name: data.workspaces.find((w) => w.id === deck.workspace)?.name || "" }))}</p>`
+        : "",
+    ].join("");
     shell(
-      `<div class="fc-deck-heading"><div><h2>${esc(deck.name)}</h2><p>${esc(deck.description)}</p><p>${$t("{count} cards ·", { count: deck.cards.length })} <strong>${$t("{due} due now", { due })}</strong></p>${deck.source ? `<p class="hint">${$t("Follows the cards written in {value}: tag a question", { value: esc(noteSources().find((o) => o.kind === deck.source.kind && o.id === deck.source.id)?.label || $t("notes you can no longer open")) })} <code>#card</code>${$t(", or write a cloze such as")} <code>{{c1::Rome}}</code>.</p>` : ""}</div>${deck.workspace ? `<p class="hint">${esc($t("Shared with {name}: your progress is your own.", { name: data.workspaces.find((w) => w.id === deck.workspace)?.name || "" }))}</p>` : ""}</div><div class="fc-actions">${button($t("Study due cards"), "fc-study", true)}${deck.can_edit ? button($t("Add card"), "fc-add") : ""}${button($t("Statistics"), "fc-deck-stats")}${deck.can_edit ? button($t("Create with AI"), "fc-ai") + button($t("Edit deck"), "fc-edit") : ""}${button($t("Export JSON"), "fc-export")}${deck.can_edit ? button($t("Delete deck"), "fc-delete") : ""}</div></div><p class="subtitle">${$t("Reveal the answer before rating your recall. Cards return when their next review is due.")}</p><div class="fc-card-list">${deck.cards.map((c) => `<article class="fc-card-row"><div><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p><small>${$t("{value} · {reviews} reviews{value2}", { value: c.suspended ? $t("Paused") : c.due <= dueNow() ? $t("Ready to study") : $t("Next review: {date}", { date: new Date(c.due * 1000).toLocaleString() }), reviews: c.reviews, value2: c.origin ? $t(" · from a note") : "" })}</small><div class="fc-sources">${sources(c.sources)}</div></div><button class="btn" data-edit="${esc(c.id)}">${$t("Edit")}</button></article>`).join("")}</div>${!deck.cards.length ? `<div class="empty">${$t("This deck is ready for its first question.")}</div>` : ""}`,
+      `<section class="fc-deck-tools">
+        <div class="fc-actions">
+          ${button($t("Study due cards"), "fc-study", "primary", "play")}
+          ${deck.can_edit ? button($t("Add card"), "fc-add", "", "plus") + button($t("Create with AI"), "fc-ai", "", "brain") : ""}
+          ${button($t("Statistics"), "fc-deck-stats", "", "chart")}
+        </div>
+        <div class="fc-actions">
+          ${deck.can_edit ? button($t("Edit deck"), "fc-edit", "", "settings") : ""}
+          ${button($t("Export JSON"), "fc-export", "", "download")}
+          ${deck.can_edit ? button($t("Delete deck"), "fc-delete", "danger", "trash") : ""}
+        </div>
+        ${deckInfo ? `<div class="fc-deck-info">${deckInfo}</div>` : ""}
+      </section>
+      ${
+        deck.cards.length
+          ? `<div class="fc-card-list">${deck.cards
+              .map(
+                (c) => `<article class="fc-card-row">
+        <div class="fc-card-text"><strong>${rich(c.front, esc)}</strong><p>${rich(c.back, esc)}</p>
+          <div class="fc-card-meta"><small>${$t("{value} · {reviews} reviews{value2}", { value: c.suspended ? $t("Paused") : c.due <= dueNow() ? $t("Ready to study") : $t("Next review: {date}", { date: new Date(c.due * 1000).toLocaleString() }), reviews: c.reviews, value2: c.origin ? $t(" · from a note") : "" })}</small>${sources(c.sources)}</div>
+        </div>
+        <button type="button" class="btn" data-edit="${esc(c.id)}">${icon("edit")}${$t("Edit")}</button>
+      </article>`,
+              )
+              .join("")}</div>`
+          : `<div class="empty fc-empty">${icon("flashcards")}<p>${$t("This deck is ready for its first question.")}</p></div>`
+      }`,
+      {
+        title: esc(deck.name),
+        home: true,
+        subtitle: `${$t("{count} cards ·", { count: deck.cards.length })} ${$t("{due} due now", { due })}`,
+      },
     );
     root.querySelector("#fc-study").disabled = !due;
     bind("fc-study", () => {
@@ -238,12 +364,13 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     bind("fc-edit", deckForm);
     bind("fc-delete", async () => {
       if (
-        !confirm(
+        !(await confirmDelete(
+          $t("Delete deck"),
           $t(
             "Delete “{name}” and all its cards and review progress? This cannot be undone.",
             { name: deck.name },
           ),
-        )
+        ))
       )
         return;
       await api(`flashcards/decks/${deck.id}`, "DELETE", {
@@ -277,7 +404,20 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     // A shared deck's cards change only for those who can edit its workspace.
     const locked = fromNote || !deck.can_edit;
     shell(
-      `<form class="fc-form" id="fc-card-form"><h2>${card ? $t("Edit card") : $t("Add a card")}</h2>${fromNote ? `<p class="hint">${$t("This card comes from a note:")} <a href="${esc(card.sources[0] || "#")}">${$t("open the note")}</a> ${$t("to change it.")}</p>` : !deck.can_edit ? `<p class="hint">${$t("Only people who can edit this shared deck’s workspace change its cards; you can pause one for yourself.")}</p>` : ""}${field($t("Question / front"), "front", card?.front || "", true)}${locked ? "" : attach("front")}${field($t("Answer / back"), "back", card?.back || "", true)}${locked ? "" : attach("back")}${locked ? "" : field($t("Sources (one HTTP(S) URL or #note/id per line)"), "sources", (card?.sources || []).join("\n"), true, false)}${card ? `<label><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}> ${$t("Pause reviews for this card")}</label>` : ""}<div class="fc-actions"><button class="btn primary">${$t("Save card")}</button>${button($t("Cancel"), "fc-cancel")}${card && !locked ? button($t("Delete card"), "fc-remove") : ""}</div></form>`,
+      `<form class="fc-form fc-wide-form" id="fc-card-form">
+        ${fromNote ? `<p class="hint">${$t("This card comes from a note:")} <a href="${esc(card.sources[0] || "#")}">${$t("open the note")}</a> ${$t("to change it.")}</p>` : !deck.can_edit ? `<p class="hint">${$t("Only people who can edit this shared deck’s workspace change its cards; you can pause one for yourself.")}</p>` : ""}
+        <div class="fc-pair">
+          <div class="fc-card-side">${field($t("Question / front"), "front", card?.front || "", true)}${locked ? "" : attach("front")}</div>
+          <div class="fc-card-side">${field($t("Answer / back"), "back", card?.back || "", true)}${locked ? "" : attach("back")}</div>
+        </div>
+        ${locked ? "" : field($t("Sources (one HTTP(S) URL or #note/id per line)"), "sources", (card?.sources || []).join("\n"), true, false)}
+        ${card ? `<label class="fc-check"><input type="checkbox" name="suspended" ${card.suspended ? "checked" : ""}><span>${$t("Pause reviews for this card")}</span></label>` : ""}
+        ${formActions($t("Save card"), card && !locked ? button($t("Delete card"), "fc-remove", "danger", "trash") : "")}
+      </form>`,
+      {
+        title: card ? $t("Edit card") : $t("Add a card"),
+        subtitle: esc(deck.name),
+      },
     );
     if (locked)
       root
@@ -315,6 +455,7 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
       }
     };
     root.querySelectorAll("[data-attach]").forEach((input) => {
+      input.previousElementSibling.onclick = () => input.click();
       input.onchange = () => {
         const file = input.files[0];
         input.value = "";
@@ -361,7 +502,13 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
       };
     });
     bind("fc-remove", async () => {
-      if (!confirm($t("Delete this card and its review progress?"))) return;
+      if (
+        !(await confirmDelete(
+          $t("Delete card"),
+          $t("Delete this card and its review progress?"),
+        ))
+      )
+        return;
       setDeck(
         await api(`flashcards/decks/${deck.id}/cards/${card.id}`, "DELETE", {
           revision: card.revision,
@@ -396,7 +543,7 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     );
   }
   const attach = (side) =>
-    `<span class="fc-media-actions"><label class="btn fc-attach">${$t("Add picture or sound")}<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,audio/*" data-attach="${side}" hidden></label><button type="button" class="btn fc-attach" data-record="${side}">${$t("● Record sound")}</button></span>`;
+    `<span class="fc-media-actions"><button class="btn fc-attach" type="button">${icon("upload")}${$t("Add picture or sound")}</button><input type="file" accept="image/png,image/jpeg,image/gif,image/webp,audio/*" data-attach="${side}" hidden><button type="button" class="btn fc-attach" data-record="${side}">${$t("● Record sound")}</button></span>`;
   /** Statistics of one deck, or of all decks. */
   async function statistics(of = null) {
     const shown = of;
@@ -406,14 +553,20 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
       `flashcards/stats?offset=${offset}${shown ? `&deck=${encodeURIComponent(shown.id)}` : ""}`,
     );
     if (!live()) return;
-    shell(
-      `<div class="fc-deck-heading"><div><h2>${shown ? esc($t("Statistics · {name}", { name: shown.name })) : $t("Statistics · all decks")}</h2></div><div class="fc-actions">${button($t("Back"), "fc-back")}${shown ? "" : button($t("Scheduling"), "fc-settings")}</div></div>${statsHTML(s, esc)}`,
-    );
-    bind("fc-back", () => (shown ? load(shown.id) : list()));
-    bind("fc-settings", scheduling);
+    const back = () => (shown ? load(shown.id) : list());
+    shell(statsHTML(s, esc), {
+      title: shown
+        ? esc($t("Statistics · {name}", { name: shown.name }))
+        : $t("Statistics · all decks"),
+      actions:
+        button($t("Back"), "fc-back") +
+        (shown ? "" : button($t("Scheduling"), "fc-settings", "", "settings")),
+    });
+    bind("fc-back", back);
+    bind("fc-settings", () => scheduling(() => statistics()));
   }
   /** The desired retention, and fitting the scheduler to your reviews. */
-  async function scheduling() {
+  async function scheduling(back = list) {
     const st = await api("flashcards/settings");
     if (!live()) return;
     const [lo, hi] = st.retention_range;
@@ -439,20 +592,35 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
         )}</p>`
       : "";
     shell(
-      `<form class="fc-form" id="fc-settings-form"><h2>${$t("Scheduling")}</h2><p>${$t("Minerva schedules each card for when you are likely to still remember it. Choose how likely: a higher target means more reviews, and less forgetting.")}</p><label>${$t("Desired retention")}<span class="fc-retention"><input type="range" name="retention" min="${Math.round(lo * 100)}" max="${Math.round(hi * 100)}" step="1" value="${Math.round(st.retention * 100)}"><output id="fc-retention-value">${Math.round(st.retention * 100)}%</output></span></label><p class="hint" id="fc-retention-hint"></p><div class="fc-actions"><button class="btn primary">${$t("Save")}</button>${button($t("Back"), "fc-back")}</div><h3>${$t("Fit to my memory")}</h3><p>${esc(
-        st.optimized
-          ? $t("Scheduling uses weights fitted to your reviews.")
-          : $t(
-              "Scheduling uses FSRS's default weights, which suit most people. With enough history, Minerva can fit them to how you remember.",
-            ),
-      )}</p><p class="hint">${esc(
-        $tn(
-          st.reviews,
-          "{count} review logged · {min} needed",
-          "{count} reviews logged · {min} needed",
-          { min: st.min_reviews },
-        ),
-      )}</p>${report}<div class="fc-actions">${button($t("Optimize for my memory"), "fc-optimize", true)}${st.optimized ? button($t("Back to the defaults"), "fc-reset") : ""}</div></form>`,
+      `<div class="fc-settings">
+        <form class="fc-form" id="fc-settings-form">
+          <h2 id="fc-retention-title">${$t("Desired retention")}</h2>
+          <p>${$t("Minerva schedules each card for when you are likely to still remember it. Choose how likely: a higher target means more reviews, and less forgetting.")}</p>
+          <div class="fc-retention">
+            <input type="range" aria-labelledby="fc-retention-title" name="retention" min="${Math.round(lo * 100)}" max="${Math.round(hi * 100)}" step="1" value="${Math.round(st.retention * 100)}">
+            <output id="fc-retention-value">${Math.round(st.retention * 100)}%</output>
+          </div>
+          <p class="hint" id="fc-retention-hint"></p>
+          <footer class="fc-actions fc-form-actions"><button class="btn primary" type="submit">${$t("Save")}</button></footer>
+        </form>
+        <section class="fc-form">
+          <h2>${$t("Fit to my memory")}</h2>
+          <p>${esc(
+            st.optimized
+              ? $t("Scheduling uses weights fitted to your reviews.")
+              : $t(
+                  "Scheduling uses FSRS's default weights, which suit most people. With enough history, Minerva can fit them to how you remember.",
+                ),
+          )}</p>
+          <p class="hint">${esc($tn(st.reviews, "{count} review logged · {min} needed", "{count} reviews logged · {min} needed", { min: st.min_reviews }))}</p>
+          ${report}
+          <footer class="fc-actions fc-form-actions">
+            ${st.optimized ? button($t("Back to the defaults"), "fc-reset") : ""}
+            ${button($t("Optimize for my memory"), "fc-optimize")}
+          </footer>
+        </section>
+      </div>`,
+      { title: $t("Scheduling"), actions: button($t("Back"), "fc-back") },
     );
     const range = root.querySelector('[name="retention"]');
     const explain = () => {
@@ -472,7 +640,7 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
     range.oninput = explain;
     explain();
     root.querySelector("#fc-optimize").disabled = st.reviews < st.min_reviews;
-    bind("fc-back", list);
+    bind("fc-back", back);
     bind(
       "fc-settings-form",
       async () => {
@@ -490,24 +658,56 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
         "Fitting to your reviews… This can take a minute.",
       );
       await api("flashcards/settings/optimize", "POST", {});
-      await scheduling();
+      await scheduling(back);
     });
     bind("fc-reset", async () => {
       await api("flashcards/settings/optimize", "DELETE");
-      await scheduling();
+      await scheduling(back);
     });
   }
   function study() {
     if (!queue.length) {
       shell(
-        `<div class="fc-study"><h2>${$t("A little more knowledge, yours.")}</h2><p>${$t("You reviewed {reviewed} cards. Cards rated Again return in ten minutes; other cards return on their scheduled day.", { reviewed })}</p>${button($t("Back to deck"), "fc-back", true)}</div>`,
+        `<div class="fc-study fc-complete"><span class="fc-deck-icon">${icon("check")}</span>
+          <p>${$t("You reviewed {reviewed} cards. Cards rated Again return in ten minutes; other cards return on their scheduled day.", { reviewed })}</p>
+          ${button($t("Back to deck"), "fc-back", "primary")}
+        </div>`,
+        { title: $t("Session complete"), subtitle: esc(deck.name) },
       );
       bind("fc-back", () => load(deck.id));
       return;
     }
     const c = deck.cards.find((c) => c.id === queue[0]);
+    const progress = $t("{reviewed} reviewed · {count} left", {
+      reviewed,
+      count: queue.length,
+    });
     shell(
-      `<div class="fc-review-meta">${$t("{reviewed} reviewed · {count} left in this session {value}", { reviewed, count: queue.length, value: button($t("Finish for now"), "fc-back") })}</div><article class="fc-study"><div class="eyebrow">${$t("QUESTION")}</div><h2 class="fc-face">${rich(c.front, esc)}</h2>${button($t("Reveal answer"), "fc-reveal", true)}<div id="fc-answer" hidden><hr><div class="eyebrow">${$t("ANSWER")}</div><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div><p>${$t("How well did you remember?")}</p><div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button class="btn" data-rate="${r}">${RATINGS[r]}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div></div></article>`,
+      `<section class="fc-review">
+        <div class="fc-review-meta">
+          <span id="fc-review-progress-label">${progress}</span>
+          <progress aria-labelledby="fc-review-progress-label" max="${reviewed + queue.length}" value="${reviewed}"></progress>
+        </div>
+        <article class="fc-study">
+          <div class="fc-study-side">
+            <h2>${$t("Question")}</h2>
+            <div class="fc-face">${rich(c.front, esc)}</div>
+            ${button($t("Reveal answer"), "fc-reveal", "primary")}
+          </div>
+          <div id="fc-answer" hidden>
+            <div class="fc-study-side"><h2>${$t("Answer")}</h2><div class="fc-face">${rich(c.back, esc)}</div><div class="fc-sources">${sources(c.sources)}</div></div>
+            <div class="fc-rate-zone">
+              <p>${$t("How well did you remember?")}</p>
+              <div class="fc-ratings">${["again", "hard", "good", "easy"].map((r) => `<button type="button" class="btn" data-rate="${r}">${RATINGS[r]}<small>${intervalLabel(c.next?.[r])}</small></button>`).join("")}</div>
+            </div>
+          </div>
+        </article>
+      </section>`,
+      {
+        title: $t("Study session"),
+        subtitle: esc(deck.name),
+        actions: button($t("Finish for now"), "fc-back"),
+      },
     );
     // How long the card took, from the question to the rating.
     const shownAt = performance.now();
@@ -541,6 +741,9 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
             queue.shift();
             reviewed++;
             study();
+            root
+              .querySelector(queue.length ? "#fc-reveal" : "#fc-back")
+              ?.focus({ preventScroll: true });
           } catch (e) {
             error(e);
             await load(deck.id).catch(error);
@@ -550,12 +753,15 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
   }
   async function generateForm() {
     shell(`<p>${$t("Loading AI providers…")}</p>`);
-    const config = await api(`ai/providers?workspace_id=${encodeURIComponent(workspaceId || "")}`);
+    const config = await api(
+      `ai/providers?workspace_id=${encodeURIComponent(workspaceId || "")}`,
+    );
     if (!live()) return;
     const providers = Array.isArray(config) ? config : config.providers || [];
     if (!providers.length) {
       shell(
-        `<div class="empty"><h2>${$t("Connect an AI provider first.")}</h2><p>${$t("Your administrator can add one in AI providers. You can still make cards by hand.")}</p>${button($t("Back to deck"), "fc-back")}</div>`,
+        `<div class="empty fc-empty">${icon("brain")}<h2>${$t("Connect an AI provider first.")}</h2><p>${$t("Add a personal provider in User settings, or ask your server administrator to share one.")}</p>${button($t("Back to deck"), "fc-back")}</div>`,
+        { title: $t("Create with AI"), subtitle: esc(deck.name) },
       );
       bind("fc-back", detail);
       return;
@@ -564,7 +770,20 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
       (n) => !n.trashed,
     );
     shell(
-      `<form class="fc-form" id="fc-generate"><h2>${$t("Turn understanding into practice.")}</h2><p>${$t("Selected source content is sent to your chosen AI provider. Review the drafts before saving. Provider charges may apply.")}</p><label>${$t("AI provider")}<select name="provider_id">${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.web_search ? $t(" · web search") : ""}</option>`).join("")}</select></label><label>${$t("Make cards from")}<select name="kind" id="fc-kind"><option value="note">${$t("A note")}</option><option value="folder">${$t("A folder and its subfolders")}</option><option value="topic">${$t("Research a topic on the web")}</option></select></label><label id="fc-note-label">${$t("Note")}<select name="note">${notes.map((n) => `<option value="${esc(n.id)}">${esc(n.title)}</option>`).join("")}</select></label><label id="fc-folder-label" hidden>${$t("Folder")}<select name="folder">${data.folders.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label><label id="fc-topic-label" hidden>${$t("Topic")}<textarea name="topic" rows="3" maxlength="1000" placeholder="${$t("For example: the causes of the French Revolution")}"></textarea><small>${$t("Requires an OpenAI or Anthropic profile with web search enabled.")}</small></label><label>${$t("Number of cards")}<input name="count" type="number" min="1" max="20" value="10" required></label><div class="fc-actions"><button class="btn primary" id="fc-generate-button">${$t("Generate drafts")}</button>${button($t("Cancel"), "fc-cancel")}</div><p role="status" id="fc-generating"></p></form>`,
+      `<form class="fc-form" id="fc-generate">
+        <p class="hint">${$t("Selected source content is sent to your chosen AI provider. Review the drafts before saving. Provider charges may apply.")}</p>
+        <div class="fc-pair">
+          <label class="fc-field">${$t("AI provider")}<select name="provider_id">${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.web_search ? $t(" · web search") : ""}</option>`).join("")}</select></label>
+          <label class="fc-field">${$t("Make cards from")}<select name="kind" id="fc-kind"><option value="note">${$t("A note")}</option><option value="folder">${$t("A folder and its subfolders")}</option><option value="topic">${$t("Research a topic on the web")}</option></select></label>
+        </div>
+        <label class="fc-field" id="fc-note-label">${$t("Note")}<select name="note">${notes.map((n) => `<option value="${esc(n.id)}">${esc(n.title)}</option>`).join("")}</select></label>
+        <label class="fc-field" id="fc-folder-label" hidden>${$t("Folder")}<select name="folder">${data.folders.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label>
+        <label class="fc-field" id="fc-topic-label" hidden>${$t("Topic")}<textarea name="topic" rows="3" maxlength="1000" placeholder="${$t("For example: the causes of the French Revolution")}"></textarea><small>${$t("Requires an OpenAI or Anthropic profile with web search enabled.")}</small></label>
+        <label class="fc-field fc-number">${$t("Number of cards")}<input name="count" type="number" min="1" max="20" value="10" required></label>
+        <div class="fc-status" role="status" id="fc-generating"></div>
+        <footer class="fc-actions fc-form-actions">${button($t("Cancel"), "fc-cancel")}<button type="submit" class="btn primary" id="fc-generate-button">${$t("Generate drafts")}</button></footer>
+      </form>`,
+      { title: $t("Create with AI"), subtitle: esc(deck.name) },
     );
     bind("fc-cancel", detail);
     bind(
@@ -613,7 +832,24 @@ export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
   }
   function drafts(cards) {
     shell(
-      `<form id="fc-drafts"><h2>${$t("Make these cards your own.")}</h2><p>${$t("Check each answer against its sources, edit it, and deselect anything you don’t want to keep. Nothing has been saved yet.")}</p>${cards.map((c, i) => `<fieldset class="fc-draft"><legend><label><input type="checkbox" name="keep-${i}" checked> ${$t("Keep card {value}", { value: i + 1 })}</label></legend>${field($t("Question"), "front-" + i, c.front, true)}${field($t("Answer"), "back-" + i, c.back, true)}<div class="fc-sources">${sources(c.sources)}</div></fieldset>`).join("")}<div class="fc-actions"><button class="btn primary">${$t("Save selected cards")}</button>${button($t("Discard drafts"), "fc-discard")}</div></form>`,
+      `<form id="fc-drafts" class="fc-drafts">
+        ${cards
+          .map(
+            (c, i) => `<div class="fc-draft">
+          <label class="fc-check"><input type="checkbox" name="keep-${i}" checked><span>${$t("Keep card {value}", { value: i + 1 })}</span></label>
+          <div class="fc-pair">${field($t("Question"), "front-" + i, c.front, true)}${field($t("Answer"), "back-" + i, c.back, true)}</div>
+          ${c.sources?.length ? `<div class="fc-sources">${sources(c.sources)}</div>` : ""}
+        </div>`,
+          )
+          .join("")}
+        <footer class="fc-actions fc-form-actions">${button($t("Discard drafts"), "fc-discard")}<button type="submit" class="btn primary">${$t("Save selected cards")}</button></footer>
+      </form>`,
+      {
+        title: $t("Review drafts"),
+        subtitle: $t(
+          "Check each answer against its sources, edit it, and deselect anything you don’t want to keep. Nothing has been saved yet.",
+        ),
+      },
     );
     bind("fc-discard", detail);
     bind(

@@ -62,6 +62,34 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   document.body.append(root);
   const requests = new Map();
   const group = crypto.randomUUID();
+  const phoneLayout = matchMedia("(max-width: 760px)");
+  const phoneBack = document.createElement("button");
+  phoneBack.className = "note-phone-back";
+  phoneBack.type = "button";
+  phoneBack.textContent = "←";
+  phoneBack.setAttribute("aria-label", $t("Back"));
+  phoneBack.onclick = async () => {
+    const current = tabs.find((tab) => tab.key === active);
+    if (!current || phoneBack.disabled) return;
+    phoneBack.disabled = true;
+    try {
+      const parent = tabs.find((tab) => tab.key === current.phoneParent);
+      await close(current.key);
+      if (parent) {
+        active = parent.key;
+        shown = true;
+        draw();
+      } else {
+        shown = false;
+        place();
+        await onBrowse();
+      }
+    } catch (err) {
+      error(err);
+    } finally {
+      phoneBack.disabled = false;
+    }
+  };
   function send(tab, type, payload = {}) {
     tab.frame.contentWindow?.postMessage(
       { channel: "minerva-host", type, ...payload },
@@ -82,6 +110,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       return;
     }
     root.hidden = false;
+    const menu = top.querySelector(".mobile-menu");
+    if (menu && phoneBack.parentElement !== menu.parentElement)
+      menu.after(phoneBack);
     document.body.classList.add("has-note-tabs");
     const rect = main.getBoundingClientRect(),
       bar = top.getBoundingClientRect();
@@ -98,9 +129,13 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       content.inert = shown;
       content.style.visibility = shown ? "hidden" : "";
     }
-    const split = secondary && secondary !== active;
+    const split = secondary && secondary !== active && !phoneLayout.matches;
     for (const tab of tabs) {
-      const visible = shown && (tab.key === active || tab.key === secondary);
+      const visible =
+        shown && (tab.key === active || (split && tab.key === secondary));
+      strip
+        .querySelector(`[data-activate="${CSS.escape(tab.key)}"]`)
+        ?.setAttribute("aria-selected", String(visible));
       tab.frame.hidden = !visible;
       tab.loader.hidden = !visible || tab.loaded;
       const right = split && tab.key === secondary;
@@ -220,7 +255,12 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   }
   /** Shows the tab `key` side by side with the tab `beside`, when both exist. */
   function pair(beside, key) {
-    if (beside && beside !== key && tabs.some((t) => t.key === beside)) {
+    if (
+      !phoneLayout.matches &&
+      beside &&
+      beside !== key &&
+      tabs.some((t) => t.key === beside)
+    ) {
       active = beside;
       secondary = key;
     }
@@ -238,12 +278,14 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     chat = "",
     file = "",
     split = false,
+    phoneParent = null,
   }) {
     const key =
       origin + "|" + (chat ? `chat:${chat}` : file ? `file:${file}` : id);
     const previous = split && shown ? active : null;
     const existing = tabs.find((t) => t.key === key);
     if (existing) {
+      existing.phoneParent = phoneParent;
       if (block) {
         const deliver = () => send(existing, "show-block", { block });
         if (existing.ready) deliver();
@@ -291,6 +333,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       id: chat || file ? "" : id,
       chat,
       file,
+      phoneParent,
       queue: [],
       origin,
       title,
@@ -331,14 +374,19 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   }
   /** Opens (or shows) a file, such as a PDF, side by side with the tab `beside`. */
   function openFile({ file, title, beside, origin = location.origin }) {
-    open({ origin, file, title: `📄 ${title}` });
+    open({
+      origin,
+      file,
+      title: `📄 ${title}`,
+      phoneParent: beside || (shown ? active : null),
+    });
     pair(beside, `${origin}|file:${file}`);
     shown = true;
     draw();
   }
   /** Opens (or shows) an AI chat tab side by side with the tab `beside`. */
   function openChat({ scope, title, beside, origin = location.origin }) {
-    open({ origin, chat: scope, title: `AI · ${title}` });
+    open({ origin, chat: scope, title: `AI · ${title}`, phoneParent: beside });
     pair(beside, `${origin}|chat:${scope}`);
     shown = true;
     draw();

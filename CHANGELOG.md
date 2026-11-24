@@ -11,6 +11,11 @@ turns that section into the next version.
 ## [Unreleased]
 
 - Add account-owned AI providers under User settings, including ChatGPT sign-in on configured servers.
+- Let users edit their name and choose a preset avatar or upload a profile photo.
+- Add an interactive 3D workspace graph alongside the 2D view.
+- Improve the desktop and mobile layouts for Flashcards, AI chat, search, Journal, and note tabs.
+- Reorder Overview widgets by dragging and let them adapt to available space.
+- Add a desktop sidebar toggle and a full-width navigation menu on phones.
 - Build release packages and container images locally before publishing to GitHub.
 
 ## [0.8.0] - 2026-11-23

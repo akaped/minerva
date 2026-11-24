@@ -7,7 +7,19 @@ import {
   settle,
   folderColor,
   tagColors,
+  orbitProjection,
 } from "../graph.js";
+
+test("orbit projection rotates depth into view and scales nearer nodes up", () => {
+  const near = orbitProjection(0, 0, 40, 0, 0, 240);
+  const far = orbitProjection(0, 0, -40, 0, 0, 240);
+  assert.ok(near.scale > 1 && far.scale < 1);
+  const side = orbitProjection(0, 0, 40, Math.PI / 2, 0, 240);
+  assert.ok(Math.abs(side.x - 40) < 1e-10);
+  assert.ok(Math.abs(side.depth) < 1e-10);
+  const pitched = orbitProjection(0, 0, 40, 0, Math.PI / 2, 240);
+  assert.ok(Math.abs(pitched.y + 40) < 1e-10);
+});
 
 const raw = {
   nodes: [

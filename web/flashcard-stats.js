@@ -96,5 +96,5 @@ export function statsHTML(s, esc) {
             time: duration(s.seconds_per_review),
           }),
         ),
-  )}</div><div class="fc-tiles fc-states">${tile($t("Due now"), c.due)}${tile($t("New"), c.new)}${tile($t("Learning"), c.learning, esc($t("Intervals under 21 days")))}${tile($t("Mature"), c.mature, esc($t("Intervals of 21 days or more")))}${tile($t("Paused"), c.paused)}</div>${barChart($t("Reviews per day"), reviewDays, reviewLabels, esc)}${barChart($t("Cards coming due"), s.forecast, ahead, esc)}`;
+  )}</div><div class="fc-tiles fc-states">${tile($t("Due now"), c.due)}${tile($t("New"), c.new)}${tile($t("Learning"), c.learning, esc($t("Intervals under 21 days")))}${tile($t("Mature"), c.mature, esc($t("Intervals of 21 days or more")))}${tile($t("Paused"), c.paused)}</div><div class="fc-charts">${barChart($t("Reviews per day"), reviewDays, reviewLabels, esc)}${barChart($t("Cards coming due"), s.forecast, ahead, esc)}</div>`;
 }

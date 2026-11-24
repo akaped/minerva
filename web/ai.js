@@ -63,15 +63,15 @@ export async function renderAISettings({
     modal.innerHTML = `<form id="provider-form"><h2>${existing ? $t("Edit AI provider") : $t("Add an AI provider")}</h2><p>${localMode ? $t("This private profile is stored on this computer. Use the personal workspace or an offline copy to send requests directly to your own model.") : personal ? $t("This profile uses your provider account and is available in workspaces you own.") : $t("This profile is available to server members. Requests use this API key and its billing account.")}</p><label>${$t("Provider")}<select name="kind">${Object.entries(
       presets,
     )
-      .filter(([k]) => k !== "chatgpt" || chatgpt?.available || existing?.kind === "chatgpt")
+      .filter(([k]) => k !== "chatgpt" || personal)
       .filter(([k]) => k !== "compatible" || localMode || !personal)
       .map(
         ([k, preset]) =>
-          `<option value="${k}" ${k === p.kind ? "selected" : ""}>${esc(preset.label)}</option>`,
+          `<option value="${k}" ${k === p.kind ? "selected" : ""} ${k === "chatgpt" && !chatgpt?.available && k !== p.kind ? "disabled" : ""}>${k === "chatgpt" ? $t("ChatGPT (subscription)") : esc(preset.label)}</option>`,
       )
       .join(
         "",
-      )}</select></label><label>${$t("Profile name")}<input name="name" maxlength="200" placeholder="${$t("e.g. Team assistant")}" value="${esc(p.name || "")}" required></label><label>${$t("API base URL")}<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>${$t("Model ID")}<input name="model" list="provider-models" placeholder="${$t("Exact model ID from your provider")}" maxlength="200" value="${esc(p.model || "")}" required></label><datalist id="provider-models"></datalist><div id="openrouter-setup" hidden><button type="button" class="btn" id="discover-models">${$t("Load available models and tools")}</button><p id="discovery-status" role="status"></p><p id="model-capabilities" class="hint"></p><fieldset><legend>${$t("Allowed server tools")}</legend>${serverTools
+      )}</select></label>${personal && !chatgpt?.available ? `<p class="hint">${$t("ChatGPT sign-in is not configured on this server")}</p>` : ""}<label>${$t("Profile name")}<input name="name" maxlength="200" placeholder="${$t("e.g. Team assistant")}" value="${esc(p.name || "")}" required></label><label>${$t("API base URL")}<input name="endpoint" type="url" value="${esc(p.endpoint || "")}" required></label><label>${$t("Model ID")}<input name="model" list="provider-models" placeholder="${$t("Exact model ID from your provider")}" maxlength="200" value="${esc(p.model || "")}" required></label><datalist id="provider-models"></datalist><div id="openrouter-setup" hidden><button type="button" class="btn" id="discover-models">${$t("Load available models and tools")}</button><p id="discovery-status" role="status"></p><p id="model-capabilities" class="hint"></p><fieldset><legend>${$t("Allowed server tools")}</legend>${serverTools
       .filter(([id]) => id !== "minerva:shell" || localMode)
       .map(
         ([id, label]) =>
@@ -468,57 +468,58 @@ export async function renderAIChat({
   if (epoch !== generation) return;
   let chat = null,
     running = false;
-  // A docked chat (a tab beside a note) stays on its one context.
-  const scopeOptions = docked
-    ? [
-        {
-          kind: initialScope.kind,
-          id: initialScope.id,
-          label: `${initialScope.kind === "note" ? "Note" : "Folder"} · ${dockedTitle}`,
-        },
-      ]
-    : [
-        // A plain question by default: nothing from the notes is sent.
-        { kind: "none", id: "", label: "No context · just ask" },
-        {
-          kind: "workspace",
-          id: workspaceId,
-          label:
-            "Workspace · " +
-            (data.workspaces.find((w) => w.id === workspaceId)?.name || ""),
-        },
-        ...data.folders
-          .filter((f) => f.workspace_id === workspaceId)
-          .map((f) => ({
-            kind: "folder",
-            id: f.id,
-            label: "Folder · " + f.name,
-          })),
-        ...data.notes
-          .filter(
-            (n) =>
-              !n.trashed &&
-              data.folders.some(
-                (f) => f.id === n.folder_id && f.workspace_id === workspaceId,
-              ),
-          )
-          .map((n) => ({ kind: "note", id: n.id, label: "Note · " + n.title })),
-      ];
-  const chosen = scopeOptions.findIndex(
-    (s) => s.kind === initialScope?.kind && s.id === initialScope?.id,
-  );
+  const noContext = { kind: "none", id: "", name: $t("No context") };
+  const folders = new Map(data.folders.map((folder) => [folder.id, folder]));
+  const folderPath = (id) => {
+    const names = [];
+    const seen = new Set();
+    for (let folder = folders.get(id); folder && !seen.has(folder.id); folder = folders.get(folder.parent_id)) {
+      seen.add(folder.id);
+      names.unshift(folder.name);
+    }
+    return names.join(" / ");
+  };
+  const kindLabel = {
+    workspace: $t("Workspace"),
+    folder: $t("Folder"),
+    note: $t("Note"),
+  };
+  const sameScope = (a, b) => a?.kind === b?.kind && a?.id === b?.id;
+  const scopeOptions = docked ? [] : [
+    noContext,
+    { kind: "workspace", id: workspaceId, name: data.workspaces.find((w) => w.id === workspaceId)?.name || kindLabel.workspace },
+    ...data.folders.filter((folder) => folder.workspace_id === workspaceId).map((folder) => ({
+      kind: "folder", id: folder.id, name: folder.name, path: folderPath(folder.parent_id),
+    })),
+    ...data.notes.filter((note) => !note.trashed && folders.get(note.folder_id)?.workspace_id === workspaceId).map((note) => ({
+      kind: "note", id: note.id, name: note.title || $t("Untitled"), path: folderPath(note.folder_id),
+    })),
+  ];
+  const namedScope = (scope) => {
+    if (!scope || scope.kind === "none") return noContext;
+    const known = scopeOptions.find((option) => sameScope(option, scope));
+    if (known) return known;
+    const item = scope.kind === "note"
+      ? [...data.notes, ...(data.shared_notes || [])].find((note) => note.id === scope.id)
+      : scope.kind === "folder" ? folders.get(scope.id) : data.workspaces.find((w) => w.id === scope.id);
+    return { ...scope, name: item?.title || item?.name || $t("Unavailable context") };
+  };
+  const scopeLabel = (scope) => {
+    const context = namedScope(scope);
+    return context.kind === "none" ? context.name : `${kindLabel[context.kind]} · ${context.name}`;
+  };
+  let selectedScope = docked ? initialScope : namedScope(initialScope);
+  const scope = () => ({ kind: selectedScope.kind, id: selectedScope.id });
   $("#breadcrumb").textContent = $t("AI chat");
   $("#content").innerHTML =
-    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">${$t("History")}</button><button class="btn" id="ai-settings">${$t("Providers")}</button></div></div>` : `<div class="eyebrow">${$t("ANSWERS, FROM ANYTHING YOU SHARE")}</div><div class="page-heading"><div><h1>${$t("Ask anything")}</h1><p class="subtitle">${$t("A plain question, or one about your notes. Attach photos, scans and documents to have them read.")}</p></div><button class="btn" id="ai-settings">${$t("Provider settings")}</button></div>`}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">${$t("+ New conversation")}</button><h3>${$t("Your conversations")}</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><label>${$t("Context")}<select id="chat-scope">${scopeOptions.map((s, i) => `<option value="${i}" ${i === Math.max(0, chosen) ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label><label>${$t("Model")}<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || `<option value="">${$t("No provider configured")}</option>`}</select></label></div><details class="ai-disclosure"><summary>${$t("What is sent to the model?")}</summary><p>${$t("Your question, the recent conversation, and any files you attach go to the selected provider. With a context, the permitted notes and records from it go too; with no context, none do. Context is capped; source coverage appears with each answer. Attached files are sent with that question only and are not stored. Replies may be inaccurate.")}</p></details><div id="chat-messages" class="chat-messages" aria-label="${$t("Conversation")}"><div class="empty"><h3>${$t("What would you like to understand?")}</h3><p>${$t("Ask a question, read a photo or a PDF, or pick a context to ask about your notes.")}</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">${$t("Your question")}</label><div id="chat-files" class="chat-files" hidden></div><div class="chat-input"><button type="button" class="chat-attach" id="chat-attach" title="${$t("Attach images or documents")}" aria-label="${$t("Attach images or documents")}" ${providers.length ? "" : "disabled"}>${CLIP}</button><input type="file" id="chat-file-input" multiple accept="${ACCEPT}" hidden><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? $t("Ask about this note…") : $t("Ask anything…")}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="${$t("Send (Enter)")}" aria-label="${$t("Send")}" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? $t("Enter to send · Shift+Enter for a new line · drop images or documents here") : $t("Configure a provider to begin.")}</span><button class="btn" id="stop-chat" type="button" disabled>${$t("Stop")}</button></div></form></section></div></section>`;
+    `<section class="page ai-page ${docked ? "docked" : ""}">${docked ? `<div class="page-heading ai-docked-heading"><h1><span class="chat-avatar" aria-hidden="true">✳</span>${esc(dockedTitle)}</h1><div class="ai-heading-actions"><button class="btn" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">${$t("History")}</button><button class="btn" id="ai-settings">${$t("Providers")}</button></div></div>` : `<div class="eyebrow">${$t("ANSWERS, FROM ANYTHING YOU SHARE")}</div><div class="page-heading"><div><h1>${$t("Ask anything")}</h1><p class="subtitle">${$t("A plain question, or one about your notes. Attach photos, scans and documents to have them read.")}</p></div><div class="ai-heading-actions"><button class="btn mobile-chat-history" id="ai-history-toggle" aria-expanded="false" aria-controls="ai-history">${$t("History")}</button><button class="btn" id="ai-settings">${$t("Provider settings")}</button></div></div>`}<div class="ai-layout"><aside class="panel ai-history" id="ai-history" ${docked ? "hidden" : ""}><button class="btn" id="new-chat">${$t("+ New conversation")}</button><h3>${$t("Your conversations")}</h3><div id="chat-history"></div></aside><section class="panel ai-conversation"><div class="ai-controls"><div class="chat-context-field" ${docked ? "hidden" : ""}><span id="chat-scope-label">${$t("Context")}</span><button type="button" id="chat-scope" aria-haspopup="dialog" aria-labelledby="chat-scope-label chat-scope-value"><span id="chat-scope-value">${esc(scopeLabel(selectedScope))}</span><span aria-hidden="true">⌄</span></button></div><label>${$t("Model")}<select id="chat-provider">${providers.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.model)}</option>`).join("") || `<option value="">${$t("No provider configured")}</option>`}</select></label></div><details class="ai-disclosure"><summary>${$t("What is sent to the model?")}</summary><p>${$t("Your question, the recent conversation, and any files you attach go to the selected provider. With a context, the permitted notes and records from it go too; with no context, none do. Context is capped; source coverage appears with each answer. Attached files are sent with that question only and are not stored. Replies may be inaccurate.")}</p></details><div id="chat-messages" class="chat-messages" aria-label="${$t("Conversation")}"><div class="empty"><h3>${$t("What would you like to understand?")}</h3><p>${$t("Ask a question, read a photo or a PDF, or pick a context to ask about your notes.")}</p></div></div><form id="chat-form" class="chat-composer"><label for="chat-question" class="sr-only">${$t("Your question")}</label><div id="chat-files" class="chat-files" hidden></div><div class="chat-input"><button type="button" class="chat-attach" id="chat-attach" title="${$t("Attach images or documents")}" aria-label="${$t("Attach images or documents")}" ${providers.length ? "" : "disabled"}>${CLIP}</button><input type="file" id="chat-file-input" multiple accept="${ACCEPT}" hidden><textarea id="chat-question" rows="1" maxlength="8000" placeholder="${docked ? $t("Ask about this note…") : $t("Ask anything…")}" required ${providers.length ? "" : "disabled"}></textarea><button class="btn primary chat-send" id="send-chat" title="${$t("Send (Enter)")}" aria-label="${$t("Send")}" ${providers.length ? "" : "disabled"}>↑</button></div><div class="chat-compose-actions"><span id="chat-status" role="status">${providers.length ? $t("Enter to send · Shift+Enter for a new line · drop images or documents here") : $t("Configure a provider to begin.")}</span><button class="btn" id="stop-chat" type="button" disabled>${$t("Stop")}</button></div></form></section></div></section>`;
   $("#ai-settings").onclick = configure;
-  // Beside a note, past conversations open on demand.
   const historyToggle = $("#ai-history-toggle");
-  if (historyToggle)
-    historyToggle.onclick = () => {
-      const panel = $("#ai-history");
-      panel.hidden = !panel.hidden;
-      historyToggle.setAttribute("aria-expanded", String(!panel.hidden));
-    };
+  historyToggle.onclick = () => {
+    const open = historyToggle.getAttribute("aria-expanded") !== "true";
+    historyToggle.setAttribute("aria-expanded", String(open));
+    if (docked) $("#ai-history").hidden = !open;
+  };
   // The question box grows with its text; Enter sends, Shift+Enter breaks a line.
   const questionBox = $("#chat-question");
   const fit = () => {
@@ -532,36 +533,15 @@ export async function renderAIChat({
       $("#chat-form").requestSubmit();
     }
   });
-  const scope = () => {
-    const selected = scopeOptions[Number($("#chat-scope").value)];
-    return selected && { kind: selected.kind, id: selected.id };
-  };
-  // What a conversation is about, by name, wherever it is.
-  const scopeLabel = (scope) => {
-    const find = (list, id) => (list || []).find((x) => x.id === id);
-    if (scope.kind === "none") return "No context";
-    if (scope.kind === "workspace")
-      return `Workspace · ${find(data.workspaces, scope.id)?.name || "unavailable"}`;
-    if (scope.kind === "folder")
-      return `Folder · ${find(data.folders, scope.id)?.name || "unavailable"}`;
-    const n = find(data.notes, scope.id) || find(data.shared_notes, scope.id);
-    return `Note · ${n?.title || "unavailable"}`;
-  };
-  // The context select also offers a conversation's context from elsewhere.
-  const scopeIndex = (scope) => {
-    let i = scopeOptions.findIndex(
-      (s) => s.kind === scope.kind && s.id === scope.id,
-    );
-    if (i < 0) {
-      scopeOptions.push({ ...scope, label: scopeLabel(scope) });
-      i = scopeOptions.length - 1;
-      $("#chat-scope").insertAdjacentHTML(
-        "beforeend",
-        `<option value="${i}">${esc(scopeOptions[i].label)}</option>`,
-      );
-    }
-    return i;
-  };
+  function selectScope(context) {
+    if (sameScope(context, selectedScope)) return;
+    selectedScope = context;
+    $("#chat-scope-value").textContent = scopeLabel(context);
+    reset();
+  }
+  $("#chat-scope").onclick = () => openChatContextPicker(
+    scopeOptions, selectedScope, kindLabel, sameScope, selectScope, esc,
+  );
   const ago = (seconds) => {
     const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
     if (minutes < 1) return $t("just now");
@@ -649,7 +629,8 @@ export async function renderAIChat({
             const loaded = await api(`ai/chats/${button.dataset.chat}`);
             if (epoch !== generation) return;
             chat = loaded;
-            $("#chat-scope").value = String(scopeIndex(chat.scope));
+            selectedScope = namedScope(chat.scope);
+            $("#chat-scope-value").textContent = scopeLabel(selectedScope);
             drawTurns();
             drawHistory();
           } catch (err) {
@@ -876,7 +857,6 @@ export async function renderAIChat({
     attach(pasted);
   });
   $("#new-chat").onclick = reset;
-  $("#chat-scope").onchange = reset;
   $("#stop-chat").onclick = () => controller?.abort();
   $("#chat-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -1082,6 +1062,69 @@ export async function renderAIChat({
     }
   };
   drawHistory();
+}
+
+function openChatContextPicker(options, selected, kindLabel, sameScope, choose, esc) {
+  const modal = $("#modal");
+  if (modal.open) return;
+  modal.innerHTML = `<div class="search-dialog chat-context-picker"><header class="search-dialog-header"><h2 id="chat-context-title">${$t("Choose chat context")}</h2><button type="button" class="search-close" aria-label="${$t("Close")}">×</button></header><div class="search-field"><input type="search" id="chat-context-search" aria-label="${$t("Search notes and folders")}" placeholder="${$t("Search notes and folders…")}" autocomplete="off" autofocus></div><div class="search-results" id="chat-context-results"></div><p class="search-status" role="status"></p></div>`;
+  modal.setAttribute("aria-labelledby", "chat-context-title");
+  modal.addEventListener("close", () => {
+    if (modal.getAttribute("aria-labelledby") === "chat-context-title")
+      modal.removeAttribute("aria-labelledby");
+  }, { once: true });
+  const input = $("#chat-context-search", modal);
+  const list = $("#chat-context-results", modal);
+  const status = $(".search-status", modal);
+  const normalize = (text) => text.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase();
+  const searchable = options.map((option) => ({
+    option,
+    text: normalize(`${option.name} ${option.path || ""} ${kindLabel[option.kind] || ""}`),
+  }));
+  let visible = [];
+  function draw() {
+    const words = normalize(input.value).trim().split(/\s+/);
+    const filtered = searchable.filter(({ text }) => words.every((word) => text.includes(word)));
+    visible = filtered.slice(0, 60).map(({ option }) => option);
+    list.innerHTML = visible.map((option, i) => {
+      const detail = [kindLabel[option.kind], option.path].filter(Boolean).join(" · ");
+      return `<button type="button" class="search-result" data-context="${i}" aria-pressed="${sameScope(option, selected)}"><span class="search-main"><strong class="search-title">${esc(option.name)}</strong>${detail ? `<span class="search-snippet">${esc(detail)}</span>` : ""}</span></button>`;
+    }).join("");
+    status.textContent = !visible.length ? $t("No results found.")
+      : filtered.length > visible.length ? $t("Refine your search to see more matches.") : "";
+  }
+  function select(index) {
+    const context = visible[index];
+    if (!context) return;
+    modal.close();
+    choose(context);
+  }
+  list.onclick = (event) => {
+    const button = event.target.closest("[data-context]");
+    if (button) select(Number(button.dataset.context));
+  };
+  $(".search-close", modal).onclick = () => modal.close();
+  input.oninput = draw;
+  input.onkeydown = (event) => {
+    if (event.isComposing || !visible.length) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      select(0);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      list.firstElementChild.focus();
+    }
+  };
+  list.onkeydown = (event) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const button = event.target.closest("[data-context]");
+    if (!button) return;
+    event.preventDefault();
+    if (event.key === "ArrowDown") button.nextElementSibling?.focus();
+    else (button.previousElementSibling || input).focus();
+  };
+  draw();
+  modal.showModal();
 }
 
 const CLIP =
