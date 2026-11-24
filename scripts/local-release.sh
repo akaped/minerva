@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Builds on this computer what GitHub Actions normally builds, and publishes it
-# to GitHub: the Docker image (docker.yml) and the release packages
-# (release.yml). Use it when the Actions minutes run out.
+# Builds the Docker image and release packages on this computer and publishes
+# them to GitHub.
 #
 #   scripts/local-release.sh [all|docker|release] [--no-push]
 #
@@ -10,7 +9,7 @@
 #   release  only build the packages and publish the GitHub release
 #   --no-push  build everything but upload nothing (a dry run)
 #
-# Image tags follow docker.yml: :main always; when HEAD carries the version
+# Image tags include :main; when HEAD carries the version
 # tag (vX.Y.Z, made by scripts/release.sh) also :X.Y.Z, :X.Y and :latest.
 # The release needs that tag; push it first (git push origin main vX.Y.Z), and
 # the release is created from it.

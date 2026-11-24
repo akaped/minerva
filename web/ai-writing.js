@@ -117,7 +117,7 @@ export function createWritingAssist(deps) {
     });
     const epoch = ++run;
     try {
-      providers ??= await deps.api("ai/providers");
+      providers = await deps.api(`ai/providers?workspace_id=${encodeURIComponent(deps.context?.().workspace_id || "")}`);
     } catch (e) {
       providers = null;
       if (epoch === run) close();
@@ -177,6 +177,7 @@ export function createWritingAssist(deps) {
     try {
       reply = await deps.api("ai/transform", "POST", {
         provider_id: providerId,
+        ...deps.context?.(),
         action,
         language,
         text: action === "continue" ? target.before : target.original,

@@ -64,6 +64,7 @@ pub(super) fn initialize(
     db.execute_batch(r#"CREATE TABLE IF NOT EXISTS ai_shell_settings(id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT OR IGNORE INTO ai_shell_settings VALUES(1, '{"directory":"","unattended":false}');"#)?;
     for (column, definition) in [
         ("private", "INTEGER NOT NULL DEFAULT 0"),
+        ("owner_id", "TEXT"),
         ("auth_mode", "TEXT NOT NULL DEFAULT 'api_key'"),
     ] {
         let exists: bool = db.query_row(
@@ -184,9 +185,9 @@ fn max_tokens(v: &Value) -> Result<u32, ApiError> {
     }
 }
 #[derive(Clone, Serialize, Deserialize)]
-struct Scope {
-    kind: String,
-    id: String,
+pub(super) struct Scope {
+    pub(super) kind: String,
+    pub(super) id: String,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Source {
@@ -227,9 +228,17 @@ struct Context {
     truncated: bool,
 }
 fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
+    lookup_provider(s, key, None, false)
+}
+fn lookup_provider(
+    s: &Store,
+    key: &str,
+    owner: Option<&str>,
+    internal_oauth: bool,
+) -> Result<(Provider, Vec<u8>), ApiError> {
     s.db.query_row(
-        "SELECT id,name,kind,endpoint,model,secret,web_search,max_tokens,server_tools,private,auth_mode FROM ai_providers WHERE id=?1 AND (private=0 OR ?2)",
-        params![key, s.ai.desktop],
+        "SELECT id,name,kind,endpoint,model,secret,web_search,max_tokens,server_tools,private,auth_mode FROM ai_providers WHERE id=?1 AND (private=0 OR ?2) AND (owner_id IS NULL OR owner_id=?3 OR ?4)",
+        params![key, s.ai.desktop, owner, internal_oauth],
         |r| {
             Ok((
                 Provider {
@@ -251,6 +260,78 @@ fn provider(s: &Store, key: &str) -> Result<(Provider, Vec<u8>), ApiError> {
     .optional()
     .map_err(|_| internal())?
     .ok_or_else(missing)
+}
+pub(super) fn personal_owner<'a>(s: &Store, u: &'a User, workspace: &str) -> Option<&'a str> {
+    owns(&s.data, u, workspace).then_some(u.id.as_str())
+}
+fn manage_provider(
+    s: &Store,
+    u: &User,
+    key: &str,
+    personal: bool,
+) -> Result<(Provider, Vec<u8>), ApiError> {
+    let owner: Option<String> =
+        s.db.query_row(
+            "SELECT owner_id FROM ai_providers WHERE id=?1",
+            [key],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|_| internal())?
+        .ok_or_else(missing)?;
+    let allowed = if personal {
+        owner.as_deref() == Some(u.id.as_str()) || (s.ai.desktop && owner.is_none())
+    } else {
+        admin(u)?;
+        owner.is_none()
+    };
+    if s.ai.desktop {
+        admin(u)?;
+    }
+    if !allowed {
+        return Err(missing());
+    }
+    lookup_provider(s, key, owner.as_deref(), false)
+}
+fn configured_endpoint(s: &Store, v: &Value, personal: bool) -> Result<String, ApiError> {
+    let endpoint = provider_endpoint(v)?;
+    if personal && !s.ai.desktop {
+        let official = match v["kind"].as_str().unwrap_or("") {
+            "openai" => "https://api.openai.com/v1",
+            "anthropic" => "https://api.anthropic.com/v1",
+            "openrouter" => "https://openrouter.ai/api/v1",
+            "deepseek" => "https://api.deepseek.com",
+            _ => return Err(bad("Choose a supported personal AI provider")),
+        };
+        if endpoint != official {
+            return Err(bad(
+                "Personal profiles on the server must use the official provider URL",
+            ));
+        }
+    }
+    Ok(endpoint)
+}
+pub(super) fn scope_workspace<'a>(d: &'a Data, scope: &'a Scope, fallback: &'a str) -> &'a str {
+    match scope.kind.as_str() {
+        "workspace" => &scope.id,
+        "folder" | "note" => {
+            let folder = if scope.kind == "note" {
+                d.notes
+                    .iter()
+                    .find(|n| n.id == scope.id)
+                    .map(|n| n.folder_id.as_str())
+            } else {
+                Some(scope.id.as_str())
+            };
+            d.folders
+                .iter()
+                .find(|f| Some(f.id.as_str()) == folder)
+                .map(|f| f.workspace_id.as_str())
+                .unwrap_or("")
+        }
+        "none" => fallback,
+        _ => "",
+    }
 }
 /// Any HTTP(S) API base URL is accepted (official providers, self-hosted models,
 /// gateways). Only administrators configure providers. Credentials, queries, and
@@ -710,23 +791,46 @@ fn route(
     {
         return Err(forbidden());
     }
+    if s.ai.desktop && parts.first() == Some(&"personal-providers") {
+        admin(u)?;
+    }
+    let personal = parts.first() == Some(&"personal-providers") || s.ai.desktop;
+    let owner = if personal && !s.ai.desktop {
+        Some(u.id.as_str())
+    } else {
+        None
+    };
     match (method.as_str(), parts) {
-        ("GET", ["providers"]) => {
+        ("GET", ["providers" | "personal-providers"]) => {
             let mut stmt =
-                s.db.prepare("SELECT id FROM ai_providers WHERE private=0 OR ?1 ORDER BY name")
-                    .map_err(|_| internal())?;
+                s.db.prepare(
+                    "SELECT id FROM ai_providers WHERE (private=0 OR ?1) AND
+                        (CASE WHEN ?2 THEN owner_id IS ?3 ELSE owner_id IS NULL OR owner_id=?3 END)
+                        ORDER BY name",
+                )
+                .map_err(|_| internal())?;
+            let personal_only = parts[0] == "personal-providers";
+            let owner = if personal_only {
+                owner
+            } else {
+                personal_owner(s, u, v["workspace_id"].as_str().unwrap_or(""))
+            };
             let ids = stmt
-                .query_map([s.ai.desktop], |r| r.get::<_, String>(0))
+                .query_map(params![s.ai.desktop, personal_only, owner], |r| {
+                    r.get::<_, String>(0)
+                })
                 .map_err(|_| internal())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| internal())?;
             Ok(json!(ids
                 .iter()
-                .map(|id| provider(s, id).map(|p| p.0))
+                .map(|id| lookup_provider(s, id, owner, false).map(|p| p.0))
                 .collect::<Result<Vec<_>, _>>()?))
         }
-        ("POST", ["providers"]) => {
-            admin(u)?;
+        ("POST", ["providers" | "personal-providers"]) => {
+            if !personal || s.ai.desktop {
+                admin(u)?;
+            }
             let kind = provider_kind(&v)?;
             let p = Provider {
                 id: id(),
@@ -737,7 +841,7 @@ fn route(
                 server_tools: server_tools(&v, &kind)?,
                 max_tokens: max_tokens(&v)?,
                 kind,
-                endpoint: provider_endpoint(&v)?,
+                endpoint: configured_endpoint(s, &v, personal)?,
                 model: field(&v, "model")?,
             };
             let secret = if p.auth_mode == "none" {
@@ -746,13 +850,17 @@ fn route(
                 provider_secret(&v)?.ok_or_else(|| bad("An API key is required"))?
             };
             let count: i64 =
-                s.db.query_row("SELECT COUNT(*) FROM ai_providers", [], |r| r.get(0))
-                    .map_err(|_| internal())?;
+                s.db.query_row(
+                    "SELECT COUNT(*) FROM ai_providers WHERE owner_id IS ?1",
+                    [owner],
+                    |r| r.get(0),
+                )
+                .map_err(|_| internal())?;
             if count >= 20 {
                 return Err(bad("Maximum 20 provider profiles"));
             }
             s.db.execute(
-                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search, max_tokens, server_tools, private, auth_mode) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                "INSERT INTO ai_providers(id, name, kind, endpoint, model, secret, web_search, max_tokens, server_tools, private, auth_mode, owner_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
                 params![
                     p.id,
                     p.name,
@@ -762,15 +870,14 @@ fn route(
                     s.ai.encrypt(secret)?,
                     p.web_search,
                     p.max_tokens,
-                    serde_json::to_string(&p.server_tools).map_err(|_| internal())?, p.private, p.auth_mode
+                    serde_json::to_string(&p.server_tools).map_err(|_| internal())?, p.private, p.auth_mode, owner
                 ],
             )
             .map_err(|_| internal())?;
             Ok(json!(p))
         }
-        ("PATCH", ["providers", key]) => {
-            admin(u)?;
-            let (old, _) = provider(s, key)?;
+        ("PATCH", ["providers" | "personal-providers", key]) => {
+            let (old, _) = manage_provider(s, u, key, personal)?;
             if old.kind == "chatgpt" {
                 return chatgpt::edit(s, &old, &v);
             }
@@ -784,7 +891,7 @@ fn route(
                 server_tools: server_tools(&v, &kind)?,
                 max_tokens: max_tokens(&v)?,
                 kind,
-                endpoint: provider_endpoint(&v)?,
+                endpoint: configured_endpoint(s, &v, personal)?,
                 model: field(&v, "model")?,
             };
             let secret = if p.auth_mode == "none" {
@@ -825,9 +932,8 @@ fn route(
             .map_err(|_| internal())?;
             Ok(json!(p))
         }
-        ("DELETE", ["providers", key]) => {
-            admin(u)?;
-            provider(s, key)?;
+        ("DELETE", ["providers" | "personal-providers", key]) => {
+            manage_provider(s, u, key, personal)?;
             chatgpt::cancel(s, key);
             s.db.execute("DELETE FROM ai_providers WHERE id=?1", [key])
                 .map_err(|_| internal())?;
@@ -966,7 +1072,18 @@ async fn transform(store: &Shared, headers: &HeaderMap, v: Value) -> Result<Resp
         let mut s = store.lock().map_err(|_| internal())?;
         let u = authenticate(&s.data, headers)?;
         let provider_id = field(&v, "provider_id")?;
-        if !endpoint_allowed(&provider(&s, &provider_id)?.0.endpoint) {
+        let scope = Scope {
+            kind: if v["note_id"].is_string() {
+                "note"
+            } else {
+                "none"
+            }
+            .into(),
+            id: v["note_id"].as_str().unwrap_or("").into(),
+        };
+        let workspace = scope_workspace(&s.data, &scope, v["workspace_id"].as_str().unwrap_or(""));
+        let profile = lookup_provider(&s, &provider_id, personal_owner(&s, &u, workspace), false)?;
+        if !endpoint_allowed(&profile.0.endpoint) {
             return Err(bad("This provider endpoint is not a valid API base URL"));
         }
         if s.ai.active.contains(&u.id) || s.ai.active.len() >= 4 {
@@ -975,12 +1092,7 @@ async fn transform(store: &Shared, headers: &HeaderMap, v: Value) -> Result<Resp
                 "A response is already running. Please wait or stop it.".into(),
             ));
         }
-        let completion = completion(
-            &s,
-            &provider_id,
-            &format!("{TRANSFORM_PROMPT}\n{task}"),
-            text,
-        )?;
+        let completion = completion_for(&s, profile, &format!("{TRANSFORM_PROMPT}\n{task}"), text)?;
         s.ai.active.insert(u.id.clone());
         (
             completion,
@@ -1013,7 +1125,7 @@ pub(super) async fn endpoint(
     {
         return Err(bad("X-Minerva-Client: 1 is required"));
     }
-    let v: Value = if body.is_empty() {
+    let mut v: Value = if body.is_empty() {
         json!({})
     } else {
         serde_json::from_slice(&body).map_err(|_| bad("Invalid JSON"))?
@@ -1023,13 +1135,29 @@ pub(super) async fn endpoint(
         .trim_start_matches("/api/v1/ai/")
         .split('/')
         .collect();
+    if matches!(parts.first(), Some(&("personal-providers" | "chatgpt"))) && tokens::used(&headers)
+    {
+        return Err(forbidden());
+    }
+    if method == Method::GET && parts.as_slice() == ["providers"] {
+        v = json!({"workspace_id": uri.query().and_then(|query| url::form_urlencoded::parse(query.as_bytes())
+            .find(|(key, _)| key == "workspace_id").map(|(_, value)| value.into_owned()))});
+    }
+    if method == Method::GET && parts.as_slice() == ["chatgpt", "callback"] {
+        return chatgpt::web_callback(&store, &uri);
+    }
     if parts.first() == Some(&"chatgpt") {
         return chatgpt::endpoint(&store, &headers, &method, &parts, &v)
             .await
             .map(|v| axum::Json(v).into_response());
     }
-    if method == Method::POST && parts.as_slice() == ["providers", "discover"] {
-        return discovery(&store, &headers, &v)
+    if method == Method::POST
+        && matches!(
+            parts.as_slice(),
+            ["providers" | "personal-providers", "discover"]
+        )
+    {
+        return discovery(&store, &headers, &v, parts[0] == "personal-providers")
             .await
             .map(|v| axum::Json(v).into_response());
     }
@@ -1051,7 +1179,19 @@ pub(super) async fn endpoint(
     }
     {
         let s = store.lock().map_err(|_| internal())?;
-        authenticate(&s.data, &headers)?;
+        let u = authenticate(&s.data, &headers)?;
+        let chat = load_chat(&s, &u, parts[1])?;
+        let workspace = scope_workspace(
+            &s.data,
+            &chat.scope,
+            v["workspace_id"].as_str().unwrap_or(""),
+        );
+        lookup_provider(
+            &s,
+            &field(&v, "provider_id")?,
+            personal_owner(&s, &u, workspace),
+            false,
+        )?;
     }
     chatgpt::fresh(&store, &field(&v, "provider_id")?).await?;
     let question = v["message"]
@@ -1072,7 +1212,17 @@ pub(super) async fn endpoint(
                 "Conversation changed. Reopen it before sending.".into(),
             ));
         }
-        let (p, key) = provider(&s, &field(&v, "provider_id")?)?;
+        let workspace = scope_workspace(
+            &s.data,
+            &chat.scope,
+            v["workspace_id"].as_str().unwrap_or(""),
+        );
+        let (p, key) = lookup_provider(
+            &s,
+            &field(&v, "provider_id")?,
+            personal_owner(&s, &u, workspace),
+            false,
+        )?;
         if !endpoint_allowed(&p.endpoint) {
             return Err(bad("This provider endpoint is not a valid API base URL"));
         }
@@ -1372,13 +1522,33 @@ pub(super) struct Completion {
     provider_id: String,
     kind: String,
 }
-pub(super) fn completion(
+pub(super) fn note_provider_owner<'a>(s: &Store, user: &'a User, note: &Note) -> Option<&'a str> {
+    let workspace = s
+        .data
+        .folders
+        .iter()
+        .find(|f| f.id == note.folder_id)
+        .map(|f| f.workspace_id.as_str())
+        .unwrap_or("");
+    personal_owner(s, user, workspace)
+}
+pub(super) fn note_completion(
     s: &Store,
+    user: &User,
+    note: &Note,
     provider_id: &str,
     system: &str,
     input: &str,
 ) -> Result<Completion, ApiError> {
-    let (p, encrypted) = provider(s, provider_id)?;
+    let profile = lookup_provider(s, provider_id, note_provider_owner(s, user, note), false)?;
+    completion_for(s, profile, system, input)
+}
+fn completion_for(
+    s: &Store,
+    (p, encrypted): (Provider, Vec<u8>),
+    system: &str,
+    input: &str,
+) -> Result<Completion, ApiError> {
     let secret = chatgpt::secret(s, &p, &encrypted)?;
     let request = model_request(
         &s.ai.client,
@@ -1398,11 +1568,12 @@ pub(super) fn completion(
 pub(super) fn flashcard_completion(
     s: &Store,
     provider_id: &str,
+    owner: Option<&str>,
     system: &str,
     input: &str,
     research: bool,
 ) -> Result<Completion, ApiError> {
-    let (p, encrypted) = provider(s, provider_id)?;
+    let (p, encrypted) = lookup_provider(s, provider_id, owner, false)?;
     if research
         && (!p.web_search || !matches!(p.kind.as_str(), "openai" | "openrouter" | "anthropic"))
     {
@@ -1437,7 +1608,7 @@ impl Completion {
         if self.kind == "chatgpt" {
             chatgpt::fresh(store, &self.provider_id).await?;
             let s = store.lock().map_err(|_| internal())?;
-            let (p, key) = provider(&s, &self.provider_id)?;
+            let (p, key) = lookup_provider(&s, &self.provider_id, None, true)?;
             let mut headers = reqwest::header::HeaderMap::new();
             let mut value = reqwest::header::HeaderValue::from_str(&format!(
                 "Bearer {}",
@@ -1553,8 +1724,12 @@ impl Completion {
 }
 
 /// Checks that a provider exists and has a usable endpoint.
-pub(super) fn provider_ready(s: &Store, provider_id: &str) -> Result<(), ApiError> {
-    if !endpoint_allowed(&provider(s, provider_id)?.0.endpoint) {
+pub(super) fn provider_ready(
+    s: &Store,
+    provider_id: &str,
+    owner: Option<&str>,
+) -> Result<(), ApiError> {
+    if !endpoint_allowed(&lookup_provider(s, provider_id, owner, false)?.0.endpoint) {
         return Err(bad("This provider endpoint is not a valid API base URL"));
     }
     Ok(())

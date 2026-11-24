@@ -1,4 +1,4 @@
-//! Native ChatGPT token sharing: credentials never cross the desktop bridge.
+//! ChatGPT provider authorization and encrypted token storage.
 use super::*;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use sha2::{Digest, Sha256};
@@ -10,6 +10,7 @@ const SCOPE: &str = "openid profile email offline_access resource.invoke chatgpt
 #[derive(Default)]
 pub(super) struct Runtime {
     flows: HashMap<String, Value>,
+    web_flows: HashMap<String, WebFlow>,
     requests: HashMap<String, tokio::sync::watch::Sender<bool>>,
     refresh: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
@@ -18,7 +19,7 @@ pub(super) fn cancellation(
     id: &str,
 ) -> Result<Option<tokio::sync::watch::Receiver<bool>>, ApiError> {
     let mut s = store.lock().map_err(|_| internal())?;
-    let (p, key) = provider(&s, id)?;
+    let (p, key) = lookup_provider(&s, id, None, true)?;
     if p.kind != "chatgpt" {
         return Ok(None);
     }
@@ -206,8 +207,10 @@ async fn tokens(
             }
         }
         subject
-    } else {
+    } else if nonce.is_none() {
         old.map(|s| s.subject.clone()).ok_or_else(error)?
+    } else {
+        return Err(error());
     };
     let expires = value["expires_in"]
         .as_u64()
@@ -228,19 +231,16 @@ pub(super) async fn fresh(store: &Shared, id: &str) -> Result<(), ApiError> {
 async fn refresh_at(store: &Shared, id: &str, token_endpoint: &str) -> Result<(), ApiError> {
     let mutex = {
         let s = store.lock().map_err(|_| internal())?;
-        let (p, _) = provider(&s, id)?;
+        let (p, _) = lookup_provider(&s, id, None, true)?;
         if p.kind != "chatgpt" {
             return Ok(());
-        }
-        if !s.ai.desktop {
-            return Err(forbidden());
         }
         s.ai.oauth.refresh.clone()
     };
     let _guard = mutex.lock().await;
     let (old, encrypted, client) = {
         let s = store.lock().map_err(|_| internal())?;
-        let (_, encrypted) = provider(&s, id)?;
+        let (_, encrypted) = lookup_provider(&s, id, None, true)?;
         (session(&s, &encrypted)?, encrypted, s.ai.client.clone())
     };
     if old.access_token.is_empty() || old.refresh_token.is_empty() {
@@ -250,8 +250,7 @@ async fn refresh_at(store: &Shared, id: &str, token_endpoint: &str) -> Result<()
         return Ok(());
     }
     let value = json_response(
-        client
-            .post(token_endpoint)
+        client_auth(client.post(token_endpoint), &old.client_id)
             .timeout(Duration::from_secs(30))
             .form(&[
                 ("grant_type", "refresh_token"),
@@ -268,7 +267,7 @@ async fn refresh_at(store: &Shared, id: &str, token_endpoint: &str) -> Result<()
     let s = store.lock().map_err(|_| internal())?;
     let changed =
         s.db.execute(
-            "UPDATE ai_providers SET secret=?2 WHERE id=?1 AND secret=?3 AND private=1",
+            "UPDATE ai_providers SET secret=?2 WHERE id=?1 AND secret=?3 AND kind='chatgpt'",
             params![
                 id,
                 s.ai.encrypt(&serde_json::to_string(&new).map_err(|_| internal())?)?,
@@ -299,8 +298,7 @@ async fn models(client: &reqwest::Client, access: &str) -> Result<Value, ApiErro
     Ok(json!(models))
 }
 pub(super) fn edit(s: &Store, p: &Provider, v: &Value) -> Result<Value, ApiError> {
-    if !s.ai.desktop
-        || v["kind"] != "chatgpt"
+    if v["kind"] != "chatgpt"
         || v["endpoint"] != RESOURCE
         || v["api_key"].as_str().is_some_and(|k| !k.is_empty())
     {
@@ -313,7 +311,7 @@ pub(super) fn edit(s: &Store, p: &Provider, v: &Value) -> Result<Value, ApiError
         params![p.id, name, model],
     )
     .map_err(|_| internal())?;
-    Ok(json!(provider(s, &p.id)?.0))
+    Ok(json!(lookup_provider(s, &p.id, None, true)?.0))
 }
 pub(super) async fn endpoint(
     store: &Shared,
@@ -322,34 +320,61 @@ pub(super) async fn endpoint(
     parts: &[&str],
     v: &Value,
 ) -> Result<Value, ApiError> {
-    {
+    let (user, desktop, browser_session) = {
         let s = store.lock().map_err(|_| internal())?;
-        admin(&authenticate(&s.data, headers)?)?;
-        if !s.ai.desktop {
-            return Err(forbidden());
+        let user = authenticate(&s.data, headers)?;
+        if s.ai.desktop {
+            admin(&user)?;
         }
-    }
+        (user, s.ai.desktop, session_token(headers).map(hash_token))
+    };
     match (method.as_str(), parts) {
-        ("POST", ["chatgpt", "start"]) => start(store, v).await,
-        ("GET", ["chatgpt", "flows", id]) => {
-            let s = store.lock().map_err(|_| internal())?;
-            s.ai.oauth.flows.get(*id).cloned().ok_or_else(missing)
+        ("GET", ["chatgpt", "available"]) => {
+            Ok(json!({"available": desktop || web_config().is_some()}))
         }
-        ("DELETE", ["chatgpt", "flows", id]) => {
-            store
-                .lock()
-                .map_err(|_| internal())?
-                .ai
-                .oauth
-                .flows
-                .remove(*id);
+        ("POST", ["chatgpt", "start"]) if desktop => start(store, v).await,
+        ("POST", ["chatgpt", "start"]) => {
+            web_start(store, &user, browser_session.ok_or_else(forbidden)?, v)
+        }
+        ("POST", ["chatgpt", "flows", id]) if !desktop => {
+            web_finish(store, headers, id, v["confirmation"].as_str().unwrap_or("")).await
+        }
+        ("GET" | "DELETE", ["chatgpt", "flows", id]) => {
+            let mut s = store.lock().map_err(|_| internal())?;
+            if desktop {
+                if method == Method::DELETE {
+                    s.ai.oauth.flows.remove(*id);
+                    return Ok(json!({"ok":true}));
+                }
+                return s.ai.oauth.flows.get(*id).cloned().ok_or_else(missing);
+            }
+            let flow =
+                s.ai.oauth
+                    .web_flows
+                    .get(*id)
+                    .filter(|f| {
+                        f.owner == user.id
+                            && Some(f.browser_session.as_str()) == browser_session.as_deref()
+                    })
+                    .ok_or_else(missing)?;
+            if method == Method::GET {
+                if flow.created + 300 <= now() {
+                    return Ok(json!({"status":"failed"}));
+                }
+                return Ok(flow.result.clone());
+            }
+            s.ai.oauth.web_flows.remove(*id);
             Ok(json!({"ok":true}))
         }
         ("POST", ["chatgpt", id, "models"]) => {
+            {
+                let s = store.lock().map_err(|_| internal())?;
+                manage_provider(&s, &user, id, true)?;
+            }
             fresh(store, id).await?;
             let (client, token) = {
                 let s = store.lock().map_err(|_| internal())?;
-                let (p, k) = provider(&s, id)?;
+                let (p, k) = manage_provider(&s, &user, id, true)?;
                 if p.kind != "chatgpt" {
                     return Err(forbidden());
                 }
@@ -358,14 +383,20 @@ pub(super) async fn endpoint(
             Ok(json!({"models":models(&client,&token).await?}))
         }
         ("POST", ["chatgpt", id, "signout"]) => {
-            store.lock().map_err(|_| internal())?.ai.oauth.flows.clear();
             let (client, old) = {
                 let mut s = store.lock().map_err(|_| internal())?;
-                let (p, k) = provider(&s, id)?;
+                let (p, k) = manage_provider(&s, &user, id, true)?;
                 if p.kind != "chatgpt" {
                     return Err(forbidden());
                 }
                 let old = session(&s, &k)?;
+                if desktop {
+                    s.ai.oauth.flows.clear();
+                } else {
+                    s.ai.oauth
+                        .web_flows
+                        .retain(|_, f| f.owner != user.id || f.existing.as_deref() != Some(*id));
+                }
                 cancel(&mut s, id);
                 let mut cleared = old.clone();
                 cleared.access_token.clear();
@@ -406,8 +437,7 @@ async fn revoke(client: &reqwest::Client, s: &Session) -> bool {
         if url.origin().ascii_serialization() != ISSUER || metadata["issuer"] != ISSUER {
             return Err(error());
         }
-        let r = client
-            .post(url)
+        let r = client_auth(client.post(url), &s.client_id)
             .timeout(Duration::from_secs(15))
             .form(&[
                 ("token", s.refresh_token.as_str()),
@@ -421,6 +451,232 @@ async fn revoke(client: &reqwest::Client, s: &Session) -> bool {
     }
     .await;
     result.unwrap_or(false)
+}
+const WEB_CALLBACK: &str = "/api/v1/ai/chatgpt/callback";
+
+fn web_config() -> Option<(String, String)> {
+    let client = std::env::var("MINERVA_CHATGPT_CLIENT_ID").ok()?;
+    let redirect = std::env::var("MINERVA_CHATGPT_REDIRECT_URI").ok()?;
+    let url = url::Url::parse(&redirect).ok()?;
+    (client.starts_with("oaiapp_")
+        && url.scheme() == "https"
+        && url.path() == WEB_CALLBACK
+        && endpoint_allowed(&redirect))
+    .then_some((client, redirect))
+}
+
+fn client_auth(request: reqwest::RequestBuilder, client_id: &str) -> reqwest::RequestBuilder {
+    match web_config() {
+        Some((id, _)) if id == client_id => match std::env::var("MINERVA_CHATGPT_CLIENT_SECRET") {
+            Ok(secret) if !secret.is_empty() => request.basic_auth(client_id, Some(secret)),
+            _ => request,
+        },
+        _ => request,
+    }
+}
+
+struct WebFlow {
+    owner: String,
+    browser_session: String,
+    name: String,
+    existing: Option<String>,
+    nonce: String,
+    verifier: String,
+    created: u64,
+    authorization: Option<(String, HashMap<String, String>)>,
+    consumed: bool,
+    result: Value,
+}
+
+fn web_start(
+    store: &Shared,
+    user: &User,
+    browser_session: String,
+    v: &Value,
+) -> Result<Value, ApiError> {
+    let (client_id, redirect) =
+        web_config().ok_or_else(|| bad("ChatGPT sign-in is not configured on this server"))?;
+    let mut s = store.lock().map_err(|_| internal())?;
+    let name = field(v, "name")?;
+    let existing = v["provider_id"].as_str().map(str::to_owned);
+    if let Some(id) = &existing {
+        let (p, key) = manage_provider(&s, user, id, true)?;
+        if p.kind != "chatgpt" || session(&s, &key)?.client_id != client_id {
+            return Err(error());
+        }
+    }
+    s.ai.oauth.web_flows.retain(|_, f| f.created + 300 > now());
+    if s.ai.oauth.web_flows.len() >= 100
+        || s.ai.oauth.web_flows.values().any(|f| {
+            f.owner == user.id && matches!(f.result["status"].as_str(), Some("pending" | "confirm"))
+        })
+    {
+        return Err(bad("A ChatGPT sign-in is already in progress"));
+    }
+    let state = random();
+    let nonce = random();
+    let verifier = random();
+    let mut url =
+        url::Url::parse(&format!("{ISSUER}/api/accounts/authorize")).map_err(|_| error())?;
+    url.query_pairs_mut().extend_pairs([
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", redirect.as_str()),
+        ("response_type", "code"),
+        ("scope", SCOPE),
+        ("resource", RESOURCE),
+        ("state", &state),
+        ("nonce", &nonce),
+        ("code_challenge_method", "S256"),
+        (
+            "code_challenge",
+            &B64.encode(Sha256::digest(verifier.as_bytes())),
+        ),
+    ]);
+    s.ai.oauth.web_flows.insert(
+        state.clone(),
+        WebFlow {
+            owner: user.id.clone(),
+            browser_session,
+            name,
+            existing,
+            nonce,
+            verifier,
+            created: now(),
+            authorization: None,
+            consumed: false,
+            result: json!({"status":"pending"}),
+        },
+    );
+    Ok(json!({"flow_id":state,"url":url.as_str()}))
+}
+
+pub(super) fn web_callback(store: &Shared, uri: &Uri) -> Result<Response, ApiError> {
+    web_config().ok_or_else(missing)?;
+    let mut query: HashMap<_, _> =
+        url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+            .into_owned()
+            .collect();
+    let state = query.remove("state").ok_or_else(error)?;
+    let confirmation = random();
+    let mut s = store.lock().map_err(|_| internal())?;
+    let flow =
+        s.ai.oauth
+            .web_flows
+            .get_mut(&state)
+            .filter(|f| f.created + 300 > now() && f.authorization.is_none() && !f.consumed)
+            .ok_or_else(error)?;
+    if query.contains_key("error") {
+        flow.consumed = true;
+        flow.result = json!({"status":"failed"});
+        return Ok("ChatGPT sign-in was declined. Return to Minerva.".into_response());
+    }
+    flow.authorization = Some((confirmation.clone(), query));
+    flow.result = json!({"status":"confirm"});
+    Ok(([(axum::http::header::CACHE_CONTROL, "no-store"),
+        (axum::http::header::REFERRER_POLICY, "no-referrer")],
+        format!("Copy this confirmation code into Minerva to connect your ChatGPT account:\n\n{confirmation}")).into_response())
+}
+
+async fn web_finish(
+    store: &Shared,
+    headers: &HeaderMap,
+    state: &str,
+    confirmation: &str,
+) -> Result<Value, ApiError> {
+    let (client_id, redirect) = web_config().ok_or_else(missing)?;
+    let browser_session = session_token(headers)
+        .map(hash_token)
+        .ok_or_else(forbidden)?;
+    let (user, nonce, verifier, client, old, original_secret, query) = {
+        let mut s = store.lock().map_err(|_| internal())?;
+        let user = authenticate(&s.data, headers)?;
+        let flow =
+            s.ai.oauth
+                .web_flows
+                .get_mut(state)
+                .filter(|f| {
+                    f.owner == user.id
+                        && f.browser_session == browser_session
+                        && f.created + 300 > now()
+                        && !f.consumed
+                })
+                .ok_or_else(error)?;
+        if !flow
+            .authorization
+            .as_ref()
+            .is_some_and(|(value, _)| value == confirmation)
+        {
+            return Err(bad(
+                "Enter the confirmation code shown after ChatGPT sign-in",
+            ));
+        }
+        let (_, query) = flow.authorization.take().ok_or_else(error)?;
+        flow.consumed = true;
+        let (nonce, verifier, existing) = (
+            flow.nonce.clone(),
+            flow.verifier.clone(),
+            flow.existing.clone(),
+        );
+        let (old, original_secret) = if let Some(id) = existing {
+            let (p, key) = manage_provider(&s, &user, &id, true)?;
+            if p.kind != "chatgpt" {
+                return Err(error());
+            }
+            (Some(session(&s, &key)?), Some(key))
+        } else {
+            (None, None)
+        };
+        (
+            user,
+            nonce,
+            verifier,
+            s.ai.client.clone(),
+            old,
+            original_secret,
+            query,
+        )
+    };
+    let result = async {
+        if query.contains_key("error") || query.get("client_id").is_some_and(|id| id != &client_id) {
+            return Err(error());
+        }
+        let code = query.get("code").ok_or_else(error)?;
+        let value = json_response(client_auth(client.post(TOKEN), &client_id)
+            .timeout(Duration::from_secs(30))
+            .form(&[("grant_type","authorization_code"), ("client_id",&client_id), ("code",code),
+                ("code_verifier",&verifier), ("redirect_uri",&redirect), ("resource",RESOURCE)])
+            .send().await.map_err(|_| error())?).await?;
+        let session = tokens(&client, value, &client_id, Some(&nonce), old.as_ref()).await?;
+        let catalog = models(&client, &session.access_token).await?;
+        let s = store.lock().map_err(|_| internal())?;
+        authenticate(&s.data, headers)?;
+        let flow = s.ai.oauth.web_flows.get(state).filter(|f| f.created + 300 > now()).ok_or_else(error)?;
+        let encrypted = s.ai.encrypt(&serde_json::to_string(&session).map_err(|_| internal())?)?;
+        let provider_id = if let Some(id) = &flow.existing {
+            let count = s.db.execute(
+                "UPDATE ai_providers SET secret=?2 WHERE id=?1 AND owner_id=?3 AND kind='chatgpt' AND secret=?4",
+                params![id, encrypted, user.id, original_secret],
+            ).map_err(|_| internal())?;
+            if count != 1 { return Err(error()); }
+            id.clone()
+        } else {
+            let count: i64 = s.db.query_row("SELECT COUNT(*) FROM ai_providers WHERE owner_id=?1", [&user.id], |r| r.get(0)).map_err(|_| internal())?;
+            if count >= 20 { return Err(bad("Maximum 20 provider profiles")); }
+            let id = id();
+            s.db.execute("INSERT INTO ai_providers(id,name,kind,endpoint,model,secret,owner_id,auth_mode) VALUES(?1,?2,'chatgpt',?3,?4,?5,?6,'oauth')",
+                params![id, flow.name, RESOURCE, catalog[0]["id"].as_str().ok_or_else(error)?, encrypted, user.id]).map_err(|_| internal())?;
+            id
+        };
+        Ok(json!({"status":"connected","provider_id":provider_id,"models":catalog}))
+    }.await;
+    let mut s = store.lock().map_err(|_| internal())?;
+    if let Some(flow) = s.ai.oauth.web_flows.get_mut(state) {
+        flow.result = result
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|_| json!({"status":"failed"}));
+    }
+    result
 }
 async fn start(store: &Shared, v: &Value) -> Result<Value, ApiError> {
     let name = field(v, "name")?;

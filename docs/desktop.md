@@ -16,17 +16,17 @@ scripts/package-desktop.sh linux                # or one platform only
 
 The Windows package is cross-compiled from Linux with the `x86_64-pc-windows-gnu` target and MinGW-w64 (`rustup target add x86_64-pc-windows-gnu`, plus `mingw64-gcc` or `gcc-mingw-w64-x86-64`). The zip contains `Minerva.exe` and `WebView2Loader.dll`, which must stay in the same folder. Windows 10 and 11 include the required Microsoft Edge WebView2 Runtime. The executable embeds its icon and version information.
 
-The macOS package is built on a Mac with the Xcode command-line tools: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`, then `scripts/package-desktop.sh macos`. It produces `Minerva.app` as a universal binary for Apple Silicon and Intel, for macOS 11 or later, with its icon and menu bar. The app has an ad-hoc signature and is not notarized. The first time, people open it with right-click → **Open**, or remove the quarantine flag with `xattr -dr com.apple.quarantine /Applications/Minerva.app`. Release builds run on GitHub's macOS runners.
+The macOS package is built on a Mac with the Xcode command-line tools: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`, then `scripts/package-desktop.sh macos`. It produces `Minerva.app` as a universal binary for Apple Silicon and Intel, for macOS 11 or later, with its icon and menu bar. The app has an ad-hoc signature and is not notarized. The first time, people open it with right-click → **Open**, or remove the quarantine flag with `xattr -dr com.apple.quarantine /Applications/Minerva.app`.
 
 The Linux archive contains the binary, a `.desktop` entry, a 256 px icon, and `install.sh` (installs into `~/.local`, or `PREFIX`). Application and web icons are generated from `favicon.png` into `crates/minerva-desktop/assets/` and `web/icons/`.
 
 The desktop crate is not one of the workspace's default members, so `cargo build` and `cargo run -p minerva-server` work without GUI libraries. `cargo test --workspace` includes it.
 
-## GitHub builds and releases
+## Local builds and GitHub releases
 
-[Desktop release builds](https://github.com/akaped/minerva/actions/workflows/desktop.yml) builds Linux x86_64, Windows x86_64, and universal macOS packages. It runs when desktop dependencies or sources change on `main`, and can also be started from **Actions → Desktop release builds → Run workflow** on a chosen branch. Download the `minerva-desktop-linux-windows` and `minerva-desktop-macos` artifacts from the completed run; both include SHA-256 checksums. Artifacts are retained for 30 days. macOS builds are ad-hoc signed and are not notarized.
+Prepare the version and changelog with `scripts/release.sh VERSION`. Push the branch and its `vVERSION` tag, then run `scripts/local-release.sh all` to build the container image, Linux and Windows packages, and browser clippers locally and upload them to GitHub. Add `--no-push` to build without uploading.
 
-The existing **Release** workflow reuses these desktop builds and attaches the packages to the GitHub release when a version tag is pushed. Prepare the version and changelog with `scripts/release.sh VERSION`, then push the branch and generated `vVERSION` tag. The tag must match `Cargo.toml`. A manual desktop build produces downloadable artifacts without creating a version tag or publishing a GitHub release.
+For macOS, build on a Mac with `scripts/package-desktop.sh macos` and attach the resulting package and checksum to the same GitHub release.
 
 ## Using it
 
@@ -71,11 +71,11 @@ The web interface itself is unchanged, except that the gateway adds `<meta name=
 
 ## Private AI providers
 
-Open the **personal workspace**, then **AI providers**. Profiles created here are private to this computer. Credentials are encrypted in the desktop database with its adjacent `.ai-key` file; back up both together. Provider profiles and credentials are not included in workspace replication. Opening that database through the network server does not enable its private profiles.
+In the personal workspace, open **User settings** to manage **Personal AI providers**. Profiles created here are private to this computer. Credentials are encrypted in the desktop database with its adjacent `.ai-key` file; back up both together. Provider profiles and credentials are not included in workspace replication. Opening that database through the network server does not enable its private profiles.
 
 Choose an API provider and enter your own key, or choose **OpenAI-compatible API** for a self-hosted model. For example, an Ollama installation with its compatible API enabled can use `http://127.0.0.1:11434/v1`, an installed model ID, and **No authentication (self-hosted)**. Use **API key** when your model server requires one. Requests go directly from the desktop to the selected endpoint. A local model can keep inference on this computer; a cloud endpoint receives the selected context and attachments.
 
-Private profiles work with the personal workspace and local offline copies, including chat, writing assistance, and non-research generation. Connected remote server pages continue to use the remote server's configured providers. To use a private model with server content, open its offline copy from the personal workspace. Local copies retain their existing replication limitations.
+Private profiles work with the personal workspace and local offline copies, including chat, writing assistance, and non-research generation. When connected to a server, use **User settings → Personal AI providers** to manage the same account profiles as in the web app. Shared providers configured by the server administrator remain available. Server account profiles are available in workspaces that account owns. To use a private model with server content, open its offline copy from the personal workspace. Local copies retain their existing replication limitations.
 
 ### ChatGPT subscription sign-in
 

@@ -85,7 +85,7 @@ pub(super) fn start(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Va
         }
         let provider_id = v["provider_id"].as_str().unwrap_or("").to_string();
         if !provider_id.is_empty() {
-            ai::provider_ready(&s, &provider_id)?;
+            ai::provider_ready(&s, &provider_id, ai::note_provider_owner(&s, &u, n))?;
         }
         let today = v["today"]
             .as_str()
@@ -141,7 +141,12 @@ pub(super) fn start(store: &Shared, headers: &HeaderMap, v: &Value) -> Result<Va
         };
         (
             request,
-            (!provider_id.is_empty()).then_some((provider_id, today)),
+            (!provider_id.is_empty()).then_some((
+                provider_id,
+                today,
+                job.note_id.clone(),
+                job.user_id.clone(),
+            )),
             job,
         )
     };
@@ -173,7 +178,7 @@ async fn run(
     store: &Shared,
     id: &str,
     requests: Vec<reqwest::RequestBuilder>,
-    completion_for: Option<(String, String)>,
+    completion_for: Option<(String, String, String, String)>,
 ) -> Result<(), ApiError> {
     // Part after part, each one's times after the earlier parts'.
     let total = requests.len();
@@ -209,7 +214,7 @@ async fn run(
             job.state = "summarizing".into();
         }
     });
-    let Some((provider_id, today)) = completion_for else {
+    let Some((provider_id, today, note_id, user_id)) = completion_for else {
         return Ok(());
     };
     let mut text = transcript_text(&transcript);
@@ -223,7 +228,28 @@ async fn run(
     }
     let completion = {
         let s = store.lock().map_err(|_| internal())?;
-        ai::completion(&s, &provider_id, &PROMPT.replace("TODAY", &today), &text)?
+        let user = s
+            .data
+            .users
+            .iter()
+            .find(|a| a.user.id == user_id && !a.user.disabled)
+            .map(|a| &a.user)
+            .ok_or_else(forbidden)?;
+        let note = s
+            .data
+            .notes
+            .iter()
+            .find(|n| n.id == note_id)
+            .ok_or_else(missing)?;
+        note_access(&s.data, user, note, true)?;
+        ai::note_completion(
+            &s,
+            user,
+            note,
+            &provider_id,
+            &PROMPT.replace("TODAY", &today),
+            &text,
+        )?
     };
     let answer = completion.run(&store).await?;
     let summary = summary(&answer)?;

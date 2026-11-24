@@ -180,8 +180,6 @@
   "Ctrl K": "Ctrl K",
   "Main navigation": "Navigazione principale",
   "On this computer": "Su questo computer",
-  "Personal notes · offline copies": "Note personali · copie offline",
-  "Account security": "Sicurezza dell’account",
   "Overview": "Panoramica",
   "You can only add to a note you can edit.": "Puoi aggiungere solo a una nota che puoi modificare.",
   "The note did not respond. Nothing was added.": "La nota non ha risposto. Non è stato aggiunto nulla.",
@@ -2395,5 +2393,18 @@
   "Revoke an existing API token before connecting the web clipper": "Revoca un token API esistente prima di collegare il web clipper",
   "The page's address must start with http:// or https://": "L’indirizzo della pagina deve iniziare con http:// o https://",
   "Invalid challenge": "Verifica non valida",
-  "Invalid state": "Stato non valido"
+  "Invalid state": "Stato non valido",
+  "Personal AI providers": "Fornitori di IA personali",
+  "Use your own models in workspaces you own.": "Usa i tuoi modelli negli spazi di lavoro di cui sei titolare.",
+  "Private to your account": "Privato per il tuo account",
+  "Add a provider to use your own account for AI requests.": "Aggiungi un fornitore per usare il tuo account per le richieste IA.",
+  "This profile uses your provider account and is available in workspaces you own.": "Questo profilo usa il tuo account presso il fornitore ed è disponibile negli spazi di lavoro di cui sei titolare.",
+  "ChatGPT confirmation code": "Codice di conferma ChatGPT",
+  "Connect account": "Collega account",
+  "User settings": "Impostazioni utente",
+  "Manage providers": "Gestisci fornitori",
+  "Choose a supported personal AI provider": "Scegli un fornitore di IA personale supportato",
+  "Personal profiles on the server must use the official provider URL": "I profili personali sul server devono usare l’URL ufficiale del fornitore",
+  "ChatGPT sign-in is not configured on this server": "L’accesso con ChatGPT non è configurato su questo server",
+  "Enter the confirmation code shown after ChatGPT sign-in": "Inserisci il codice di conferma mostrato dopo l’accesso con ChatGPT"
 }

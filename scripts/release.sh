@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Prepares a release: sets the version, turns the changelog's Unreleased
-# section into that version, commits, and tags. Pushing the tag makes GitHub
-# Actions build the Linux and Windows packages and publish the release.
+# section into that version, commits, and tags. Build and publish from this
+# computer after pushing the tag.
 #
 #   scripts/release.sh 0.3.0
 #   git push origin main v0.3.0
+#   scripts/local-release.sh all
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,4 +40,5 @@ sed -i "s/^## \[Unreleased\]$/## [Unreleased]\n\n## [$version] - $today/" CHANGE
 git add Cargo.toml Cargo.lock CHANGELOG.md package.json
 git commit -m "Release $tag"
 git tag -a "$tag" -m "Minerva $tag"
-echo "Ready. Publish it with: git push origin $(git branch --show-current) $tag"
+echo "Push with: git push origin $(git branch --show-current) $tag"
+echo "Build and publish with: scripts/local-release.sh all"

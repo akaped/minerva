@@ -398,7 +398,7 @@ pub(super) async fn endpoint(
         }
         let provider_id = v["provider_id"].as_str().unwrap_or("").to_string();
         if command.requires_ai || !provider_id.is_empty() {
-            let _ = ai::completion(&s, &provider_id, "", "")?;
+            ai::provider_ready(&s, &provider_id, ai::note_provider_owner(&s, &u, n))?;
         }
         let mut payload = json!({"note_id":n.id,"note_revision":n.revision,"plugin_id":p.manifest.id,"plugin_version":p.manifest.version,"command":command.id,"pattern":command.pattern,"provider_id":provider_id,"sources":sources,"input":command.input,"url":v["url"],"language":v["language"],"attachment_id":v["attachment_id"],"allow_audio":v["allow_audio"]==true,"chunk_results":[]});
         if let Some(previous) = v["retry_of"].as_str() {
@@ -748,8 +748,18 @@ async fn execute(
             .ok_or_else(|| bad("Invalid plugin input"))?;
         let completion = {
             let s = store.lock().map_err(|_| internal())?;
-            ai::completion(
+            let user = s
+                .data
+                .users
+                .iter()
+                .find(|a| a.user.id == user_id && !a.user.disabled)
+                .map(|a| &a.user)
+                .ok_or_else(forbidden)?;
+            let note = note_for(&s, user, payload["note_id"].as_str().unwrap_or(""))?;
+            ai::note_completion(
                 &s,
+                user,
+                note,
                 payload["provider_id"].as_str().unwrap_or(""),
                 system,
                 input,

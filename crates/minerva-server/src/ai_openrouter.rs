@@ -82,15 +82,18 @@ pub(super) async fn discovery(
     store: &Shared,
     headers: &HeaderMap,
     v: &Value,
+    personal: bool,
 ) -> Result<Value, ApiError> {
     let (client, endpoint, secret) = {
         let s = store.lock().map_err(|_| internal())?;
         let user = authenticate(&s.data, headers)?;
-        admin(&user)?;
+        if !personal {
+            admin(&user)?;
+        }
         if provider_kind(v)? != "openrouter" {
             return Err(bad("Model discovery requires OpenRouter"));
         }
-        let endpoint = provider_endpoint(v)?;
+        let endpoint = configured_endpoint(&s, v, personal)?;
         let secret = match provider_secret(v)? {
             Some(key) => key.to_string(),
             None => {
@@ -98,7 +101,8 @@ pub(super) async fn discovery(
                     .as_str()
                     .filter(|id| !id.is_empty())
                     .ok_or_else(|| bad("An API key is required"))?;
-                let (old, encrypted) = provider(&s, provider_id)?;
+                let (old, encrypted) =
+                    manage_provider(&s, &user, provider_id, personal || s.ai.desktop)?;
                 // Even a changed path requires re-entry for discovery.
                 if old.kind != "openrouter" || old.endpoint != endpoint {
                     return Err(bad(
@@ -132,7 +136,7 @@ pub(super) async fn discovery(
             t["supported_api_formats"].as_array().is_some_and(|f| f.iter().any(|f| f == "responses"))
     }).map(|t| json!({"id":t["id"], "name":t["name"], "summary":t["summary"], "native_support":t["native_support"]})).collect();
     let s = store.lock().map_err(|_| internal())?;
-    admin(&authenticate(&s.data, headers)?)?;
+    authenticate(&s.data, headers)?;
     Ok(json!({"models":models, "tools":tools, "tools_available":available.is_some()}))
 }
 

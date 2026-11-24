@@ -48,7 +48,7 @@ export async function pluginDialog({
   insert,
   upload,
 }) {
-  const providers = await api("ai/providers");
+  const providers = await api(`ai/providers?workspace_id=${encodeURIComponent(context.workspaceId || "")}`);
   const kind = command.input || "text";
   const media = kind !== "text";
   const files =

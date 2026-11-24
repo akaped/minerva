@@ -1521,7 +1521,7 @@ function adminShell() {
       ["admin-overview", "Server overview"],
       ["admin", "Users & storage"],
       ["providers", "AI provider settings"],
-      ["account", "Account security"],
+      ["account", "User settings"],
     ]
       .map(
         ([id, label]) =>
@@ -1682,7 +1682,7 @@ function shell() {
       )
       .join(
         "",
-      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${esc(data.user.name.slice(0, 2).toUpperCase())}</span>${localMode ? `<div class="profile-link"><div class="profile-name">${$t("On this computer")}</div><div class="profile-role">${$t("Personal notes · offline copies")}</div></div>` : `<button class="profile-link" data-view="account" title="${$t("Account security")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${$t("{value} · Security", { value: data.user.admin ? $t("Server administrator") : $t("Member") })}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${themeSelect()}${workspaceBadge()}<span class="avatar">${esc(data.user.name[0])}</span></div></header><div id="content" tabindex="-1"></div></main></div>`;
+      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${esc(data.user.name.slice(0, 2).toUpperCase())}</span>${localMode ? `<button class="profile-link" data-view="personal-providers"><div class="profile-name">${$t("User settings")}</div><div class="profile-role">${$t("On this computer")}</div></button>` : `<button class="profile-link" data-view="account" title="${$t("User settings")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${$t("{value} · Security", { value: data.user.admin ? $t("Server administrator") : $t("Member") })}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${themeSelect()}${workspaceBadge()}<span class="avatar">${esc(data.user.name[0])}</span></div></header><div id="content" tabindex="-1"></div></main></div>`;
   $$("[data-view]").forEach((b) =>
     action(b, "click", () => navigate(b.dataset.view)),
   );
@@ -1718,7 +1718,7 @@ function shell() {
   else if (view === "databases") renderDatabaseList();
   else if (view === "graph") renderGraph(folderId).catch(error);
   else if (view === "flashcards")
-    renderFlashcards({ api, esc, data, error }).catch(error);
+    renderFlashcards({ api, esc, data, error, workspaceId }).catch(error);
   else if (view === "reminders")
     renderReminders({
       api,
@@ -1736,6 +1736,10 @@ function shell() {
   else if (view === "account") renderAccount().catch(error);
   else if (view === "templates") renderTemplates();
   else if (view === "integrations") renderIntegrations().catch(error);
+  else if (view === "personal-providers")
+    renderAISettings({ api, esc, data, error, localMode, personal: true }).catch(
+      error,
+    );
   else if (view === "providers")
     renderAISettings({ api, esc, data, error, localMode }).catch(error);
   else if (view === "chat")
@@ -1754,7 +1758,7 @@ function shell() {
       noteFromReply,
       canEditNote: (id) =>
         data.roles[data.notes.find((n) => n.id === id)?.folder_id] === "editor",
-      configure: () => navigate("providers"),
+      configure: () => navigate("personal-providers"),
       error,
     }).catch(error);
   else overview();
@@ -4409,6 +4413,7 @@ function guestComments() {
 }
 const writingAssist = createWritingAssist({
   api,
+  context: () => ({ note_id: note?.id, workspace_id: workspaceId }),
   esc,
   error,
   announce,
@@ -5490,7 +5495,7 @@ async function recordingButtons() {
  */
 async function recordingDialog(attachmentId, afterId) {
   const targetId = note.id;
-  const providers = await api("ai/providers").catch(() => []);
+  const providers = await api(`ai/providers?workspace_id=${encodeURIComponent(workspaceId || "")}`).catch(() => []);
   modal.innerHTML = `<form class="recording-form" id="recording-form"><h2>${$t("Transcribe and summarize")}</h2><p>${$t("The recording goes to this server’s transcription service. With notes chosen, the transcript then goes to that AI provider, which writes key points, decisions and action items for you to review.")}</p><label>${$t("Notes")}<select name="provider"><option value="">${$t("Transcript only")}</option>${providers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.model)}</option>`).join("")}</select></label><p class="hint" id="recording-status" role="status"></p><div id="recording-result"></div><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="recording-close">${$t("Cancel")}</button><button class="btn primary" id="recording-start">${$t("Start")}</button><button type="button" class="btn primary" id="recording-insert" hidden>${$t("Insert into the note")}</button></footer></form>`;
   modal.showModal();
   const form = $("#recording-form");
@@ -5736,6 +5741,7 @@ function blockMenu(existingId, capturedSelection = "") {
         command: command[3],
         context: {
           noteId: targetNote,
+          workspaceId,
           blockId: block?.id,
           selection: capturedSelection,
         },
@@ -6713,13 +6719,20 @@ onInstallChange(() => {
 });
 async function renderAccount() {
   const status = await api("account/2fa");
-  $("#breadcrumb").textContent = $t("Account security");
+  $("#breadcrumb").textContent = $t("User settings");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("Account security")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section>${ssoPanel()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
+    `<section class="page"><div class="eyebrow">${$t("YOUR ACCOUNT")}</div><div class="page-heading"><div><h1>${$t("User settings")}</h1><p class="subtitle">${esc(data.user.name)} · ${esc(data.user.email)}</p></div></div><section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Password")}</h2><p>${$t("Changing it signs you out everywhere else.")}</p></div></div><button class="btn" id="change-password">${$t("Change password")}</button></section>${ssoPanel()}<section class="panel security-panel"><div class="panel-heading"><div><h2>${$t("Two-factor authentication")}</h2><p>${$t("Sign in with your password and a code from an authenticator app such as Google Authenticator, Microsoft Authenticator, 1Password, or Aegis.")}</p></div><span class="pill ${status.enabled ? "pill-on" : ""}">${status.enabled ? $t("On") : $t("Off")}</span></div><div class="security-body">${
       status.enabled
         ? `<p>${$t("On since {date}. {recovery_remaining} of 10 recovery codes left.", { date: esc(new Date(status.enabled_at * 1000).toLocaleDateString()), recovery_remaining: status.recovery_remaining })}</p><div class="toolbar-group"><button class="btn" id="new-recovery">${$t("New recovery codes")}</button><button class="btn danger" id="disable-2fa">${$t("Turn off")}</button></div>`
         : `<p>${$t("Two-factor authentication protects your notes even if your password is stolen.")}</p><button class="btn primary" id="setup-2fa">${$t("Set up two-factor authentication")}</button>`
     }</div></section>${deviceHTML()}</section>`;
+  if (!data.user.admin) {
+    $("#content .page").insertAdjacentHTML(
+      "beforeend",
+      `<section class="panel security-panel"><h2>${$t("Personal AI providers")}</h2><button class="btn" id="personal-ai-settings">${$t("Manage providers")}</button></section>`,
+    );
+    action($("#personal-ai-settings"), "click", () => navigate("personal-providers"));
+  }
   bindDevice();
   action($("#link-sso"), "click", () =>
     location.assign("/auth/sso/start?client=link"),
@@ -7210,7 +7223,7 @@ function sidebarSections() {
     ...(localMode ? [] : [["sharing", "users", $t("Sharing")]]),
     ["archive", "archive", $t("Archived")],
     ["trash", "trash", $t("Trash")],
-    ["providers", "users", $t("AI providers")],
+    ...(localMode ? [] : [["providers", "users", $t("AI providers")]]),
     // A desktop app's own server has no other accounts and no network clients.
     ...(localMode
       ? []

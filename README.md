@@ -128,6 +128,10 @@ The first start builds Minerva and takes a few minutes; to skip that, set `MINER
 
 **4. Finishing touches.** Remove the password from `.env`: it was only needed once. Add accounts for other people under _Server administration_, and set up an AI provider under _AI providers_ if you want one.
 
+Members can add their own providers under **User settings → Personal AI providers**. The same account profiles are available in the web app and in desktop when connected to that server, across workspaces the member owns. For personal API-key profiles on the server, use the official OpenAI, Anthropic, OpenRouter, or DeepSeek endpoint.
+
+To enable **Continue with ChatGPT** on a server, configure an [OpenAI web OAuth client approved for ChatGPT plan usage](https://developers.openai.com/siwc/quickstart). Register the exact HTTPS callback `https://notes.example.com/api/v1/ai/chatgpt/callback` using your server's hostname. Set `MINERVA_CHATGPT_CLIENT_ID` and `MINERVA_CHATGPT_REDIRECT_URI`, and set `MINERVA_CHATGPT_CLIENT_SECRET` for clients provisioned with `client_secret_basic`. After authorization, users copy the confirmation code back into Minerva to connect the account. Desktop in local mode continues to use its built-in browser sign-in.
+
 To update later: `git pull`, then `docker compose up -d --build`. Back up the `minerva_minerva-data` Docker volume regularly; [here’s how](docs/setup.md#docker).
 
 ### Add the learning plugin

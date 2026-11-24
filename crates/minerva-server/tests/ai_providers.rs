@@ -225,3 +225,74 @@ async fn conversations_are_deleted_by_their_owner_only() {
     let (_, list) = request(&app, "GET", "ai/chats", &admin, json!({})).await;
     assert_eq!(list, json!([]));
 }
+
+#[tokio::test]
+async fn personal_providers_follow_account_and_workspace_ownership() {
+    let app = app(Store::open(":memory:", "admin@test.local", common::PASSWORD).unwrap());
+    let root = login(&app, "admin@test.local").await;
+    let owner = common::member(&app, &root, "owner@test.local").await;
+    let other = common::account(&app, &root, "other@test.local").await;
+    let config = json!({
+        "kind":"openai", "name":"Personal", "endpoint":"https://api.openai.com/v1",
+        "model":"gpt-test", "api_key":"personal-secret"
+    });
+    let (status, personal) = request(
+        &app,
+        "POST",
+        "ai/personal-providers",
+        &owner,
+        config.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{personal}");
+    assert!(personal.get("api_key").is_none());
+    let id = personal["id"].as_str().unwrap();
+    let personal_url = format!("ai/personal-providers/{id}");
+    let (_, shared) = request(&app, "POST", "ai/providers", &root, config.clone()).await;
+    let mut unsafe_endpoint = config.clone();
+    unsafe_endpoint["endpoint"] = json!("http://127.0.0.1/v1");
+    assert_eq!(
+        request(&app, "PATCH", &personal_url, &owner, unsafe_endpoint)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    for token in [&other, &root] {
+        assert!(
+            !request(&app, "PATCH", &personal_url, token, config.clone())
+                .await
+                .0
+                .is_success()
+        );
+        assert!(!request(&app, "DELETE", &personal_url, token, json!({}))
+            .await
+            .0
+            .is_success());
+    }
+    let (_, settings) = request(&app, "GET", "ai/personal-providers", &owner, json!({})).await;
+    assert_eq!(settings, json!([personal]));
+    let (_, boot) = request(&app, "GET", "bootstrap", &owner, json!({})).await;
+    let workspaces = boot["workspaces"].as_array().unwrap();
+    assert!(workspaces.len() >= 2);
+    for workspace in workspaces {
+        let workspace = workspace["id"].as_str().unwrap();
+        let list_url = format!("ai/providers?workspace_id={workspace}");
+        let (_, visible) = request(&app, "GET", &list_url, &owner, json!({})).await;
+        assert!(visible.as_array().unwrap().contains(&personal), "{visible}");
+        let (_, visible) = request(&app, "GET", &list_url, &other, json!({})).await;
+        assert_eq!(visible, json!([shared]));
+        let (status, _) = request(
+            &app,
+            "POST",
+            "ai/transform",
+            &other,
+            json!({
+                "workspace_id":workspace, "provider_id":id, "action":"shorter", "text":"Test"
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+    let (status, _) = request(&app, "DELETE", &personal_url, &owner, json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+}

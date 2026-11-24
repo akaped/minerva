@@ -865,6 +865,8 @@ fn persist(s: &mut Store, mut d: Data) -> Result<(), ApiError> {
             .iter()
             .filter(|a| !users.contains(a.user.id.as_str()))
         {
+            tx.execute("DELETE FROM ai_providers WHERE owner_id=?1", [&gone.user.id])
+                .map_err(|_| internal())?;
             for table in [
                 "ai_chats",
                 "flashcard_decks",

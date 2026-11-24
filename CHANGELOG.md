@@ -10,6 +10,9 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+- Add account-owned AI providers under User settings, including ChatGPT sign-in on configured servers.
+- Build release packages and container images locally before publishing to GitHub.
+
 ## [0.8.0] - 2026-11-23
 
 ### Added

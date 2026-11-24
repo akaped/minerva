@@ -1,7 +1,7 @@
 import { $t, $tn, serverMessage } from "./i18n.js";
 import { statsHTML } from "./flashcard-stats.js";
 // Personal study workspace. Card contents are plain text, never executable markup.
-export async function renderFlashcards({ api, esc, data, error }) {
+export async function renderFlashcards({ api, esc, data, error, workspaceId }) {
   const root = document.querySelector("#content");
   document.querySelector("#breadcrumb").textContent = $t("Flashcards");
   let deck = null,
@@ -550,7 +550,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
   }
   async function generateForm() {
     shell(`<p>${$t("Loading AI providers…")}</p>`);
-    const config = await api("ai/providers");
+    const config = await api(`ai/providers?workspace_id=${encodeURIComponent(workspaceId || "")}`);
     if (!live()) return;
     const providers = Array.isArray(config) ? config : config.providers || [];
     if (!providers.length) {
@@ -593,6 +593,7 @@ export async function renderFlashcards({ api, esc, data, error }) {
         try {
           const result = await api("flashcards/generate", "POST", {
             kind,
+            workspace_id: workspaceId,
             source_id: form.get(kind),
             topic: form.get("topic"),
             count: Number(form.get("count")),

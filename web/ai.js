@@ -39,24 +39,32 @@ export async function renderAISettings({
   data,
   error,
   localMode = false,
+  personal = localMode,
 }) {
   const epoch = generation;
-  const providers = await api("ai/providers");
+  const profilePath = personal ? "ai/personal-providers" : "ai/providers";
+  const [providers, chatgpt] = await Promise.all([
+    api(profilePath),
+    personal ? api("ai/chatgpt/available") : null,
+  ]);
+  const canManage = personal || data.user.admin;
   if (epoch !== generation) return;
-  $("#breadcrumb").textContent = $t("AI providers");
+  const title = personal ? $t("Personal AI providers") : $t("AI providers");
+  $("#breadcrumb").textContent = title;
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("IN-APP INTELLIGENCE")}</div><div class="page-heading"><div><h1>${$t("AI providers")}</h1><p class="subtitle">${localMode ? $t("Choose private models for this computer.") : $t("Choose the models your server can use for contextual chat.")}</p></div>${data.user.admin ? `<button class="btn primary" id="add-provider">${$t("+ Add provider")}</button>` : ""}</div>
+    `<section class="page"><div class="eyebrow">${$t("IN-APP INTELLIGENCE")}</div><div class="page-heading"><div><h1>${title}</h1><p class="subtitle">${localMode ? $t("Choose private models for this computer.") : personal ? $t("Use your own models in workspaces you own.") : $t("Choose the models your server can use for contextual chat.")}</p></div>${canManage ? `<button class="btn primary" id="add-provider">${$t("+ Add provider")}</button>` : ""}</div>
     <div class="panel ai-notice"><h2>${$t("Your context, your choice")}</h2><p>${$t("Chat sends the question, recent conversation, and permitted notes and records from the selected scope to your chosen provider. Files attached to a question are sent with that question only, and are not stored. With “No context”, no notes are sent. Provider usage may incur API charges.")}</p><p>${localMode ? $t("Private credentials are encrypted on this computer and are never synced to a Minerva server. Requests go directly to your chosen provider. ChatGPT sign-in uses eligible subscription allowances, separately from API billing.") : $t("API keys are encrypted on the server and never returned to this page. ChatGPT subscriptions do not supply OpenAI API credits. These settings are separate from external MCP connections.")}</p></div>
-    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>${localMode ? $t("Private · this computer only") : $t("Available to server members · key stored{value} · answers up to {date} tokens", { value: p.web_search ? $t(" · web search on") : "", date: Number(p.max_tokens || 4096).toLocaleString() })}</p>${data.user.admin ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">${$t("Edit")}</button>${p.kind === "chatgpt" ? `<button class="btn" data-signout-provider="${p.id}">${$t("Sign out of ChatGPT")}</button>` : ""}<button class="btn danger" data-remove-provider="${p.id}">${$t("Remove provider")}</button></div>` : ""}</section>`).join("") || `<div class="empty"><h3>${$t("No providers configured")}</h3><p>${localMode ? $t("Add your own model or continue with ChatGPT to enable private AI.") : $t("A server administrator can add a model and API key to enable chat.")}</p></div>`}</div></section>`;
+    <div class="ai-provider-grid">${providers.map((p) => `<section class="panel ai-provider"><span class="pill">${esc(presets[p.kind]?.label || p.kind)}</span><h2>${esc(p.name)}</h2><p>${esc(p.model)}</p><small>${esc(p.endpoint)}</small><p>${localMode ? $t("Private · this computer only") : personal ? $t("Private to your account") : $t("Available to server members · key stored{value} · answers up to {date} tokens", { value: p.web_search ? $t(" · web search on") : "", date: Number(p.max_tokens || 4096).toLocaleString() })}</p>${canManage ? `<div class="ai-provider-actions"><button class="btn" data-edit-provider="${p.id}">${$t("Edit")}</button>${p.kind === "chatgpt" ? `<button class="btn" data-signout-provider="${p.id}">${$t("Sign out of ChatGPT")}</button>` : ""}<button class="btn danger" data-remove-provider="${p.id}">${$t("Remove provider")}</button></div>` : ""}</section>`).join("") || `<div class="empty"><h3>${$t("No providers configured")}</h3><p>${localMode ? $t("Add your own model or continue with ChatGPT to enable private AI.") : personal ? $t("Add a provider to use your own account for AI requests.") : $t("A server administrator can add a model and API key to enable chat.")}</p></div>`}</div></section>`;
   // Adds a provider, or edits `existing`. The stored key is never shown: an
   // empty key field keeps it, and pointing it at another server needs it again.
   const providerForm = (existing = null) => {
     const modal = $("#modal");
     const p = existing || { kind: "openai", endpoint: presets.openai.endpoint };
-    modal.innerHTML = `<form id="provider-form"><h2>${existing ? $t("Edit AI provider") : $t("Add an AI provider")}</h2><p>${localMode ? $t("This private profile is stored on this computer. Use the personal workspace or an offline copy to send requests directly to your own model.") : $t("This profile is available to server members. Requests use this API key and its billing account.")}</p><label>${$t("Provider")}<select name="kind">${Object.entries(
+    modal.innerHTML = `<form id="provider-form"><h2>${existing ? $t("Edit AI provider") : $t("Add an AI provider")}</h2><p>${localMode ? $t("This private profile is stored on this computer. Use the personal workspace or an offline copy to send requests directly to your own model.") : personal ? $t("This profile uses your provider account and is available in workspaces you own.") : $t("This profile is available to server members. Requests use this API key and its billing account.")}</p><label>${$t("Provider")}<select name="kind">${Object.entries(
       presets,
     )
-      .filter(([k]) => k !== "chatgpt" || localMode)
+      .filter(([k]) => k !== "chatgpt" || chatgpt?.available || existing?.kind === "chatgpt")
+      .filter(([k]) => k !== "compatible" || localMode || !personal)
       .map(
         ([k, preset]) =>
           `<option value="${k}" ${k === p.kind ? "selected" : ""}>${esc(preset.label)}</option>`,
@@ -74,7 +82,7 @@ export async function renderAISettings({
       )}</fieldset><p class="hint">${$t("OpenRouter tools run remotely and incur additional charges. Availability depends on the model, route and region. Fusion requires Web Search and Web Fetch. Hosted Shell runs remotely, not on this computer.")}</p></div><label class="checkbox-label"><input type="checkbox" name="web_search" ${p.web_search ? "checked" : ""}>${$t("Allow web search")}</label><p class="hint web-search-hint"></p><label>${$t("Max answer length (tokens)")}<input name="max_tokens" type="number" min="256" max="131072" step="256" value="${esc(String(p.max_tokens || 4096))}" required></label><p class="hint">${$t("Thinking models (Qwen, DeepSeek R1…) also spend these tokens reasoning: give them 16384 or more, within the model's context window. 4096 suits most cloud models and keeps costs predictable.")}</p><label>${$t("API key")}<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" ${existing ? 'placeholder="Leave empty to keep the stored key"' : "required"}></label>${existing ? `<p class="stored-key-hint">${$t("The stored key is kept unless you enter a new one. Changing the API base URL to another server requires entering the key again.")}</p>` : ""}<p class="endpoint-hint">${$t("Use the provider’s API base URL, or the address of a self-hosted or compatible server. Questions and permitted note content are sent there, so use HTTPS unless the server is on a trusted network. Keep a backup of the server’s .ai-key file alongside the database.")}</p><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-provider">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Save provider")}</button></footer></form>`;
     let oauthFlow = null;
     let oauthTimer = null;
-    if (localMode) {
+    if (localMode || chatgpt?.available || existing?.kind === "chatgpt") {
       const keyLabel = $("input[name=api_key]", modal).closest("label");
       keyLabel.insertAdjacentHTML(
         "beforebegin",
@@ -127,15 +135,35 @@ export async function renderAISettings({
           oauthFlow = result.flow_id;
           const expectedFlow = oauthFlow;
           const status = $("#chatgpt-status", modal);
-          status.innerHTML = `<a class="btn primary" href="${esc(result.url)}">${$t("Open ChatGPT sign-in in your browser")}</a><p>${$t("Waiting for sign-in. Return here after approving access.")}</p>`;
+          status.innerHTML = `<a class="btn primary" href="${esc(result.url)}" ${localMode ? "" : 'target="_blank" rel="noopener noreferrer"'}>${$t("Open ChatGPT sign-in in your browser")}</a><p>${$t("Waiting for sign-in. Return here after approving access.")}</p>`;
           const poll = async () => {
             if (oauthFlow !== expectedFlow || !modal.open) return;
             try {
               const state = await api(`ai/chatgpt/flows/${oauthFlow}`);
               if (oauthFlow !== expectedFlow || !modal.open) return;
+              if (state.status === "confirm") {
+                status.innerHTML = `<label>${$t("ChatGPT confirmation code")}<input id="chatgpt-confirmation" autocomplete="off"></label><button type="button" class="btn primary" id="chatgpt-finish">${$t("Connect account")}</button><p id="chatgpt-finish-error" role="alert"></p>`;
+                const finish = $("#chatgpt-finish", modal);
+                finish.onclick = async () => {
+                  finish.disabled = true;
+                  try {
+                    await api(`ai/chatgpt/flows/${expectedFlow}`, "POST", {
+                      confirmation: $("#chatgpt-confirmation", modal).value.trim(),
+                    });
+                    if (oauthFlow !== expectedFlow || !modal.open) return;
+                    clear();
+                    await renderAISettings({ api, esc, data, error, localMode, personal });
+                  } catch (err) {
+                    if (oauthFlow !== expectedFlow || !modal.open) return;
+                    $("#chatgpt-finish-error", modal).textContent = err.message;
+                    finish.disabled = false;
+                  }
+                };
+                return;
+              }
               if (state.status === "connected") {
                 clear();
-                await renderAISettings({ api, esc, data, error, localMode });
+                await renderAISettings({ api, esc, data, error, localMode, personal });
                 return;
               }
               if (state.status === "failed")
@@ -201,7 +229,7 @@ export async function renderAISettings({
       key.required = !existing && !oauth && auth?.value !== "none";
       key.closest("label").hidden = oauth || auth?.value === "none";
       if (oauth || auth?.value === "none") key.value = "";
-      $("input[name=endpoint]", modal).readOnly = oauth;
+      $("input[name=endpoint]", modal).readOnly = oauth || (personal && !localMode);
       $("input[name=endpoint]", modal).closest("label").hidden = oauth;
       $("input[name=model]", modal).closest("label").hidden =
         oauth && existing?.kind !== "chatgpt";
@@ -259,7 +287,7 @@ export async function renderAISettings({
         "Loading models and tools…",
       );
       try {
-        const result = await api("ai/providers/discover", "POST", values);
+        const result = await api(`${profilePath}/discover`, "POST", values);
         if (
           !form.isConnected ||
           $("#provider-form", modal) !== form ||
@@ -312,7 +340,7 @@ export async function renderAISettings({
         api(`ai/chatgpt/flows/${oauthFlow}`, "DELETE").catch(() => {});
       oauthFlow = null;
       clearTimeout(oauthTimer);
-      if (localMode) $("#chatgpt-connect", modal).disabled = false;
+      if ($("#chatgpt-connect", modal)) $("#chatgpt-connect", modal).disabled = false;
       discoveryGeneration++;
       models = [];
       $("#provider-models", modal).innerHTML = "";
@@ -341,10 +369,10 @@ export async function renderAISettings({
             ? values.server_tools.includes("openrouter:web_search")
             : values.web_search;
         values.max_tokens = Number(values.max_tokens);
-        if (existing) await api(`ai/providers/${existing.id}`, "PATCH", values);
-        else await api("ai/providers", "POST", values);
+        if (existing) await api(`${profilePath}/${existing.id}`, "PATCH", values);
+        else await api(profilePath, "POST", values);
         clear();
-        await renderAISettings({ api, esc, data, error, localMode });
+        await renderAISettings({ api, esc, data, error, localMode, personal });
       } catch (err) {
         $(".form-error", modal).textContent = err.message;
         button.disabled = false;
@@ -402,11 +430,11 @@ export async function renderAISettings({
                 );
             }
             await api(
-              `ai/providers/${button.dataset.removeProvider}`,
+              `${profilePath}/${button.dataset.removeProvider}`,
               "DELETE",
             );
             modal.close();
-            await renderAISettings({ api, esc, data, error, localMode });
+            await renderAISettings({ api, esc, data, error, localMode, personal });
           } catch (err) {
             error(err);
           }
@@ -434,7 +462,7 @@ export async function renderAIChat({
 }) {
   const epoch = generation;
   const [providers, history] = await Promise.all([
-    api("ai/providers"),
+    api(`ai/providers?workspace_id=${encodeURIComponent(workspaceId || "")}`),
     api("ai/chats"),
   ]);
   if (epoch !== generation) return;
@@ -935,6 +963,7 @@ export async function renderAIChat({
           message: question,
           attachments,
           provider_id: $("#chat-provider").value,
+          workspace_id: workspaceId,
           revision: chat.turns.length,
         }),
         signal: controller.signal,
