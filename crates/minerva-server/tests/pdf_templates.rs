@@ -208,8 +208,21 @@ async fn templates_fill_from_note_metadata() {
             && resume
                 .contains("<span class=\"pdf-placeholder\">&#123;&#123;role&#125;&#125;</span>")
     );
-    // An unknown or missing template uses Standard; there is no unstyled export.
-    for query in ["template=nope", "template="] {
+    // Omitted templates use the note's preference. Explicit choices override it.
+    let saved_template = get(&router, &format!("/export/{nid}?format=print"), &admin).await;
+    assert!(saved_template.contains("<body class=\"export pdf pdf-02-company-report\">"));
+    let preview = get(
+        &router,
+        &format!("/export/{nid}?format=print&size=letter&template=18-presentation-handout&preview=1"),
+        &admin,
+    )
+    .await;
+    assert!(preview.contains("pdf-18-presentation-handout"));
+    assert!(preview.contains("size: letter landscape;"));
+    assert!(preview.contains("Quarterly Security Review"));
+
+    // Standard remains explicitly selectable and is the fallback for invalid IDs.
+    for query in ["template=01-standard", "template=nope", "template="] {
         let standard = get(
             &router,
             &format!("/export/{nid}?format=print&{query}"),

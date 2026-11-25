@@ -117,6 +117,13 @@ export const blockCommands = [
   ],
 ];
 
+/** A slash starts a command at a text boundary, or with text selected. */
+export function slashCommandContext(text, start, end) {
+  if (!text.trim()) return "block";
+  if (start !== end || start === 0 || /\s/.test(text[start - 1])) return "inline";
+  return null;
+}
+
 /**
  * Search snippets mark matches with U+0001…U+0002 around plain text: escape the
  * text with `escape`, then turn the markers into highlights.

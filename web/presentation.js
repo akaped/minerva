@@ -10,27 +10,62 @@ import { $t } from "./i18n.js";
 
 const DIVIDER = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const HEADING = /^\s*(#{1,6})\s/;
+const SLIDE_MARKER = /^\s*<!--\s*slide:\s*(normal|title|section|image-right|image-left)\s*-->\s*$/;
+const EMPTY_IMAGE = /^!\[[^\]]*\]\(\s*\)$/;
+
+/** Keep the boundary and its layout readable as Markdown. */
+function slideBoundary(markdown) {
+  const [line, ...rest] = markdown.trim().split("\n");
+  if (!DIVIDER.test(line)) return null;
+  if (!rest.length) return "normal";
+  return rest.join("\n").match(SLIDE_MARKER)?.[1] ?? null;
+}
+
+/** Blocks inserted by a slide command, with fields ready to replace. */
+export function slideTemplate(layout) {
+  const title = $t("Slide title");
+  const text = $t("Write your slide text here.");
+  const heading = layout === "section" || layout === "title" ? "# " : "## ";
+  const blocks = [`---\n<!-- slide: ${layout} -->`, heading + title];
+  if (layout === "title") blocks.push($t("Slide subtitle"));
+  else if (layout !== "section") blocks.push(text);
+  if (layout === "image-right" || layout === "image-left")
+    blocks.push(`![${$t("Slide image")}]()`);
+  return blocks;
+}
 
 /**
- * Which blocks go on which slide, from the blocks' Markdown: `{intro, slides}`,
+ * Which blocks and layout go on each slide, from the blocks' Markdown,
  * where `intro` lists the indexes shown under the title and `slides` the
  * indexes of each following slide. Dividers and empty blocks are left out, and
  * so are empty slides.
  */
 export function slideGroups(markdowns) {
-  const content = (i) => markdowns[i].trim() && !DIVIDER.test(markdowns[i]);
+  const boundaries = markdowns.map(slideBoundary);
   const all = markdowns.map((_, i) => i);
-  let intro = [];
+  const intro = [];
   const slides = [];
-  if (markdowns.some((m) => DIVIDER.test(m))) {
+  const layouts = [];
+  if (boundaries.some(Boolean)) {
     let current = [];
-    for (const i of all) {
-      if (DIVIDER.test(markdowns[i])) {
+    let layout = "normal";
+    const add = () => {
+      if (current.length) {
         slides.push(current);
+        layouts.push(layout);
+      }
+    };
+    for (const i of all) {
+      if (boundaries[i]) {
+        add();
         current = [];
-      } else if (content(i)) current.push(i);
+        layout = boundaries[i];
+      } else if (boundaries[i - 1] && SLIDE_MARKER.test(markdowns[i])) {
+        // Imported Markdown can split the divider and comment into two blocks.
+        layout = markdowns[i].match(SLIDE_MARKER)[1];
+      } else if (markdowns[i].trim()) current.push(i);
     }
-    slides.push(current);
+    add();
   } else {
     const levels = markdowns
       .map((m) => m.match(HEADING)?.[1].length)
@@ -38,15 +73,16 @@ export function slideGroups(markdowns) {
     const top = levels.length ? Math.min(...levels) : 0;
     let current = intro;
     for (const i of all) {
-      if (!content(i)) continue;
+      if (!markdowns[i].trim()) continue;
       if (top && markdowns[i].match(HEADING)?.[1].length === top) {
         current = [];
         slides.push(current);
+        layouts.push("normal");
       }
       current.push(i);
     }
   }
-  return { intro, slides: slides.filter((s) => s.length) };
+  return { intro, slides, layouts };
 }
 
 /**
@@ -63,10 +99,10 @@ export function present({
   esc,
   onClose,
 }) {
-  const { intro, slides: groups } = slideGroups(markdowns);
+  const { intro, slides: groups, layouts } = slideGroups(markdowns);
   const slides = [
-    { title: true, blocks: intro },
-    ...groups.map((g) => ({ blocks: g })),
+    { title: true, blocks: intro, layout: "normal" },
+    ...groups.map((blocks, i) => ({ blocks, layout: layouts[i] })),
   ];
   let at = Math.max(
     0,
@@ -129,19 +165,47 @@ export function present({
       slide.scrollHeight > stage.clientHeight,
     );
   };
+  const appendBlocks = (parent, indexes) => {
+    for (const i of indexes) {
+      const el = copy(i);
+      if (el) parent.append(el);
+    }
+  };
+  const twoColumns = (s) => {
+    const [lead, ...rest] = s.blocks;
+    const hasHeading = HEADING.test(markdowns[lead]);
+    if (hasHeading) appendBlocks(slide, [lead]);
+    const indexes = hasHeading ? rest : s.blocks;
+    const image = indexes.find((i) =>
+      blocks[i]?.querySelector('.block-body img[src]:not([src=""])'),
+    );
+    const columns = document.createElement("div");
+    columns.className = "slide-columns";
+    const text = document.createElement("div");
+    text.className = "slide-column-text";
+    const media = document.createElement("div");
+    media.className = "slide-column-image";
+    appendBlocks(text, indexes.filter((i) => i !== image && !EMPTY_IMAGE.test(markdowns[i].trim())));
+    if (image !== undefined) appendBlocks(media, [image]);
+    else {
+      media.classList.add("slide-image-placeholder");
+      media.textContent = $t("Slide image");
+    }
+    columns.append(...(s.layout === "image-left" ? [media, text] : [text, media]));
+    slide.append(columns);
+  };
   const draw = () => {
     const s = slides[at];
     slide.innerHTML = "";
-    slide.classList.toggle("title-slide", !!s.title);
+    slide.className = `slide slide-layout-${s.layout}`;
+    if (s.title) slide.classList.add("title-slide");
     if (s.title) {
       const head = document.createElement("header");
       head.innerHTML = `${icon ? `<div class="slide-icon" aria-hidden="true">${esc(icon)}</div>` : ""}<h1>${esc(title)}</h1>`;
       slide.append(head);
     }
-    for (const i of s.blocks) {
-      const el = copy(i);
-      if (el) slide.append(el);
-    }
+    if (s.layout === "image-left" || s.layout === "image-right") twoColumns(s);
+    else appendBlocks(slide, s.blocks);
     root.querySelector(".slide-count").textContent = $t("{current} / {total}", {
       current: at + 1,
       total: slides.length,

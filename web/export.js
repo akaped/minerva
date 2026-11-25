@@ -1,6 +1,7 @@
 // Prepares an exported note for printing: renders diagrams, waits for images and
 // fonts, then tells the app it is ready (or prints when opened on its own).
 (async () => {
+  const preview = new URLSearchParams(location.search).get("preview") === "1";
   const codes = [...document.querySelectorAll("pre > code.language-mermaid")];
   if (codes.length) {
     try {
@@ -46,10 +47,10 @@
     ),
   );
   await document.fonts?.ready;
+  if (preview) return;
   if (window.parent !== window)
-    window.parent.postMessage(
-      { type: "minerva-export-ready" },
-      location.origin,
-    );
+    // Desktop webviews can report an opaque origin for their custom scheme.
+    // The host verifies the sending frame; this message contains no note data.
+    window.parent.postMessage({ type: "minerva-export-ready" }, "*");
   else window.print();
 })();

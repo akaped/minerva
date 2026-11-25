@@ -10,6 +10,26 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+### Added
+
+- Add contextual slash commands for inline formatting in existing blocks and five editable slide layouts for Presentation mode.
+- Add `/remind` to insert a date and time that appears under Reminders → From notes.
+
+### Changed
+
+- Add bottom navigation, quick note creation, and a compact header on phones.
+- Align publishing options with their radio buttons in the Share dialog.
+
+### Fixed
+
+- Apply the selected PDF template when exporting a note and show a preview before export.
+- Keep a shared block with the person editing it first until they leave the block.
+
+### Security
+
+- Update Markdown rendering, HTML sanitization, SMTP, SQLite, URL parsing, and desktop cookie dependencies to patched versions.
+- Update the transitive Hono dependencies used by the MCP test tooling.
+
 ## [0.8.1] - 2026-11-25
 
 - Add account-owned AI providers under User settings, including ChatGPT sign-in on configured servers.

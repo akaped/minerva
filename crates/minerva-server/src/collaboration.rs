@@ -208,6 +208,10 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
         (Some(Role::Editor), _) | (Some(Role::Viewer), true) => {}
         _ => return Err(forbidden()),
     }
+    let client_id = v["client_id"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() < 100);
+    let seen = now();
     let doc = load(d, &original)?;
     if !raw.is_empty() {
         if raw.len() > 1_500_000 {
@@ -222,6 +226,35 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
             .map_err(|_| bad("Invalid CRDT update"))?;
     }
     let mut merged = project(&doc, &original)?;
+    // A stale browser can send edits before its presence view has caught up.
+    // Check its proposed document before storing either the CRDT or the note.
+    if let Some(client) = client_id.filter(|_| !raw.is_empty()) {
+        let locked = d.presence.get(nid).into_iter().flatten().any(|peer| {
+            peer.editing
+                && peer.seen + 10 > seen
+                && (peer.client_id != client || peer.user_id != actor.id)
+                && sharing::peer_allowed(d, &peer.user_id, &original)
+                && peer.active_block.as_ref().is_some_and(|id| {
+                    original
+                        .blocks
+                        .iter()
+                        .find(|b| &b.id == id)
+                        .is_some_and(|old| {
+                            merged
+                                .blocks
+                                .iter()
+                                .find(|b| &b.id == id)
+                                .is_none_or(|new| old.markdown != new.markdown)
+                        })
+                })
+        });
+        if locked {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "Another editor is editing this block".into(),
+            ));
+        }
+    }
     let encoded = STANDARD.encode(
         doc.transact()
             .encode_state_as_update_v1(&StateVector::default()),
@@ -263,12 +296,9 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
     }
     Arc::make_mut(&mut d.collaboration).insert(nid.into(), Arc::new(encoded.clone()));
     let peers = d.presence.entry(nid.into()).or_default();
-    peers.retain(|p| p.seen + 10 > now());
+    peers.retain(|p| p.seen + 10 > seen);
     let mut denied_block = None;
-    if let Some(client) = v["client_id"]
-        .as_str()
-        .filter(|s| !s.is_empty() && s.len() < 100)
-    {
+    if let Some(client) = client_id {
         peers.retain(|p| p.client_id != client || p.user_id != actor.id);
         let active_block = v["active_block"]
             .as_str()
@@ -293,7 +323,7 @@ pub(super) fn sync(d: &mut Data, actor: &Actor, nid: &str, v: Value) -> Result<V
                 name: actor.name.clone(),
                 active_block,
                 editing,
-                seen: now(),
+                seen,
             });
         }
     }

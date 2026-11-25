@@ -351,13 +351,21 @@ export class Collaboration {
         replaceText(this.doc.getText("block:" + block.id), block.markdown);
     }, "local");
   }
-  async sync() {
+  /** Ask the server who owns the block before making its text editable. */
+  async claimBlock(id) {
+    while (this.sending) await this.sending;
+    const result = await this.sync({ active_block: id, editing: true });
+    return Boolean(result?.can_edit && result.peers.some(
+      (peer) => peer.client_id === this.clientId && peer.active_block === id && peer.editing,
+    ));
+  }
+  async sync(intent = null) {
     if (this.closed) return;
     if (this.sending) return this.sending;
     const updates = this.pending.splice(0);
     this.sending = (async () => {
       try {
-        const presence = this.presence();
+        const presence = intent ?? this.presence();
         this.sentPresence = JSON.stringify(presence);
         const result = await this.api(this.syncPath, "POST", {
           update: updates.length ? encode(Y.mergeUpdates(updates)) : "",
@@ -399,6 +407,7 @@ export class Collaboration {
           this.pending.length ? $t("Saving…") : $t("Live · all changes saved"),
           this.pending.length > 0,
         );
+        return result;
       } catch (e) {
         this.pending.unshift(...updates);
         this.onStatus(

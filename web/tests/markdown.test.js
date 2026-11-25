@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitMarkdown, blockCommands, highlightSnippet } from "../markdown.js";
+import { splitMarkdown, blockCommands, highlightSnippet, slashCommandContext } from "../markdown.js";
+
+test("slash commands respect block content, selections, and literal slashes", () => {
+  assert.equal(slashCommandContext("  ", 2, 2), "block");
+  assert.equal(slashCommandContext("## Heading ", 11, 11), "inline");
+  assert.equal(slashCommandContext("- existing item", 2, 10), "inline");
+  assert.equal(slashCommandContext("https:", 6, 6), null);
+  assert.equal(slashCommandContext("/usr", 4, 4), null);
+});
 
 test("fenced code stays one block through paste/import, including blank lines", () => {
   assert.deepEqual(

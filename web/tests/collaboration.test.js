@@ -107,3 +107,30 @@ test("IME composition merges with remote edits that arrive while composing", asy
   assert.equal(merged.value, "やあ  Hello世界");
   live.destroy();
 });
+
+test("claiming a block waits for an in-flight sync and requires an editing lease", async () => {
+  const { live, server } = await connected();
+  const requests = [];
+  let finishPoll;
+  live.api = async (_path, _method, body) => {
+    requests.push(body);
+    if (requests.length === 1)
+      await new Promise((resolve) => (finishPoll = resolve));
+    const { client_id, active_block } = body;
+    return {
+      update: encode(Y.encodeStateAsUpdate(server)),
+      can_edit: true,
+      peers: [{ client_id, active_block, editing: requests.length === 3 }],
+    };
+  };
+  const poll = live.sync();
+  const claim = live.claimBlock("a");
+  assert.equal(requests.length, 1);
+  finishPoll();
+  await poll;
+  assert.equal(await claim, false);
+  assert.equal(requests[1].active_block, "a");
+  assert.equal(requests[1].editing, true);
+  assert.equal(await live.claimBlock("a"), true);
+  live.destroy();
+});

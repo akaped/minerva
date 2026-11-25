@@ -5,10 +5,12 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use http_body_util::BodyExt;
 use minerva_server::{app, Store};
 use serde_json::{json, Value};
 use tower::ServiceExt;
+use yrs::{updates::decoder::Decode, Doc, ReadTxn, StateVector, Text, Transact, Update};
 mod common;
 
 async fn post(router: &Router, uri: &str, token: &str, body: Value) -> (StatusCode, Value) {
@@ -67,13 +69,15 @@ async fn the_first_client_to_open_a_block_keeps_it() {
     );
     let at = |client: &str, block: Option<&str>, editing: bool| json!({"update":"","client_id":client,"active_block":block,"editing":editing});
 
-    // The first window opens block b1.
-    let (status, first) = post(&router, &sync, &owner, at("one", Some("b1"), true)).await;
+    let (_, initial) = post(&router, &sync, &owner, at("one", None, false)).await;
+    let block = initial["note"]["blocks"][0]["id"].as_str().unwrap();
+    // The first window opens the block.
+    let (status, first) = post(&router, &sync, &owner, at("one", Some(block), true)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(first["denied_block"].is_null());
     // A second window asking for the same block is turned down and shown the holder.
-    let (_, second) = post(&router, &sync, &owner, at("two", Some("b1"), true)).await;
-    assert_eq!(second["denied_block"], "b1");
+    let (_, second) = post(&router, &sync, &owner, at("two", Some(block), true)).await;
+    assert_eq!(second["denied_block"], block);
     let holder = second["peers"]
         .as_array()
         .unwrap()
@@ -81,7 +85,7 @@ async fn the_first_client_to_open_a_block_keeps_it() {
         .find(|p| p["client_id"] == "one")
         .unwrap();
     assert_eq!(holder["editing"], true);
-    assert_eq!(holder["active_block"], "b1");
+    assert_eq!(holder["active_block"], block);
     let me = second["peers"]
         .as_array()
         .unwrap()
@@ -89,6 +93,26 @@ async fn the_first_client_to_open_a_block_keeps_it() {
         .find(|p| p["client_id"] == "two")
         .unwrap();
     assert_eq!(me["editing"], false);
+    // Even a client with a stale editor open cannot write through the lock.
+    let doc = Doc::new();
+    let state = STANDARD
+        .decode(initial["update"].as_str().unwrap())
+        .unwrap();
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).unwrap())
+        .unwrap();
+    let text = doc.get_or_insert_text(format!("block:{block}"));
+    text.insert(&mut doc.transact_mut(), 0, "second editor ");
+    let update = STANDARD.encode(doc.transact().encode_diff_v1(&StateVector::default()));
+    let mut changed = at("two", Some(block), true);
+    changed["update"] = json!(update);
+    let (status, _) = post(&router, &sync, &owner, changed.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, held) = post(&router, &sync, &owner, at("one", Some(block), true)).await;
+    assert_eq!(
+        held["note"]["blocks"][0]["markdown"],
+        initial["note"]["blocks"][0]["markdown"]
+    );
     // Another block is free.
     let (_, other) = post(&router, &sync, &owner, at("two", Some("b2"), true)).await;
     assert!(other["denied_block"].is_null());
@@ -100,11 +124,17 @@ async fn the_first_client_to_open_a_block_keeps_it() {
         json!({"update":"","client_id":"one","leave":true}),
     )
     .await;
-    let (_, taken) = post(&router, &sync, &owner, at("two", Some("b1"), true)).await;
+    let (_, taken) = post(&router, &sync, &owner, at("two", Some(block), true)).await;
     assert!(taken["denied_block"].is_null());
     assert!(taken["peers"]
         .as_array()
         .unwrap()
         .iter()
         .all(|p| p["client_id"] != "one"));
+    let (status, saved) = post(&router, &sync, &owner, changed).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(saved["note"]["blocks"][0]["markdown"]
+        .as_str()
+        .unwrap()
+        .starts_with("second editor "));
 }

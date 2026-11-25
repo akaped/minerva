@@ -28,7 +28,7 @@ import { createWritingAssist } from "./ai-writing.js";
 import { attachPreview, previewHTML, headingLevel } from "./live-preview.js";
 import { renderDashboard } from "./dashboard.js";
 import { emojiPicker } from "./emoji-picker.js";
-import { splitMarkdown, blockCommands, highlightSnippet } from "./markdown.js";
+import { splitMarkdown, blockCommands, highlightSnippet, slashCommandContext } from "./markdown.js";
 import { Collaboration, watchNote, liveSignals } from "./collaboration.js";
 import { keepDoc, keptDoc, forgetDocs } from "./offline-docs.js";
 import { createComments } from "./comments.js";
@@ -42,7 +42,7 @@ import {
 } from "./graph.js";
 import { sourceOffset, sourceRange, objectOffset } from "./caret-map.js";
 import { recordingBlocks, timestamp } from "./recording.js";
-import { present } from "./presentation.js";
+import { present, slideTemplate } from "./presentation.js";
 import {
   startWorker,
   offlineReading,
@@ -234,10 +234,12 @@ async function loadPlugins() {
 }
 applyTheme();
 systemTheme.addEventListener("change", applyTheme);
-loadPlugins();
+const pluginsLoaded = loadPlugins();
 let live = null,
-  needsBlockRefresh = false;
+  needsBlockRefresh = false,
+  blockEditRequest = null;
 function stopLive() {
+  blockEditRequest = null;
   live?.destroy();
   live = null;
   comments?.detach();
@@ -2591,6 +2593,7 @@ function queueSave() {
   return saveChain;
 }
 async function flush() {
+  blockEditRequest = null;
   if (document.activeElement?.matches(".block textarea"))
     document.activeElement.blur();
   if (document.activeElement?.id === "note-title")
@@ -2767,7 +2770,7 @@ function renderEditor() {
     $("#favorite").textContent = note.favorite ? "★" : "☆";
     $("#favorite").setAttribute("aria-pressed", String(!!note.favorite));
   });
-  action($("#export"), "click", exportNote);
+  action($("#export"), "click", () => exportNote());
   action($("#metadata"), "click", () => metadataDialog());
   action($("#copy-note-link"), "click", async () => {
     await navigator.clipboard.writeText(`${serverOrigin()}/?note=${note.id}`);
@@ -4395,6 +4398,7 @@ document.addEventListener("click", (e) => {
 function bindBlock(el) {
   const id = el.dataset.block;
   action($(".task-toggle", el), "click", async () => {
+    if (!editable() || blockLocked(id)) return;
     const i = note.blocks.findIndex((b) => b.id === id),
       b = note.blocks[i];
     live?.boundary();
@@ -4797,11 +4801,10 @@ function renderedSelection() {
   return { id, ...sourceRange(b.markdown, before, through.slice(before.length)) };
 }
 /** Opens the selected block for editing with the same text selected. */
-function editSelection(selection) {
+async function editSelection(selection) {
   getSelection().removeAllRanges();
   $(".view-format-bar")?.remove();
-  editBlock(selection.id, selection.start);
-  const ta = $(`[data-block="${CSS.escape(selection.id)}"] textarea`);
+  const ta = await editBlock(selection.id, selection.start);
   ta?.setSelectionRange(selection.start, selection.end);
   return ta;
 }
@@ -4818,9 +4821,9 @@ function updateViewFormatBar() {
   bar.dataset.block = selection.id;
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", $t("Format selection"));
-  bindFormatBar(bar, (dataset) => {
+  bindFormatBar(bar, async (dataset) => {
     const current = renderedSelection();
-    const ta = current && editSelection(current);
+    const ta = current && (await editSelection(current));
     if (ta) formatAction(ta, dataset);
   });
   block.append(bar);
@@ -4831,7 +4834,7 @@ document.addEventListener("selectionchange", () => {
 });
 document.addEventListener(
   "keydown",
-  (e) => {
+  async (e) => {
     if (e.target.closest?.("input, textarea, select, dialog")) return;
     const selection = renderedSelection();
     if (!selection) return;
@@ -4848,15 +4851,28 @@ document.addEventListener(
     if (format || (shortcut === "j" && !e.shiftKey && !shareMode)) {
       e.preventDefault();
       e.stopPropagation();
-      const ta = editSelection(selection);
+      const ta = await editSelection(selection);
       if (ta) formatAction(ta, format ? { format } : { ai: "" });
       return;
     }
     // Typing over the selection replaces it, as in the field.
     const typing =
       !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1;
-    if (typing || e.key === "Backspace" || e.key === "Delete")
-      editSelection(selection);
+    if (typing || e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+      const ta = await editSelection(selection);
+      if (ta) {
+        const text = typing ? e.key : "";
+        const caret = ta.selectionStart + text.length;
+        replaceRange(ta, {
+          from: ta.selectionStart,
+          to: ta.selectionEnd,
+          text,
+          selStart: caret,
+          selEnd: caret,
+        });
+      }
+    }
   },
   true,
 );
@@ -5089,10 +5105,47 @@ function closeLinkPicker() {
   linkPicker?.list.remove();
   linkPicker = null;
 }
-function editBlock(id, caret = null) {
+async function editBlock(id, caret = null) {
+  const selector = `#blocks [data-block="${CSS.escape(id)}"]`;
+  const el = $(selector);
+  if (!editable() || !el || $("textarea", el) || blockLocked(id)) return;
+  const client = live;
+  const request = { client, id };
+  if (blockEditRequest?.client === client && blockEditRequest.id === id) return;
+  blockEditRequest = request;
+  try {
+    if (client) {
+      let granted;
+      try {
+        granted = await client.claimBlock(id);
+      } catch (err) {
+        // Disconnected personal editors can still save locally and sync later.
+        if (shareMode || (err.status !== 0 && !(err instanceof TypeError)))
+          throw err;
+        granted = true;
+      }
+      if (blockEditRequest !== request || client !== live || !editable()) {
+        if (!blockEditRequest && client === live) client.sync().catch(() => {});
+        return;
+      }
+      if (!granted) {
+        if (!blockLocked(id))
+          toast($t("{value} is already editing this block.", { value: $t("Someone") }));
+        return;
+      }
+    }
+    const block = $(selector);
+    if (block && !$("textarea", block)) return openBlockEditor(id, caret);
+    client?.sync().catch(() => {});
+  } catch (err) {
+    if (blockEditRequest === request && client === live) error(err);
+  } finally {
+    if (blockEditRequest === request) blockEditRequest = null;
+  }
+}
+function openBlockEditor(id, caret) {
   revealBlock(id);
-  const el = $(`[data-block="${CSS.escape(id)}"]`);
-  if (!el || $("textarea", el) || blockLocked(id)) return;
+  const el = $(`#blocks [data-block="${CSS.escape(id)}"]`);
   const b = note.blocks.find((b) => b.id === id);
   const body = $(".block-body", el);
   const index = () => note.blocks.findIndex((b) => b.id === id);
@@ -5334,7 +5387,7 @@ function editBlock(id, caret = null) {
     } else ta.oninput();
   });
   ta.onblur = () => {
-    if (composition) return;
+    if (composition || ta.dataset.inlineCommands) return;
     $(".format-bar", el)?.remove();
     closeLinkPicker();
     closing = close();
@@ -5498,12 +5551,28 @@ function editBlock(id, caret = null) {
       const selectedText = ta.value.slice(ta.selectionStart, ta.selectionEnd);
       ta.blur();
       closing.then(() => blockMenu(id, selectedText)).catch(error);
-    } else if (e.key === "/" && !ta.value) {
-      e.preventDefault();
+    }
+  };
+  ta.addEventListener("beforeinput", (e) => {
+    if (
+      e.inputType !== "insertText" || e.data !== "/" ||
+      e.isComposing || composition || !e.cancelable || !editable() ||
+      insideCodeFence(ta.value, ta.selectionStart)
+    ) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const context = slashCommandContext(ta.value, start, end);
+    if (!context) return;
+    e.preventDefault();
+    if (context === "inline") {
+      $(".format-bar", el)?.remove();
+      closeLinkPicker();
+      blockMenu(id, "", { ta, start, end });
+    } else {
       ta.blur();
       blockMenu(id);
     }
-  };
+  });
   ta.onpaste = (e) => {
     const files = [...e.clipboardData.files];
     if (files.length) {
@@ -5587,6 +5656,7 @@ function editBlock(id, caret = null) {
       })
       .catch(error);
   };
+  return ta;
 }
 function newBlock(markdown = "", index = note?.blocks.length || 0) {
   return {
@@ -5609,7 +5679,7 @@ async function appendToBlock(existingId, text) {
   note.rendered[note.blocks.indexOf(b)] = await renderMarkdown(b.markdown);
   markDirty();
   renderBlocks();
-  editBlock(b.id);
+  await editBlock(b.id);
   return b;
 }
 /**
@@ -5884,15 +5954,62 @@ function reminderDialog(existingId) {
     toast($t("Reminder set for {date}", { date: when.toLocaleString() }));
   };
 }
-/** How each `/` command shows in the menu: group, icon, description, shortcut. */
+const INLINE_COMMANDS = [
+  [msg("Highlight"), "@format", "highlight"],
+  [msg("Inline code"), "@format", "code"],
+  [msg("Bold"), "@format", "bold"],
+  [msg("Italic"), "@format", "italic"],
+  [msg("Strikethrough"), "@format", "strike"],
+  [msg("Link"), "@format", "link"],
+];
+const SLIDE_COMMANDS = [
+  [msg("Normal slide"), "@slide", "normal"],
+  [msg("Title slide"), "@slide", "title"],
+  [msg("Section divider slide"), "@slide", "section"],
+  [msg("Text left, image right"), "@slide", "image-right"],
+  [msg("Image left, text right"), "@slide", "image-left"],
+];
+const NOTE_REMINDER = [msg("Reminder"), "@note-reminder", "/remind date time alarm"];
+function reminderStamp() {
+  const now = new Date();
+  now.setHours(now.getHours() + 1, 0, 0, 0);
+  return `⏰${localDate(now)} ${String(now.getHours()).padStart(2, "0")}:00`;
+}
+/** Inserts a slide boundary and separate editable fields in one change. */
+async function insertSlide(layout, afterId) {
+  const current = note;
+  const parts = slideTemplate(layout);
+  const rendered = await Promise.all(parts.map(renderMarkdown));
+  if (current !== note || !editable()) return;
+  const index = current.blocks.findIndex((block) => block.id === afterId);
+  const replace = index >= 0 && !current.blocks[index].markdown.trim();
+  if (replace && blockLocked(afterId)) return;
+  const at = index < 0 ? current.blocks.length : index + (replace ? 0 : 1);
+  const future = current.blocks.slice(at + (replace ? 1 : 0));
+  const blocks = parts.map((markdown, i) => newBlock(markdown, at + i));
+  // A slide inserted above existing content ends before that content resumes.
+  if (future.some((block) => block.markdown.trim())) {
+    blocks.push(newBlock("---", at + blocks.length));
+    rendered.push(renderedCache.get("---") || pendingHTML("---"));
+  }
+  live?.boundary();
+  current.blocks.splice(at, replace ? 1 : 0, ...blocks);
+  current.rendered.splice(at, replace ? 1 : 0, ...rendered);
+  markDirty();
+  renderBlocks();
+  const field = await editBlock(blocks[1].id);
+  field?.setSelectionRange(parts[1].indexOf(" ") + 1, parts[1].length);
+}
 const COMMAND_GROUPS = [
   msg("Basic"),
   msg("Lists"),
   msg("Media & links"),
   msg("Advanced"),
+  msg("Slides"),
   msg("People & time"),
   msg("Plugins"),
 ];
+/** How each `/` command shows in the menu: group, icon, description, shortcut. */
 const COMMAND_LOOK = {
   Text: ["Basic", "Aa", $t("Plain writing"), ""],
   "Heading 1": ["Basic", "H1", $t("Big section title"), "#"],
@@ -5901,6 +6018,10 @@ const COMMAND_LOOK = {
   Quote: ["Basic", "❝", $t("Quote someone"), ">"],
   Divider: ["Basic", "—", $t("Separate sections"), "---"],
   Highlight: ["Basic", "▍", $t("Mark important text"), "=="],
+  "Inline code": ["Basic", "</>", $t("Format a code span"), "`"],
+  Bold: ["Basic", "B", "", "**"],
+  Italic: ["Basic", "I", "", "*"],
+  Strikethrough: ["Basic", "S", "", "~~"],
   Emoji: ["Basic", "☺", $t("Search every emoji"), ""],
   Task: ["Lists", "☑", $t("Track something to do"), "[]"],
   "Bullet list": ["Lists", "•", $t("A simple list"), "-"],
@@ -5919,14 +6040,21 @@ const COMMAND_LOOK = {
   "Callout · Note": ["Advanced", "ℹ", $t("A highlighted note"), ""],
   "Callout · Tip": ["Advanced", "✦", $t("A helpful tip"), ""],
   "Callout · Warning": ["Advanced", "⚠", $t("A warning to notice"), ""],
+  "Normal slide": ["Slides", "▤", $t("A heading and body text"), ""],
+  "Title slide": ["Slides", "T", $t("A centered title and subtitle"), ""],
+  "Section divider slide": ["Slides", "—", $t("A centered section heading"), ""],
+  "Text left, image right": ["Slides", "◧", $t("Text on the left, image on the right"), ""],
+  "Image left, text right": ["Slides", "◨", $t("Image on the left, text on the right"), ""],
   "Assign to someone": ["People & time", "@", $t("Email a teammate"), ""],
-  "Remind me": ["People & time", "⏰", $t("Get this block by email"), ""],
+  Reminder: ["People & time", "⏰", $t("Insert a time that appears in Reminders"), "/remind"],
+  "Remind me": ["People & time", "⏰", $t("Get this block by email"), "/remindme"],
 };
-function blockMenu(existingId, capturedSelection = "") {
+function blockMenu(existingId, capturedSelection = "", inline = null) {
   if (!editable()) return;
   modal.innerHTML =
     `<div class="command-menu-search"><span aria-hidden="true">/</span><input id="command-search" aria-label="${$t("Search block commands")}" placeholder="${$t("Type to search: heading, task, file…")}" autocomplete="off"></div><div id="command-results" class="command-list" role="listbox" aria-label="${$t("Block types")}"></div><footer class="command-menu-hint"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>${shortcutKeys("Enter")}</kbd> insert</span><span><kbd>Esc</kbd> close</span></footer>`;
   // The menu opens by the block it inserts into, like a popover.
+  if (inline) inline.ta.dataset.inlineCommands = "1";
   modal.classList.add("command-menu");
   modal.addEventListener(
     "close",
@@ -5935,6 +6063,10 @@ function blockMenu(existingId, capturedSelection = "") {
       modal.style.removeProperty("top");
       modal.style.removeProperty("bottom");
       modal.style.removeProperty("left");
+      if (inline) {
+        delete inline.ta.dataset.inlineCommands;
+        if (inline.ta.isConnected && !modal.open) inline.ta.focus();
+      }
     },
     { once: true },
   );
@@ -5959,11 +6091,15 @@ function blockMenu(existingId, capturedSelection = "") {
   };
   const input = $("#command-search");
   const targetNote = note.id;
-  // Reminders arrive by email, so they need a server that sends it.
-  let commands = blockCommands.filter(
-    (c) => c[1] !== "@remind" || (mailEnabled && !shareMode),
-  );
-  if (!shareMode)
+  const commands = inline
+    ? [...INLINE_COMMANDS, NOTE_REMINDER]
+    : [
+        NOTE_REMINDER,
+        ...blockCommands.filter((c) => c[1] !== "@remind" || (mailEnabled && !shareMode)),
+        INLINE_COMMANDS[1],
+        ...SLIDE_COMMANDS,
+      ];
+  if (!inline && !shareMode)
     api("server-plugins/capabilities")
       .then((result) => {
         if (!modal.open || $("#command-search") !== input) return;
@@ -5984,6 +6120,26 @@ function blockMenu(existingId, capturedSelection = "") {
     const command = matches[index];
     if (!command || (command[3] && !command[3].available)) return;
     modal.close();
+    if (note?.id !== targetNote || !editable()) return;
+    if (inline) {
+      const { ta, start, end } = inline;
+      if (!ta.isConnected || ta.readOnly || blockLocked(existingId)) return;
+      ta.focus();
+      ta.setSelectionRange(start, end);
+      if (command[1] === "@format") return applyFormat(ta, command[2]);
+      const prefix = ta.value.slice(start, end);
+      const stamp = reminderStamp();
+      const text = prefix ? prefix + " " + stamp : stamp;
+      replaceRange(ta, {
+        from: start,
+        to: end,
+        text,
+        selStart: start + text.length - stamp.length + 1,
+        selEnd: start + text.length,
+      });
+      return;
+    }
+    if (command[1] === "@slide") return insertSlide(command[2], existingId);
     if (command[1] === "@plugin") {
       if (note?.id !== targetNote) return;
       await flush();
@@ -6034,28 +6190,38 @@ function blockMenu(existingId, capturedSelection = "") {
     if (command[1] === "@emoji") return emojiDialog(existingId);
     if (command[1] === "@toggle") return insertToggle(existingId);
     if (command[1] === "@remind") return reminderDialog(existingId);
+    const reminder = command[1] === "@note-reminder";
+    const format = command[1] === "@format";
     let b = note.blocks.find((b) => b.id === existingId);
+    if (b && blockLocked(existingId)) return;
+    if (reminder && b?.markdown.trim())
+      return appendToBlock(existingId, reminderStamp());
+    let text = command[1];
+    if (reminder) text = `${$t("Follow up")} ${reminderStamp()}`;
+    if (format) text = "";
     if (!b) {
-      b = newBlock(command[1]);
+      b = newBlock(text);
       note.blocks.push(b);
       note.rendered.push("");
-    } else b.markdown = command[1];
+    } else if (!format) b.markdown = text;
     markDirty();
     renderBlocks();
-    editBlock(b.id);
-    if (command[1] === "[[" || command[1] === "![[")
-      updateLinkPicker($(".block textarea")).catch(() => closeLinkPicker());
+    const ta = await editBlock(b.id);
+    if (ta && format) applyFormat(ta, command[2]);
+    if (ta && reminder) ta.setSelectionRange(0, $t("Follow up").length);
+    if (ta && (command[1] === "[[" || command[1] === "![["))
+      updateLinkPicker(ta).catch(() => closeLinkPicker());
   }
   const look = (c) =>
     c[1] === "@plugin"
       ? ["Plugins", "✳", `/${c[3]?.id || ""}`, ""]
       : COMMAND_LOOK[c[0]] || ["Basic", "·", "", ""];
   function draw(reset = false) {
-    const query = input.value.trim().toLowerCase();
+    const query = input.value.trim().replace(/^\//, "").toLowerCase();
     // Grouped in menu order, so arrow keys follow what is on screen.
     matches = commands
       .filter((c) =>
-        `${c[0]} ${$t(c[0])} ${c[2]} ${look(c)[2]}`
+        `${c[0]} ${$t(c[0])} ${c[2]} ${look(c).join(" ")}`
           .toLowerCase()
           .includes(query),
       )
@@ -6405,56 +6571,34 @@ const EXPORT_FORMATS = [
     "A single self-contained file with styles and images embedded.",
   ],
 ];
-async function exportNote() {
+async function exportNote(draft = null) {
   if (shareMode) return downloadMarkdown();
-  await flush();
   const targetId = note.id;
-  let saved = {};
-  try {
-    saved = JSON.parse(localStorage.getItem("minerva.export") || "{}");
-  } catch {
-    saved = {};
+  await flush();
+  await pluginsLoaded;
+  if (note?.id !== targetId) return;
+  let saved = draft || {};
+  if (!draft) {
+    try {
+      saved = JSON.parse(localStorage.getItem("minerva.export") || "{}") || {};
+    } catch {
+      // Preferences are optional.
+    }
   }
   const format = saved.format || "pdf";
-  modal.innerHTML = `<form id="export-form"><h2>${$t("Export “{title}”", { title: esc(note.title) })}</h2><p>${$t("Exports include the latest saved version of this note.")}</p><div class="export-formats" role="radiogroup" aria-label="${$t("Format")}">${EXPORT_FORMATS.map(([value, label, help]) => `<label class="export-format"><input type="radio" name="format" value="${value}" ${value === format ? "checked" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("")}</div><fieldset class="export-options"><legend>${$t("Options")}</legend><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="cover" ${saved.cover === false ? "" : "checked"}>${$t("Include cover image")}</label><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="meta" ${saved.meta === false ? "" : "checked"}>${$t("Show date and tags under the title")}</label><label class="checkbox-label" data-for="md zip"><input type="checkbox" name="front_matter" ${saved.front_matter === false ? "" : "checked"}>${$t("Add front matter (title, tags, date)")}</label><label data-for="pdf html">${$t("Template")} <select name="template">${templateOptions(note.print_template ?? saved.template ?? "")}</select></label><p class="hint template-help" data-for="pdf html"></p><button type="button" class="btn" id="export-metadata" data-for="pdf html">${icon("list")}${$t("Edit metadata…")}</button><label data-for="pdf">${$t("Page size")} <select name="size"><option value="a4" ${saved.size !== "letter" ? "selected" : ""}>A4</option><option value="letter" ${saved.size === "letter" ? "selected" : ""}>${$t("US Letter")}</option></select></label></fieldset><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-export">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Export")}</button></footer></form>`;
+  modal.innerHTML = `<form id="export-form"><h2>${$t("Export “{title}”", { title: esc(note.title) })}</h2><p>${$t("Exports include the latest saved version of this note.")}</p><div class="export-layout"><div class="export-controls"><div class="export-formats" role="radiogroup" aria-label="${$t("Format")}">${EXPORT_FORMATS.map(([value, label, help]) => `<label class="export-format"><input type="radio" name="format" value="${value}" ${value === format ? "checked" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("")}</div><fieldset class="export-options"><legend>${$t("Options")}</legend><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="cover" ${saved.cover === false ? "" : "checked"}>${$t("Include cover image")}</label><label class="checkbox-label" data-for="pdf html"><input type="checkbox" name="meta" ${saved.meta === false ? "" : "checked"}>${$t("Show date and tags under the title")}</label><label class="checkbox-label" data-for="md zip"><input type="checkbox" name="front_matter" ${saved.front_matter === false ? "" : "checked"}>${$t("Add front matter (title, tags, date)")}</label><label data-for="pdf html">${$t("Template")} <select name="template">${templateOptions(draft?.template ?? note.print_template ?? saved.template ?? "")}</select></label><p class="hint template-help" data-for="pdf html"></p><button type="button" class="btn" id="export-metadata" data-for="pdf html">${icon("list")}${$t("Edit metadata…")}</button><label data-for="pdf">${$t("Page size")} <select name="size"><option value="a4" ${saved.size !== "letter" ? "selected" : ""}>A4</option><option value="letter" ${saved.size === "letter" ? "selected" : ""}>${$t("US Letter")}</option></select></label></fieldset></div><section class="export-preview" data-for="pdf" aria-labelledby="export-preview-label"><h3 id="export-preview-label">${$t("Print preview")}</h3><iframe id="export-preview" title="${$t("Print preview")}"></iframe></section></div><div class="form-error" role="alert"></div><footer><button type="button" class="btn" id="cancel-export">${$t("Cancel")}</button><button class="btn primary" type="submit">${$t("Export")}</button></footer></form>`;
   modal.showModal();
   const form = $("#export-form");
-  const sync = () => {
-    const chosen = form.format.value;
-    $$("[data-for]", form).forEach(
-      (el) => (el.hidden = !el.dataset.for.split(" ").includes(chosen)),
-    );
-  };
-  const describe = () => {
-    const t = printTemplates.find((x) => x.id === form.template.value);
-    $(".template-help", form).textContent = t
-      ? `${$t("{description} For: {users}.", { description: t.description, users: t.users })}${t.orientation === "landscape" ? $t(" Landscape pages.") : ""}`
-      : $t("Minerva's own clean layout.");
-  };
-  form.addEventListener("change", () => {
-    sync();
-    describe();
+  const preview = $("#export-preview", form);
+  const readOptions = () => ({
+    format: form.format.value,
+    cover: form.cover.checked,
+    meta: form.meta.checked,
+    front_matter: form.front_matter.checked,
+    size: form.size.value,
+    template: form.template.value,
   });
-  sync();
-  describe();
-  $("#export-metadata").onclick = () =>
-    metadataDialog(form.template.value, exportNote);
-  $("#cancel-export").onclick = () => modal.close();
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const options = {
-      format: form.format.value,
-      cover: form.cover.checked,
-      meta: form.meta.checked,
-      front_matter: form.front_matter.checked,
-      size: form.size.value,
-      template: form.template.value,
-    };
-    try {
-      localStorage.setItem("minerva.export", JSON.stringify(options));
-    } catch {
-      // Preference only.
-    }
+  const exportUrl = (options, isPreview = false) => {
     const query = new URLSearchParams({
       format: options.format === "pdf" ? "print" : options.format,
       cover: options.cover ? "1" : "0",
@@ -6463,6 +6607,38 @@ async function exportNote() {
       size: options.size,
       template: options.template,
     });
+    if (isPreview) query.set("preview", "1");
+    return `/export/${encodeURIComponent(targetId)}?${query}`;
+  };
+  const sync = () => {
+    const options = readOptions();
+    $$("[data-for]", form).forEach(
+      (el) => (el.hidden = !el.dataset.for.split(" ").includes(options.format)),
+    );
+    const t = printTemplates.find((x) => x.id === options.template);
+    $(".template-help", form).textContent = t
+      ? `${$t("{description} For: {users}.", { description: t.description, users: t.users })}${t.orientation === "landscape" ? $t(" Landscape pages.") : ""}`
+      : $t("Minerva's own clean layout.");
+    if (options.format === "pdf") {
+      const url = exportUrl(options, true);
+      if (preview.getAttribute("src") !== url) preview.src = url;
+    }
+  };
+  form.addEventListener("change", sync);
+  sync();
+  $("#export-metadata").onclick = () => {
+    const options = readOptions();
+    metadataDialog(options.template, () => exportNote(options).catch(error));
+  };
+  $("#cancel-export").onclick = () => modal.close();
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const options = readOptions();
+    try {
+      localStorage.setItem("minerva.export", JSON.stringify(options));
+    } catch {
+      // Preference only.
+    }
     // Remember the template for this note (for editors).
     if (editable() && options.template !== (note.print_template || ""))
       api(`notes/${targetId}/metadata`, "PUT", {
@@ -6471,7 +6647,7 @@ async function exportNote() {
       })
         .then((r) => note?.id === targetId && Object.assign(note, r))
         .catch(() => {});
-    const url = `/export/${encodeURIComponent(targetId)}?${query}`;
+    const url = exportUrl(options);
     modal.close();
     if (options.format === "pdf") return printDocument(url);
     const a = document.createElement("a");
@@ -6497,6 +6673,7 @@ function printDocument(url) {
     if (printed) return;
     printed = true;
     window.removeEventListener("message", ready);
+    if (!frame.isConnected) return;
     try {
       frame.contentWindow.focus();
       frame.contentWindow.print();
@@ -10524,7 +10701,7 @@ async function renderIntegrations() {
   const personal = data.user.admin ? null : await api("api-tokens");
   $("#breadcrumb").textContent = $t("MCP connections");
   $("#content").innerHTML =
-    `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div><button class="btn primary" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || $t("Unavailable workspace"))}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
+    `<section class="page"><div class="eyebrow">${$t("YOUR KNOWLEDGE, WITH CONTEXT")}</div><div class="page-heading"><div><h1>${$t("Connect your AI tools")}</h1><p class="subtitle">${$t("Let your assistant find answers in your notes and structured records.")}</p></div></div><div class="welcome-banner"><div class="welcome-copy"><div class="eyebrow">${$t("MODEL CONTEXT PROTOCOL")}</div><h2>${$t("A useful connection. A clear boundary.")}</h2><p>${$t("Access to one workspace: read only, or read and write when you choose. Your folder permissions always apply.")}<br>${$t("Create a separate, expiring credential for each AI tool.")}</p></div><div class="mcp-art" aria-hidden="true">⌘</div></div><section class="panel"><div class="panel-heading"><div><h2>${$t("Your connections")}</h2><p>${$t("Credentials are shown once. Revoke a connection to stop its access immediately.")}</p></div><button class="btn" id="create-mcp" ${!workspaceId ? "disabled" : ""}>${icon("plus")}${$t("Create credential")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("CLIENT")}</th><th>${$t("WORKSPACE")}</th><th>${$t("ACCESS")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${tokens.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(data.workspaces.find((w) => w.id === t.workspace_id)?.name || $t("Unavailable workspace"))}</td><td><span class="pill">${t.access === "read_write" ? $t("Read and write") : $t("Read only")}</span></td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No AI connections yet.")}</td></tr>`}</tbody></table></div></section>${
       personal
         ? `<section class="panel"><div class="panel-heading"><div><h2>${$t("Personal API tokens")}</h2><p>${$t("For your scripts and the")} <code>minerva-cli</code> ${$t("command: a token acts as you, with your permissions, but cannot change your password, second factor or tokens.")}</p></div><button class="btn" id="create-api-token">${icon("plus")}${$t("New token")}</button></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>${$t("NAME")}</th><th>${$t("ACCESS")}</th><th>${$t("CREATED")}</th><th>${$t("LAST USED")}</th><th>${$t("EXPIRES")}</th><th></th></tr></thead><tbody>${personal.map((t) => `<tr><td>${esc(t.name)}<small>${esc(t.workspace_id ? data.workspaces.find((w) => w.id === t.workspace_id)?.name || t.workspace_id : $t("All accessible workspaces"))}</small></td><td><span class="pill">${t.access === "clipper" ? $t("Adds clipped notes") : t.access === "read_only" ? $t("Read only") : $t("Read and write")}</span></td><td>${date(t.created_at)}</td><td>${t.last_used_at ? date(t.last_used_at) : $t("Never")}</td><td>${date(t.expires_at)} ${t.expires_at < Date.now() / 1000 ? $t("· Expired") : ""}</td><td><button class="btn danger" data-revoke-token="${t.id}">${$t("Revoke")}</button></td></tr>`).join("") || `<tr><td colspan="6">${$t("No API tokens yet.")}</td></tr>`}</tbody></table></div></section>`
         : ""

@@ -34,11 +34,11 @@ pub(super) async fn export(
             cover: flag(&q, "cover", true),
             meta: flag(&q, "meta", true),
             letter: q.get("size").is_some_and(|s| s == "letter"),
-            // Without a valid choice, documents use the Standard template.
-            template: q
-                .get("template")
-                .map(String::as_str)
-                .into_iter()
+            // An explicit choice takes precedence over the note's saved template.
+            template: std::iter::once(
+                q.get("template")
+                    .map_or(n.print_template.as_str(), String::as_str),
+            )
                 .chain([plugins::DEFAULT_PDF_TEMPLATE])
                 .find(|t| plugins::get(plugins::Kind::PdfPrints, t).is_some())
                 .map(String::from),
