@@ -333,6 +333,10 @@ const noteTabs =
         esc,
         error,
         onBrowse: () => navigate("all"),
+        onPhoneBack: async () => {
+          await navigate(view, folderId);
+          $("#content")?.focus({ preventScroll: true });
+        },
         onChange: () => changedElsewhere(),
         onGraph: (id) => navigate("graph", id).catch(error),
       })
@@ -1542,6 +1546,13 @@ function syncSidebarToggle() {
         : !desktopSidebarCollapsed,
     ),
   );
+  const more = $("#phone-more");
+  if (more) {
+    const open = sidebarOnPhone.matches && sidebar.classList.contains("open");
+    more.setAttribute("aria-expanded", String(open));
+    $(".workspace-shell > .main").inert = open;
+    $(".note-tab-deck").inert = open;
+  }
 }
 sidebarOnPhone.addEventListener("change", () => {
   setMobileSidebar(false);
@@ -1557,6 +1568,8 @@ function bindSidebarToggle() {
   if (!toggle || !sidebar) return;
   sidebar.id = "app-sidebar";
   toggle.setAttribute("aria-controls", sidebar.id);
+  const more = $("#phone-more");
+  more?.setAttribute("aria-controls", sidebar.id);
   const close = document.createElement("button");
   close.className = "mobile-sidebar-close";
   close.type = "button";
@@ -1566,7 +1579,14 @@ function bindSidebarToggle() {
   setMobileSidebar(false);
   const dismiss = () => {
     setMobileSidebar(false);
-    toggle.focus();
+    (more || toggle).focus();
+  };
+  const toggleMobile = () => {
+    if (sidebar.classList.contains("open")) dismiss();
+    else {
+      setMobileSidebar(true);
+      close.focus();
+    }
   };
   toggle.onclick = () => {
     if (!sidebarOnPhone.matches) {
@@ -1575,9 +1595,9 @@ function bindSidebarToggle() {
       noteTabs?.place();
       return;
     }
-    setMobileSidebar(!sidebar.classList.contains("open"));
-    if (sidebar.classList.contains("open")) close.focus();
+    toggleMobile();
   };
+  if (more) more.onclick = toggleMobile;
   close.onclick = dismiss;
   sidebar.parentElement.onkeydown = (event) => {
     if (event.key === "Escape" && sidebar.classList.contains("open")) {
@@ -1585,6 +1605,21 @@ function bindSidebarToggle() {
       dismiss();
     }
   };
+}
+function phoneNavigation() {
+  const link = (page, symbol, label) => {
+    const current =
+      view === page ||
+      (page === "all" && ["folder", "tag", "favorites"].includes(view));
+    return `<button type="button" data-phone-view="${page}" ${current ? 'aria-current="location"' : ""}>${icon(symbol)}<span>${label}</span></button>`;
+  };
+  return `<nav class="phone-nav" aria-label="${$t("Main navigation")}">
+    ${link("home", "home", $t("Overview"))}
+    ${link("all", "note", $t("Notes"))}
+    <button type="button" id="phone-new" aria-label="${$t("New note")}" ${folders().some((f) => data.roles[f.id] === "editor") ? "" : "disabled"}>${icon("plus")}<span>${$t("New")}</span></button>
+    ${link("journal", "calendar", $t("Journal"))}
+    <button type="button" id="phone-more">${icon("menu")}<span>${$t("More")}</span></button>
+  </nav>`;
 }
 function adminShell() {
   note = null;
@@ -1740,7 +1775,7 @@ function shell() {
   // Redrawing keeps the sidebar where it was scrolled to.
   const sidebarTop = $(".sidebar-scroll")?.scrollTop || 0;
   $("#app").innerHTML =
-    `<a class="skip-link" href="#content">${$t("Skip to content")}</a><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || $t("No workspace"))}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="${$t("Workspaces")}" hidden>${workspaceMenuItems()}</div></div><div class="search-row"><button id="search">${icon("search")}${$t("Search")} <span class="shortcut">${$t("Ctrl K")}</span></button><button id="quick-note" aria-label="${$t("New note")}" title="${$t("New note")}">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="${$t("Main navigation")}">${[
+    `<a class="skip-link" href="#content">${$t("Skip to content")}</a><div class="app-shell${isPane ? "" : " workspace-shell"}"><aside class="sidebar"><div class="brand"><span class="brand-mark">✳</span>minerva</div><div class="workspace-switch"><button id="workspace" class="workspace-button" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu" aria-label="Current workspace: ${esc(w?.name || "none")}. Switch workspace"><span class="square">${esc(w?.name.slice(0, 1) || "M")}</span><span class="workspace-name">${esc(w?.name || $t("No workspace"))}</span>${icon("chevron")}</button><div class="workspace-menu" id="workspace-menu" role="menu" aria-label="${$t("Workspaces")}" hidden>${workspaceMenuItems()}</div></div><div class="search-row"><button id="search">${icon("search")}${$t("Search")} <span class="shortcut">${$t("Ctrl K")}</span></button><button id="quick-note" aria-label="${$t("New note")}" title="${$t("New note")}">${icon("plus")}</button></div><div class="sidebar-scroll"><nav class="nav" aria-label="${$t("Main navigation")}">${[
       ["home", "home", $t("Overview")],
       ["all", "note", $t("All notes")],
       ["journal", "calendar", $t("Journal")],
@@ -1757,7 +1792,9 @@ function shell() {
       )
       .join(
         "",
-      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${profileAvatar(data.profile, data.user.name, esc)}</span>${localMode ? `<button class="profile-link" data-view="account"><div class="profile-name">${$t("User settings")}</div><div class="profile-role">${$t("On this computer")}</div></button>` : `<button class="profile-link" data-view="account" title="${$t("User settings")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${data.user.admin ? $t("Server administrator") : $t("Member")}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside><main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span>${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong></div><div class="top-actions">${workspaceBadge()}</div></header><div id="content" tabindex="-1"></div></main></div>`;
+      )}</nav>${sidebarSections()}</div><div class="sidebar-bottom"><div class="profile"><span class="avatar" title="${localMode ? $t("On this computer") : $t("Connected to server")} · v0.2"><i class="dot" aria-hidden="true"></i>${profileAvatar(data.profile, data.user.name, esc)}</span>${localMode ? `<button class="profile-link" data-view="account"><div class="profile-name">${$t("User settings")}</div><div class="profile-role">${$t("On this computer")}</div></button>` : `<button class="profile-link" data-view="account" title="${$t("User settings")}"><div class="profile-name">${esc(data.user.name)}</div><div class="profile-role">${data.user.admin ? $t("Server administrator") : $t("Member")}</div></button><button id="logout" aria-label="${$t("Sign out")}">${icon("logout")}</button>`}</div></div></aside>
+    <main class="main"><header class="topbar"><div class="crumb"><button class="mobile-menu" aria-label="${$t("Toggle sidebar")}">${icon("menu")}</button>${icon("home")}<span class="crumb-workspace">${esc(w?.name || $t("Your server"))}</span><span>/</span><strong id="breadcrumb">${$t("Overview")}</strong><span class="phone-note-title"></span></div><div class="top-actions">${workspaceBadge()}<button type="button" id="phone-search" aria-label="${$t("Search")}">${icon("search")}</button></div></header><div id="content" tabindex="-1"></div></main>
+    ${isPane ? "" : phoneNavigation()}</div>`;
   $$("[data-view]").forEach((b) =>
     action(b, "click", () => navigate(b.dataset.view)),
   );
@@ -1771,6 +1808,16 @@ function shell() {
   sidebarOverflow();
   workspaceMenu();
   action($("#search"), "click", search);
+  action($("#phone-search"), "click", search);
+  action($("#phone-new"), "click", createNote);
+  $$("[data-phone-view]").forEach((b) =>
+    action(b, "click", async () => {
+      const page = b.dataset.phoneView;
+      await navigate(page);
+      window.scrollTo(0, 0);
+      $(`[data-phone-view="${page}"]`)?.focus({ preventScroll: true });
+    }),
+  );
   action($("#add-folder"), "click", () => createFolder());
   action($("#quick-note"), "click", createNote);
   bindSidebar();
@@ -1947,13 +1994,14 @@ async function noteFromReply(markdown, question, scope) {
 }
 async function navigate(v, f = null) {
   setMobileSidebar(false);
+  await flush();
+  if (sidebarOnPhone.matches) await noteTabs?.leavePhoneNotes();
+  else noteTabs?.hide();
   graphView?.destroy();
   graphView = null;
   localGraph?.destroy();
   localGraph = null;
-  noteTabs?.hide();
   videos.stop();
-  await flush();
   stopLive();
   clearInterval(dbTimer);
   activeDatabase = null;
@@ -1966,6 +2014,11 @@ async function navigate(v, f = null) {
 /** The overview: a dashboard of widgets the user arranges (see dashboard.js). */
 function dashboard() {
   $("#breadcrumb").textContent = $t("Overview");
+  $(".workspace-shell .top-actions")?.insertAdjacentHTML(
+    "afterbegin",
+    `<button type="button" id="phone-customize" aria-label="${$t("Customize")}">${icon("grid")}</button>`,
+  );
+  action($("#phone-customize"), "click", () => $("#dash-edit")?.click());
   $("#content").innerHTML =
     `<section class="page" aria-label="${$t("Overview")}"><div id="dashboard-root"></div></section>`;
   renderDashboard($("#dashboard-root"), {
@@ -2162,6 +2215,7 @@ async function openNote(id, { split = false, block = null } = {}) {
     await flush();
     const target =
       data.notes.find((n) => n.id === id) || (await api("notes/" + id));
+    if (sidebarOnPhone.matches) await noteTabs.leavePhoneNotes();
     noteTabs.open({
       id,
       title: target.title,

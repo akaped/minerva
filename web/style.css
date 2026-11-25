@@ -9668,7 +9668,11 @@ mark.comment-quote {
 
 .mobile-sidebar-close,
 .mobile-chat-history,
-.note-phone-back {
+.note-phone-back,
+.phone-nav,
+.phone-note-title,
+#phone-customize,
+#phone-search {
   display: none;
 }
 
@@ -9794,5 +9798,222 @@ mark.comment-quote {
   #modal textarea {
     /* Keep focused form fields at the iOS zoom threshold. */
     font-size: max(16px, 1em);
+  }
+
+  :root:has(.workspace-shell) {
+    --phone-nav-height: calc(62px + env(safe-area-inset-bottom));
+    scroll-padding-block: 58px var(--phone-nav-height);
+  }
+  .workspace-shell {
+    padding-bottom: var(--phone-nav-height);
+  }
+  .workspace-shell > .main > .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 46;
+    height: 58px;
+    padding-inline: max(14px, env(safe-area-inset-left))
+      max(14px, env(safe-area-inset-right));
+  }
+  .workspace-shell .topbar .mobile-menu {
+    display: none;
+  }
+  .workspace-shell .topbar .crumb {
+    display: grid;
+    gap: 1px;
+  }
+  .workspace-shell .topbar .crumb-workspace {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workspace-shell .topbar #breadcrumb {
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 650;
+  }
+  #phone-search,
+  body:not(.note-tab-shown):has(#dash-edit) #phone-customize {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    color: var(--ink);
+  }
+  #phone-search:hover,
+  #phone-customize:hover {
+    background: var(--soft);
+  }
+  #phone-search svg,
+  #phone-customize svg {
+    width: 21px;
+    height: 21px;
+  }
+  .workspace-shell > .sidebar.open {
+    bottom: var(--phone-nav-height);
+    padding-top: 12px;
+    padding-bottom: 8px;
+  }
+  .workspace-shell .sidebar > .brand {
+    padding-bottom: 12px;
+  }
+  .workspace-shell .sidebar-scroll > .nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-shell .sidebar-scroll > .nav > :is([data-view="home"], [data-view="all"], [data-view="journal"]),
+  .workspace-shell .search-row :is(.shortcut, #quick-note) {
+    display: none;
+  }
+  .workspace-shell .workspace-button,
+  .workspace-shell .search-row #search,
+  .workspace-shell .tree-row :is(.tree-label, .tree-toggle, .tree-actions button) {
+    min-height: 44px;
+  }
+  .phone-nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 49;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: var(--phone-nav-height);
+    padding: 4px max(6px, env(safe-area-inset-right))
+      calc(4px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .phone-nav button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0;
+    border-radius: 10px;
+    color: var(--ink);
+    font-size: 11px;
+    line-height: 1.2;
+    touch-action: manipulation;
+  }
+  .phone-nav svg {
+    width: 20px;
+    height: 20px;
+  }
+  .phone-nav button:hover,
+  .phone-nav button[aria-current],
+  .phone-nav button[aria-expanded="true"] {
+    background: var(--soft);
+  }
+  .phone-nav button[aria-current],
+  .phone-nav button[aria-expanded="true"],
+  #phone-new {
+    font-weight: 650;
+  }
+  #phone-new svg {
+    width: 28px;
+    height: 28px;
+    padding: 4px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--surface);
+  }
+  .phone-nav button:focus-visible,
+  #phone-search:focus-visible,
+  #phone-customize:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  body:has(.workspace-shell) .note-tabs-host {
+    bottom: var(--phone-nav-height);
+  }
+  body:has(.workspace-shell) #toast {
+    bottom: calc(var(--phone-nav-height) + 12px);
+    visibility: hidden;
+  }
+  body:has(.workspace-shell) #toast.visible {
+    visibility: visible;
+  }
+  body.note-tab-shown .workspace-shell .topbar .crumb {
+    display: flex;
+  }
+  body.note-tab-shown .workspace-shell .topbar :is(.crumb-workspace, #breadcrumb) {
+    display: none;
+  }
+  body.note-tab-shown .workspace-shell .topbar .phone-note-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 650;
+  }
+  .workspace-shell .page {
+    padding: 16px 14px 24px;
+  }
+  .workspace-shell :is(#dash-new-note, #start-writing, #new-note),
+  .workspace-shell .dashboard-bar:has(#dash-edit) {
+    display: none;
+  }
+  .workspace-shell .dashboard-bar .btn,
+  .workspace-shell .notes-toolbar :is(.btn, .view-toggle button) {
+    min-height: 44px;
+  }
+  .workspace-shell .welcome-banner {
+    min-height: 112px;
+    padding: 16px 46px 16px 16px;
+  }
+  .workspace-shell .welcome-copy {
+    max-width: 100%;
+  }
+  .workspace-shell .welcome-copy :is(.eyebrow, p),
+  .workspace-shell .welcome-banner .banner-art {
+    display: none;
+  }
+  .workspace-shell .welcome-copy h2 {
+    margin: 0;
+  }
+  .workspace-shell .widget-note {
+    min-height: 44px;
+  }
+  .workspace-shell .notes-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .workspace-shell .notes-toolbar .view-toggle button {
+    min-width: 44px;
+  }
+  .workspace-shell .note-grid .note-preview {
+    height: 68px;
+    padding: 10px 14px;
+  }
+  .workspace-shell .note-grid .preview-lines {
+    display: none;
+  }
+  .workspace-shell .note-info {
+    min-width: 0;
+  }
+  .workspace-shell .note-info strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .workspace-shell .note-meta {
+    flex-wrap: wrap;
+  }
+  .editor-pane .document {
+    padding-inline-end: 16px;
+  }
+  .editor-pane .doc-title {
+    font-size: clamp(20px, 6.25vw, 29px);
+  }
+  .editor-pane .document .editor-help {
+    display: none;
+  }
+  .search-dialog .search-hint {
+    display: none;
   }
 }

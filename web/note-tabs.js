@@ -44,7 +44,14 @@ export function paneMessage(type, payload = {}) {
     );
 }
 
-export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
+export function createNoteTabs({
+  esc,
+  error,
+  onBrowse,
+  onPhoneBack,
+  onChange,
+  onGraph,
+}) {
   let tabs = [],
     active = null,
     secondary = null,
@@ -82,7 +89,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       } else {
         shown = false;
         place();
-        await onBrowse();
+        await onPhoneBack();
       }
     } catch (err) {
       error(err);
@@ -113,6 +120,9 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
     const menu = top.querySelector(".mobile-menu");
     if (menu && phoneBack.parentElement !== menu.parentElement)
       menu.after(phoneBack);
+    const phoneTitle = top.querySelector(".phone-note-title");
+    if (phoneTitle)
+      phoneTitle.textContent = tabs.find((tab) => tab.key === active)?.title || "";
     document.body.classList.add("has-note-tabs");
     const rect = main.getBoundingClientRect(),
       bar = top.getBoundingClientRect();
@@ -340,6 +350,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       workspace,
       frame,
       loader,
+      phone: phoneLayout.matches,
       loaded: false,
       dirty: false,
       // A file has nothing to save and sends no "ready".
@@ -419,6 +430,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
   }
   async function flushTab(tab) {
     if (tab.file) return;
+    if (tab.flushing) return tab.flushing;
     if (!tab.ready) {
       if (tab.dirty)
         throw new Error(
@@ -427,7 +439,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       return;
     }
     const request = crypto.randomUUID();
-    await new Promise((resolve, reject) => {
+    tab.flushing = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         requests.delete(request);
         reject(
@@ -439,18 +451,29 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       requests.set(request, { tab, resolve, reject, timeout });
       send(tab, "flush", { request });
     });
+    try {
+      await tab.flushing;
+    } finally {
+      tab.flushing = null;
+    }
   }
   async function close(key) {
     const tab = tabs.find((t) => t.key === key);
     if (!tab) return;
     await flushTab(tab);
-    clearTimeout(tab.timer);
-    clearTimeout(tab.loadTimer);
-    tab.frame.remove();
-    tab.loader.remove();
-    tabs = tabs.filter((t) => t !== tab);
-    if (secondary === key) secondary = null;
-    if (active === key) active = secondary || tabs.at(-1)?.key;
+    removeTabs([tab]);
+  }
+  function removeTabs(removed) {
+    for (const tab of removed) {
+      clearTimeout(tab.timer);
+      clearTimeout(tab.loadTimer);
+      tab.frame.remove();
+      tab.loader.remove();
+      if (secondary === tab.key) secondary = null;
+    }
+    tabs = tabs.filter((tab) => !removed.includes(tab));
+    if (!tabs.some((tab) => tab.key === active))
+      active = secondary || tabs.at(-1)?.key;
     if (active === secondary) secondary = null;
     if (!tabs.length) shown = false;
     draw();
@@ -585,6 +608,17 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       shown = false;
       place();
     },
+    async leavePhoneNotes() {
+      // Phone tabs have no tab strip to return to after navigating away.
+      const openedOnPhone = tabs.filter((tab) => tab.phone);
+      const current = tabs.find((tab) => shown && tab.key === active);
+      const toSave = new Set(openedOnPhone);
+      if (current) toSave.add(current);
+      await Promise.all([...toSave].map(flushTab));
+      shown = false;
+      if (openedOnPhone.length) removeTabs(openedOnPhone);
+      else place();
+    },
     async flush() {
       await Promise.all(tabs.map(flushTab));
     },
@@ -597,20 +631,7 @@ export function createNoteTabs({ esc, error, onBrowse, onChange, onGraph }) {
       const gone = tabs.filter(
         (t) => t.origin === origin && t.id && !t.chat && !kept.has(t.id) && (!considered || considered.has(t.id)),
       );
-      if (!gone.length) return;
-      for (const tab of gone) {
-        clearTimeout(tab.timer);
-        clearTimeout(tab.loadTimer);
-        tab.frame.remove();
-        tab.loader.remove();
-        if (secondary === tab.key) secondary = null;
-      }
-      tabs = tabs.filter((t) => !gone.includes(t));
-      if (!tabs.some((t) => t.key === active))
-        active = secondary || tabs.at(-1)?.key;
-      if (active === secondary) secondary = null;
-      if (!tabs.length) shown = false;
-      draw();
+      if (gone.length) removeTabs(gone);
     },
     async clear() {
       await Promise.all(tabs.map(flushTab));
