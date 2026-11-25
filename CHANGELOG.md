@@ -10,6 +10,8 @@ turns that section into the next version.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-25
+
 ### Added
 
 - Add contextual slash commands for inline formatting in existing blocks and five editable slide layouts for Presentation mode.
